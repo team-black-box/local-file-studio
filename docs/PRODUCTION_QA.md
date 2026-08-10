@@ -1,0 +1,99 @@
+<!--
+SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# Production tool QA matrix
+
+Complete this matrix against the exact production candidate before public launch and after processing-engine, limit, service-worker, or browser-support changes. The 47 rows are derived from `src/tools.js`; CI runs `.github/scripts/verify-production-qa.mjs` so a catalog change cannot silently omit a row.
+
+Do not test with customer, production, personal, confidential, regulated, or irreplaceable documents. Use intentionally synthetic fixtures with known page counts, text, colors, dimensions, metadata, and passwords.
+
+## Test record
+
+- Candidate Git commit:
+- Preview/deployment identifier and URL:
+- Service-worker revision:
+- Tester and date:
+- Desktop browsers and operating systems:
+- Mobile browsers and devices:
+- Fixture-set version or hash:
+- Issues and waived rows (a launch waiver requires explicit owner approval):
+
+## Shared protocol for every row
+
+Each row has four required evidence boxes:
+
+- **O — online/browser:** Open the direct hash route in every targeted browser, verify visible input limits and accepted formats, process a valid synthetic fixture, exercise relevant settings, cancellation, reset, and a repeated run, and record any console error.
+- **F — offline/PWA:** After one successful online load of the production build, enable browser offline mode, reload the route, process the same fixture, and download the result. A first-ever visit, cleared site data, private browsing, or storage eviction is not expected to work offline.
+- **P — privacy/network:** With the network log preserved, select and process the fixture. No request may contain the selected file, derived text/image data, file name, password, signature, result bytes, or a remote-processing fallback. Cache Storage must not contain user input or generated output.
+- **R — result/integrity:** Reopen every download in an independent viewer. Confirm format/signature, requested ordering or transformation, expected count/dimensions/text, absence of unintended changes, and actionable rejection of malformed, unsupported, and representative over-limit input. A rejection must not present a partial result as complete.
+
+Also inspect keyboard navigation, visible focus, accessible names, error announcement, narrow/mobile layout, memory growth across repeated runs, object-URL cleanup, and correct behavior after clearing a result. For batch/ZIP tools, verify names cannot escape directories and that entry counts and retained output stay bounded.
+
+## Catalog matrix
+
+`Ready` and `Beta` below reproduce the catalog maturity, not a release verdict. Beta tools still require all four checks; document layout, codec, heuristic, or browser limitations as observed rather than silently changing the expected result.
+
+| # | Catalog route | Maturity | Synthetic input and primary result assertion | O | F | P | R |
+|---:|---|---|---|:---:|:---:|:---:|:---:|
+| 1 | `#tool/merge-pdf` — Merge PDF | Ready | Two PDFs with distinct labeled pages → one PDF with exact chosen file/page order and combined page count. | [ ] | [ ] | [ ] | [ ] |
+| 2 | `#tool/split-pdf` — Split PDF | Ready | Multi-page PDF and explicit selection → expected one-page PDFs/ZIP, exact page set, count, order, and safe names. | [ ] | [ ] | [ ] | [ ] |
+| 3 | `#tool/remove-pdf-pages` — Remove Pages | Ready | Labeled multi-page PDF → requested pages absent, all retained pages ordered and unchanged; rejecting removal of every page is actionable. | [ ] | [ ] | [ ] | [ ] |
+| 4 | `#tool/extract-pdf-pages` — Extract Pages | Ready | Labeled multi-page PDF → exact selected pages in one combined PDF and, with combine disabled, separate outputs/ZIP. | [ ] | [ ] | [ ] | [ ] |
+| 5 | `#tool/organize-pdf` — Organize PDF | Ready | Labeled pages and an order containing moves, duplicates, and omissions → output exactly matches the declared page sequence. | [ ] | [ ] | [ ] | [ ] |
+| 6 | `#tool/scan-to-pdf` — Scan to PDF | Beta | Ordered portrait/landscape JPG, PNG, and WebP images → readable PDF in selected Auto, A4, and Letter page modes with no crop/stretch surprise. | [ ] | [ ] | [ ] | [ ] |
+| 7 | `#tool/compress-pdf` — Compress PDF | Ready | Image-heavy PDF → valid output at each compression setting; visually compare pages and record input/output sizes without promising reduction for every source. | [ ] | [ ] | [ ] | [ ] |
+| 8 | `#tool/repair-pdf` — Repair PDF | Beta | Minimally damaged but recoverable synthetic PDF plus irrecoverable bytes → recovered file opens when possible, irrecoverable input fails clearly without a bogus PDF. | [ ] | [ ] | [ ] | [ ] |
+| 9 | `#tool/ocr-pdf` — OCR PDF | Beta | Scanned English PDF with known text → searchable/selectable text corresponds to visible pages; record recognition errors and verify bundled OCR works offline. | [ ] | [ ] | [ ] | [ ] |
+| 10 | `#tool/jpg-to-pdf` — JPG to PDF | Ready | Ordered JPG/PNG images → PDF page count/order is exact and Fit, A4, and Letter settings preserve orientation and reasonable aspect ratio. | [ ] | [ ] | [ ] | [ ] |
+| 11 | `#tool/word-to-pdf` — Word to PDF | Beta | Synthetic DOCX with paragraphs, table/list text, and legacy symbol runs → clean PDF contains expected readable text, emits visible `[symbol …]` placeholders instead of guessed glyphs, and does not claim to preserve source layout. | [ ] | [ ] | [ ] | [ ] |
+| 12 | `#tool/powerpoint-to-pdf` — PowerPoint to PDF | Beta | Synthetic PPTX with labeled slides and text in varied shapes → ordered PDF contains expected extracted slide text; record that original slide layout is not preserved. | [ ] | [ ] | [ ] | [ ] |
+| 13 | `#tool/excel-to-pdf` — Excel to PDF | Beta | XLS and XLSX with multiple named sheets, values, formulas, and used ranges → output contains expected sheets/values and no unexpected external fetch. | [ ] | [ ] | [ ] | [ ] |
+| 14 | `#tool/html-to-pdf` — HTML to PDF | Beta | Local HTML using headings, table text, script, remote URL, and unsafe markup → clean PDF contains expected readable text, no script execution/remote fetch, and bounded pages. | [ ] | [ ] | [ ] | [ ] |
+| 15 | `#tool/pdf-to-jpg` — PDF to JPG | Ready | Labeled color PDF pages → one JPG per page or safe ZIP, correct order/dimensions, and selected quality/scale reflected in output. | [ ] | [ ] | [ ] | [ ] |
+| 16 | `#tool/pdf-to-word` — PDF to Word | Beta | Text PDF with headings, paragraphs, and table-like text → DOCX opens and contains expected extracted text in reading order; record layout loss. | [ ] | [ ] | [ ] | [ ] |
+| 17 | `#tool/pdf-to-powerpoint` — PDF to PowerPoint | Beta | Labeled text PDF pages → PPTX opens with one ordered slide per page and expected editable extracted text; record layout/graphics loss. | [ ] | [ ] | [ ] | [ ] |
+| 18 | `#tool/pdf-to-excel` — PDF to Excel | Beta | Multi-page text PDF → XLSX opens with one ordered sheet per PDF page and expected extracted text; record that source table/layout reconstruction is limited. | [ ] | [ ] | [ ] | [ ] |
+| 19 | `#tool/pdf-to-pdfa` — Archive PDF Rewrite | Beta | Metadata-bearing PDF → rewritten PDF opens and retains expected pages/content; do not claim standards conformance beyond the catalog's archive-rewrite wording. | [ ] | [ ] | [ ] | [ ] |
+| 20 | `#tool/rotate-pdf` — Rotate PDF | Ready | Asymmetric labeled PDF → selected 90/180/270-degree rotation is exact on intended pages with unchanged page count. | [ ] | [ ] | [ ] | [ ] |
+| 21 | `#tool/add-pdf-page-numbers` — Add Page Numbers | Ready | Multi-page PDF → chosen starting value and placement appear on every page without clipping or changing page order. | [ ] | [ ] | [ ] | [ ] |
+| 22 | `#tool/watermark-pdf` — Add Watermark | Ready | PDF plus distinctive watermark text/opacity → expected centered diagonal mark appears on every page without corrupting source content. | [ ] | [ ] | [ ] | [ ] |
+| 23 | `#tool/crop-pdf` — Crop PDF | Ready | PDF with edge markers → output page boxes match requested margins/region, intended content remains, and invalid/empty crops are rejected. | [ ] | [ ] | [ ] | [ ] |
+| 24 | `#tool/edit-pdf` — Edit PDF | Beta | PDF plus text annotation settings → annotation appears at intended page/position with readable styling and all untouched pages remain intact. | [ ] | [ ] | [ ] | [ ] |
+| 25 | `#tool/add-image-to-pdf` — Add Image to PDF | Beta | PDF plus opaque and transparent PNG/JPG marks → drag, duplicate, multi-page paste, rotate, resize, undo/reset, and final placement match the editor preview. | [ ] | [ ] | [ ] | [ ] |
+| 26 | `#tool/pdf-forms` — PDF Forms | Beta | PDF with known AcroForm fields plus field-name JSON/fallback → supported values update correctly with flatten on/off; field count and malformed JSON/forms fail safely. | [ ] | [ ] | [ ] | [ ] |
+| 27 | `#tool/unlock-pdf` — Unlock PDF | Ready | Password-protected synthetic PDF → correct password creates a readable unlocked PDF; wrong/empty password fails without leaking or retaining it. | [ ] | [ ] | [ ] | [ ] |
+| 28 | `#tool/protect-pdf` — Protect PDF | Ready | Plain PDF plus synthetic password → output rejects a wrong password and opens with the correct one in independent compatible viewers; password never reaches network/log/cache. | [ ] | [ ] | [ ] | [ ] |
+| 29 | `#tool/sign-pdf` — Sign PDF | Beta | PDF plus synthetic typed name with date on/off → visual mark appears on the final page and UI/output clearly avoids implying certificate-backed digital signing. | [ ] | [ ] | [ ] | [ ] |
+| 30 | `#tool/redact-pdf` — Redact PDF | Beta | PDF containing known visible text under the configured region → black and white styles conceal that region on each output page, and original pixels/text cannot be recovered by copy/search. | [ ] | [ ] | [ ] | [ ] |
+| 31 | `#tool/compare-pdf` — Compare PDF | Beta | Two PDFs with controlled insert/delete/replace lines → local HTML report opens safely and represents expected bounded changes without embedding executable input markup. | [ ] | [ ] | [ ] | [ ] |
+| 32 | `#tool/summarize-pdf` — Local Summarizer | Beta | Text PDF with known headings and repeated/key sentences → TXT is a local extractive summary grounded in source text and empty/image-only input is explained. | [ ] | [ ] | [ ] | [ ] |
+| 33 | `#tool/translate-pdf` — Translate PDF | Beta | Text PDF containing phrases covered and not covered by the local glossary → TXT reflects documented substitutions and preserves/explains unsupported text without remote translation. | [ ] | [ ] | [ ] | [ ] |
+| 34 | `#tool/pdf-to-markdown` — PDF to Markdown | Beta | Text PDF with headings, paragraphs, and simple lists/tables → Markdown contains expected text/order and opens as plain data without unsafe embedded execution. | [ ] | [ ] | [ ] | [ ] |
+| 35 | `#tool/compress-image` — Compress Image | Ready | JPG/PNG/WebP batch with known dimensions/transparency → requested format/quality outputs open, dimensions are expected, transparency handling is explicit, and size is recorded. | [ ] | [ ] | [ ] | [ ] |
+| 36 | `#tool/resize-image` — Resize Image | Ready | Asymmetric JPG/PNG/WebP → exact width/height or proportional result according to settings, correct orientation, and no accidental up/downscale beyond request. | [ ] | [ ] | [ ] | [ ] |
+| 37 | `#tool/crop-image` — Crop Image | Ready | Image with colored edge/corner markers → exact crop region and dimensions; out-of-bounds or zero-area selection fails safely. | [ ] | [ ] | [ ] | [ ] |
+| 38 | `#tool/convert-to-jpg` — Convert to JPG | Beta | PNG, first-frame animated GIF/WebP, SVG, and single-page TIFF synthetic fixtures → readable JPGs with documented frame/page behavior and explicit multi-page TIFF rejection. | [ ] | [ ] | [ ] | [ ] |
+| 39 | `#tool/convert-from-jpg` — Convert from JPG | Ready | JPG/JPEG with gradients and metadata → chosen PNG and GIF outputs open with expected dimensions/colors; no unrequested extra files. | [ ] | [ ] | [ ] | [ ] |
+| 40 | `#tool/photo-editor` — Photo Editor | Beta | Asymmetric photo → each supported adjustment and combined settings match preview/download; reset restores the original transformation state. | [ ] | [ ] | [ ] | [ ] |
+| 41 | `#tool/upscale-image` — Upscale Image | Beta | Small synthetic JPG/PNG with sharp pattern → selected scale produces exact dimensions and a readable image; record quality limitations and guard maximum output pixels. | [ ] | [ ] | [ ] | [ ] |
+| 42 | `#tool/remove-image-background` — Remove Background | Beta | Synthetic foreground/background image with hard and soft edges → fast/balanced/fine output removes/retains expected regions; transparent, white, and black PNG backgrounds match settings. | [ ] | [ ] | [ ] | [ ] |
+| 43 | `#tool/watermark-image` — Watermark Image | Ready | JPG/PNG/WebP → watermark text/settings appear at expected position, opacity, and angle on each output; source dimensions/format behavior are correct. | [ ] | [ ] | [ ] | [ ] |
+| 44 | `#tool/meme-generator` — Meme Generator | Ready | Synthetic image plus top/bottom text including long and non-ASCII strings → preview/download agree, text is legible and bounded, and output opens. | [ ] | [ ] | [ ] | [ ] |
+| 45 | `#tool/rotate-image` — Rotate Image | Ready | Asymmetric JPG/PNG/WebP → 90/180/270-degree options produce expected orientation, dimensions, background/transparency, and no clipping. | [ ] | [ ] | [ ] | [ ] |
+| 46 | `#tool/html-to-image` — HTML to Image | Beta | Local HTML with known dimensions, data image, script, remote URL, and unsafe markup → JPG/SVG reflects sanitized local content with no execution/fetch and respects capture bounds. | [ ] | [ ] | [ ] | [ ] |
+| 47 | `#tool/blur-face` — Blur Face | Beta | Synthetic portrait-like image → native face-detection regions, or the documented center fallback when unavailable, are blurred at each strength; detection limitations are explicit. | [ ] | [ ] | [ ] | [ ] |
+
+## Cross-cutting PWA and deployment checks
+
+- [ ] A clean production build creates `dist/client/index.html`, a sorted duplicate-free `precache-manifest.json`, and a deterministic content revision in `sw.js`.
+- [ ] The manifest includes every required local runtime asset, including PDF worker, fonts, OCR worker, OCR WASM variants, and English OCR data.
+- [ ] A new service-worker cache installs fully before the previous working revision is deleted.
+- [ ] With an older build open, publish the next candidate without forcing activation: the old tab can still run a previously unopened lazy-loaded tool, and the new revision activates only after every old tab closes.
+- [ ] Failed, opaque, arbitrary, user-selected, and generated-result requests are not cached.
+- [ ] Clearing site data removes offline availability and a subsequent successful online visit restores it.
+- [ ] Security/cache headers, manifest scope, SPA rewrite, direct hash routes, and downloads work on the Vercel hostname and final custom hostname.
+- [ ] Desktop and mobile layouts have no unreachable controls or horizontal overflow; keyboard-only use and reduced-motion/contrast preferences remain usable.
+
+Any failed row is a launch blocker for that advertised tool unless the tool is removed from the shipped catalog or the owner explicitly accepts and documents a narrowly defined limitation.

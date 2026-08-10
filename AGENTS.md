@@ -1,0 +1,134 @@
+<!--
+SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# Repository Engineering Guide
+
+## Scope and priorities
+
+Local File Studio is an open-source, local-only browser application for PDF and image workflows. Keep changes focused on the repository and preserve these priorities, in order:
+
+1. User privacy and document integrity.
+2. Bounded resource use and safe failure.
+3. Correct, deterministic processing.
+4. Offline reliability, accessibility, and clear UX.
+5. Performance and maintainability.
+
+Do not change tool semantics, formats, limits, or visible promises incidentally. Preserve unrelated and untracked work.
+
+## Non-negotiable invariants
+
+- File contents and derived data stay on the user's device. Do not add uploads, telemetry containing document data, remote processing, server fallbacks, or required network APIs.
+- Never silently truncate, skip, downsample, or partially process rejected input. Fail before expensive work with an actionable error; do not expose a partial result as complete.
+- Preserve input bytes unless the selected tool explicitly transforms them. Downloads must represent only the user's requested operation.
+- Keep limits visible, exact, and tool-specific beside every file picker. Displayed copy and enforcement must share the same policy source.
+- Treat file names, metadata, archive entries, markup, and document contents as untrusted input. Do not log document content or secrets.
+
+## Architecture and code map
+
+The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel serves that directory with the SPA rewrite and security/cache headers in `vercel.json`. There is no application backend.
+
+- `src/App.jsx`, `src/styles.css`: application shell and workbench UI.
+- `src/PdfImageWorkbench.jsx`: visual local editor for placing reusable images and signatures on PDF pages.
+- `src/tools.js`: tool catalog, accepted formats, settings, and user-facing metadata.
+- `src/lib/processors.js`: tool dispatch and shared processing paths.
+- `src/lib/pdf-processors.js`, `src/lib/image-processors.js`, `src/lib/libpdf.js`: format-specific engines.
+- `src/lib/docx-text.js`: bounded, local DOCX text extraction for Word-to-PDF.
+- `src/lib/pptx-writer.js`: dependency-light text reconstruction for PDF-to-PPTX output.
+- `src/lib/pdfjs-utils.js`: version-compatible PDF.js document cleanup.
+- `src/lib/file-limits.js`: canonical resource policies and displayed limit descriptions.
+- `src/lib/file-preflight.js`: pre-allocation inspection and format-aware validation.
+- `src/lib/file-utils.js`: bounded result/download helpers and cleanup utilities.
+- `public/`: PWA shell, icons, service worker, and vendored local engines.
+- `scripts/prepare-production-build.mjs`: deterministic offline precache manifest and service-worker revision injection.
+- `scripts/verify-ocr-assets.mjs`: vendored OCR integrity checks.
+- `scripts/verify-third-party-assets.mjs`: package, native-code, license, and visual-asset provenance checks.
+- `tests/`: Node tests for policy and production/offline artifacts.
+
+Keep processing logic independent of React where practical. New interfaces such as a CLI or MCP server must reuse the same catalog, policies, preflight, processors, structured errors, and local-only guarantees rather than creating a second behavior path. Isolate browser-only APIs behind small adapters and support cancellation/cleanup so non-UI callers can be added without changing tool semantics.
+
+## Offline/PWA behavior
+
+Production builds must remain usable offline after one successful online load. `bun run build` must:
+
+- create a static `dist/client/index.html`;
+- generate a sorted, duplicate-free `precache-manifest.json` containing the app shell and every required local runtime asset;
+- inject a deterministic content revision into `sw.js`; and
+- avoid caching user-selected files, generated outputs, arbitrary requests, or failed/opaque responses.
+
+Install a new cache completely before retiring the previous revision. Keep first-load, storage-eviction, and unavailable-resource limitations documented. Development mode is not an offline verification target; verify the production build.
+Do not force a new worker to activate over open clients: an older page may still need its matching content-hashed lazy chunks, and reloading it would discard files held in memory.
+
+## Implementing or changing a tool
+
+Before coding, identify the tool contract, accepted inputs, output, browser support, worst-case memory/CPU use, cancellation points, and failure modes. Then:
+
+1. Update the catalog and settings in `src/tools.js`.
+2. Add or revise a single policy in `src/lib/file-limits.js`; use that policy for both picker copy and enforcement.
+3. Validate count and byte limits before reading files. Extend `src/lib/file-preflight.js` for trustworthy header/metadata, page, pixel, frame, archive, or expansion checks before allocating large buffers.
+4. Recheck derived/runtime limits inside the processor when preflight cannot know them. Use `FileLimitError` with a stable code, a user-actionable message, and safe details.
+5. Route processing through the shared dispatcher and bounded output helpers. Reject unsupported containers/frames explicitly.
+6. Add focused tests for success, boundary values, malformed input, and over-limit rejection. Update README claims when formats, limits, offline assets, or behavior change.
+
+All count, byte, page, pixel, text, archive-expansion, generated-item, and output-size guards belong in the central policy path. Do not duplicate numeric limits in components or processors. Never replace a rejection with an upload or server fallback.
+
+## Resource lifecycle and security
+
+- Release resources in success, error, cancellation, and component-unmount paths: destroy PDF documents/pages, terminate workers, revoke object URLs, clear timers/listeners, close image bitmaps, remove temporary DOM/canvases, and drop large buffers/results.
+- Avoid unbounded concurrency and repeated whole-file copies. Check output and retained-result limits before ZIP creation or download assembly.
+- Verify type from content where feasible; do not trust extensions or MIME strings alone. Bound archive entry count, expanded bytes, per-entry bytes, and expansion ratio before parsing.
+- Sanitize imported HTML and generated DOM. Do not evaluate input as code, inject unsanitized markup, interpolate it into script/style contexts, or allow path traversal from archive names.
+- Keep network access opt-in and unrelated to document processing. Any future external integration must be clearly separated, documented, and unable to receive file data by default.
+- Maintain the CSP and other deployment headers when adding workers, WASM, fonts, media, or new asset types. Broaden policy only to the minimum required source.
+
+## Dependencies, vendored assets, and licensing
+
+Use Bun and keep `package.json` and `bun.lock` synchronized. Prefer maintained dependencies that can be bundled and run locally; justify large or overlapping libraries. Do not introduce runtime CDN dependencies for core processing or offline-critical UI.
+
+Vendored WASM, trained models, codecs, fonts, generated bundles, and other third-party assets require, before inclusion:
+
+- exact upstream project, version, and source URL;
+- reproducible acquisition/build notes when available;
+- checked-in SHA-256 checksums and an automated verification path;
+- the upstream license plus all required notices; and
+- review of transitive/native licensing and redistribution terms.
+
+First-party source and configuration files should carry:
+
+```text
+SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+SPDX-License-Identifier: Apache-2.0
+```
+
+Preserve the exact legal name `TeamBlackBox Private Limited`. Keep the canonical root `LICENSE` unchanged. Do not add first-party SPDX ownership to third-party or generated assets; retain their upstream headers and notices. Update `THIRD_PARTY_NOTICES.md`, component-local notices, hashes, and README release caveats whenever vendored material changes.
+
+## Commands and verification
+
+Use the pinned Bun toolchain and frozen lockfile:
+
+```bash
+bun install --frozen-lockfile
+bun run dev
+bun run test:limits
+bun run verify:ocr
+bun run verify:third-party
+bun run test:docx
+bun run test:pptx
+bun run build
+bun run test:offline
+bun run verify
+bun run preview
+```
+
+`bun run verify` is the required full check. Run focused tests while iterating, then the full command before handoff. For UI or conversion changes, also inspect the production preview at relevant desktop/mobile sizes and exercise representative files, malformed inputs, boundary limits, cancellation, repeated runs, downloads, and a reload while offline.
+
+## Documentation, version control, and deployment
+
+Keep README setup, architecture, privacy/offline behavior, verified formats, resource limits, and known caveats aligned with the code. Record contributor workflow in `CONTRIBUTING.md`; legal and provenance facts belong in `LICENSE`, `NOTICE`, `TRADEMARKS.md`, `THIRD_PARTY_NOTICES.md`, and component-local notices.
+
+Do not stage, commit, amend, create/switch branches, push, alter remotes, open pull requests, link hosting projects, change environment variables, or deploy unless the user explicitly authorizes that action. Build and test locally without mutating unrelated files.
+
+## Definition of done
+
+A change is done when privacy and data-integrity invariants hold; policy, picker copy, preflight, processors, and errors agree; resources are cleaned up; untrusted and over-limit inputs fail safely; offline production artifacts remain complete and revisioned; applicable focused tests and `bun run verify` pass; documentation and legal/provenance records are current; and the final report lists changed/removed files, verification results, and any remaining caveats.

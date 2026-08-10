@@ -1,0 +1,63 @@
+{
+  "name": "local-file-studio",
+  "version": "0.0.0",
+  "description": "Offline-first browser tools for processing PDF and image files locally.",
+  "author": "TeamBlackBox Private Limited",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "bun@1.2.20",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/team-black-box/local-file-studio.git"
+  },
+  "homepage": "https://github.com/team-black-box/local-file-studio#readme",
+  "bugs": {
+    "url": "https://github.com/team-black-box/local-file-studio/issues"
+  },
+  "overrides": {
+    "dompurify": "3.4.13",
+    "postcss": "8.5.23"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/prepare-production-build.mjs",
+    "preview": "vite preview",
+    "test:limits": "node --test tests/file-limits.test.mjs",
+    "test:editor": "node --test tests/pdf-image-editor.test.mjs",
+    "test:docx": "node --test tests/docx-text.test.mjs",
+    "test:pptx": "node --test tests/pptx-writer.test.mjs",
+    "test:offline": "node --test tests/offline-build.test.mjs",
+    "verify:qa": "node .github/scripts/verify-production-qa.mjs",
+    "verify:repo": "node scripts/audit-repository.mjs",
+    "verify:ocr": "node scripts/verify-ocr-assets.mjs",
+    "verify:third-party": "node scripts/verify-third-party-assets.mjs",
+    "verify": "bun run verify:repo && bun run verify:qa && bun run verify:ocr && bun run verify:third-party && bun run test:limits && bun run test:editor && bun run test:docx && bun run test:pptx && bun run build && node scripts/verify-third-party-assets.mjs --production && bun run test:offline"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@libpdf/core": "^0.4.1",
+    "@phosphor-icons/react": "^2.1.10",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@xmldom/xmldom": "0.8.13",
+    "diff": "^9.0.0",
+    "docx": "^9.7.1",
+    "gifenc": "^1.0.3",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "jszip": "^3.10.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.2.108",
+    "pica": "^10.0.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "tesseract.js": "^7.0.0",
+    "utif": "^3.1.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "5.0.4",
+    "vite": "6.4.3"
+  }
+}

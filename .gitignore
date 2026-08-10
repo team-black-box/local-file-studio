@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+# SPDX-License-Identifier: Apache-2.0
+
+node_modules/
+dist/
+coverage/
+.vite/
+.vercel/
+.wrangler/
+playwright-report/
+test-results/
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+design-qa-*.png
+/design-qa.md
+/.npmrc
+*.log

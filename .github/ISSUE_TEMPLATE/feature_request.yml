@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+# SPDX-License-Identifier: Apache-2.0
+
+name: Feature request
+description: Propose a local-only tool or a focused improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem before the implementation. Local File Studio does not upload documents or require remote processing for core tools. New dependencies, formats, models, codecs, and vendored assets need a resource and redistribution review.
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Who needs this, and what cannot they do safely with the current catalog?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe accepted inputs, expected outputs, key settings, failure behavior, and accessibility needs.
+    validations:
+      required: true
+  - type: textarea
+    id: local
+    attributes:
+      label: Local-only implementation
+      description: Explain how the operation could run entirely in the browser and remain useful after the offline shell is installed.
+    validations:
+      required: true
+  - type: textarea
+    id: resources
+    attributes:
+      label: Resource and compatibility considerations
+      description: Note expected file counts/sizes, pages or pixels, browser APIs, cancellation points, and likely dependencies or vendored assets.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

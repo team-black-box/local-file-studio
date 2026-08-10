@@ -1,0 +1,552 @@
+// SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+// SPDX-License-Identifier: Apache-2.0
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  ARCHIVE_INPUT_LIMIT_BYTES,
+  ARCHIVE_ITEM_LIMIT_BYTES,
+  FileLimitError,
+  GLOBAL_OUTPUT_LIMIT_BYTES,
+  MAX_GENERATED_RESULTS,
+  MAX_PDF_PASSWORD_CHARACTERS,
+  assertComparisonLineCounts,
+  assertExtractedTextLength,
+  assertGeneratedItemCount,
+  assertGeneratedPdfPageCount,
+  assertImageDimensions,
+  assertImagePixelTotal,
+  assertMarkupLength,
+  assertMinimumFileCount,
+  assertOcrCharacterCount,
+  assertOrganizedPageCount,
+  assertOutputDimensions,
+  assertOutputSize,
+  assertPdfFormFieldCount,
+  assertPresentationSlideCount,
+  assertRasterDimensions,
+  assertSpreadsheetComplexity,
+  assertTextSettingLengths,
+  countLogicalLines,
+  describeToolLimits,
+  getTextSettingLimit,
+  getToolLimits,
+  summarizeRejections,
+  validateFileSelection,
+  validatePreflightMetadata,
+} from "../src/lib/file-limits.js";
+import { runBoundedLineDiff } from "../src/lib/diff-worker-client.js";
+import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
+import { createResultBudget, parsePageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
+import { runTool } from "../src/lib/processors.js";
+import { tools } from "../src/tools.js";
+
+const MiB = 1024 * 1024;
+
+function tool(slug, { name = slug, kind = "pdf", accepts = [".pdf"], batch = false } = {}) {
+  return { slug, name, kind, accepts, batch, settings: [] };
+}
+
+function file(name, size) {
+  return Object.freeze({ name, size });
+}
+
+test("tool policies expose the intended exact count and byte budgets", () => {
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(getToolLimits("merge-pdf")).filter(([key]) => ["minFiles", "maxFiles", "maxFileBytes", "maxTotalBytes", "maxPdfPagesTotal"].includes(key))),
+    { minFiles: 2, maxFiles: 20, maxFileBytes: 50 * MiB, maxTotalBytes: 120 * MiB, maxPdfPagesTotal: 500 },
+  );
+  assert.equal(getToolLimits("compare-pdf").maxFiles, 2);
+  assert.equal(getToolLimits("ocr-pdf").maxPdfPagesPerFile, 25);
+  assert.equal(getToolLimits("remove-background").maxImagePixelsPerFile, 12_000_000);
+  assert.equal(getToolLimits("compress-image").maxImagePixelsPerFile, 16_000_000);
+  assert.equal(GLOBAL_OUTPUT_LIMIT_BYTES, 128 * MiB);
+  assert.equal(ARCHIVE_INPUT_LIMIT_BYTES, 128 * MiB);
+});
+
+test("visible limit copy is generated from the same policy as validation", () => {
+  const merge = tool("merge-pdf", { name: "Merge PDF" });
+  const copy = describeToolLimits(merge);
+  assert.match(copy.primary, /2–20 PDF files/);
+  assert.match(copy.primary, /50 MB each/);
+  assert.match(copy.primary, /120 MB combined/);
+  assert.match(copy.secondary, /500 pages combined/);
+  assert.match(copy.secondary, /128 MB max result/);
+});
+
+test("Convert to JPG advertises and accepts only its supported browser-local formats", () => {
+  const convert = tools.find(({ slug }) => slug === "convert-to-jpg");
+  assert.deepEqual(convert.accepts, [".png", ".gif", ".tif", ".tiff", ".svg", ".webp"]);
+  for (const name of ["camera.heic", "camera.heif", "camera.bmp"]) {
+    const result = validateFileSelection(convert, [], [file(name, MiB)]);
+    assert.equal(result.accepted.length, 0);
+    assert.equal(result.rejected[0].code, "unsupported-type");
+    assert.match(result.rejected[0].message, /accepts PNG\/GIF\/TIFF\/SVG\/WEBP/s);
+  }
+});
+
+test("selection accepts exact boundaries without mutating inputs", () => {
+  const merge = tool("merge-pdf", { name: "Merge PDF" });
+  const existing = Object.freeze([file("a.pdf", 50 * MiB)]);
+  const incoming = Object.freeze([file("b.pdf", 50 * MiB), file("c.pdf", 20 * MiB)]);
+  const result = validateFileSelection(merge, existing, incoming);
+  assert.equal(result.accepted.length, 2);
+  assert.equal(result.rejected.length, 0);
+  assert.equal(result.totalBytes, 120 * MiB);
+  assert.deepEqual(existing.map((item) => item.name), ["a.pdf"]);
+  assert.deepEqual(result.nextFiles.map((item) => item.name), ["a.pdf", "b.pdf", "c.pdf"]);
+});
+
+test("selection rejects empty, wrong-type, oversized, count, and combined-size inputs with filenames", () => {
+  const merge = tool("merge-pdf", { name: "Merge PDF" });
+  assert.equal(validateFileSelection(merge, [], [file("empty.pdf", 0)]).rejected[0].code, "empty-file");
+  assert.match(validateFileSelection(merge, [], [file("notes.docx", MiB)]).rejected[0].message, /notes\.docx.*accepts PDF/s);
+  assert.match(validateFileSelection(merge, [], [file("huge.pdf", 50 * MiB + 1)]).rejected[0].message, /huge\.pdf.*50 MB/s);
+
+  const twentyOne = Array.from({ length: 21 }, (_, index) => file(`${index + 1}.pdf`, MiB));
+  const countResult = validateFileSelection(merge, [], twentyOne);
+  assert.equal(countResult.accepted.length, 20);
+  assert.equal(countResult.rejected[0].code, "too-many-files");
+  assert.match(countResult.rejected[0].message, /21\.pdf/);
+
+  const totalResult = validateFileSelection(merge, [file("existing.pdf", 100 * MiB)], [file("overflow.pdf", 21 * MiB)]);
+  assert.equal(totalResult.accepted.length, 0);
+  assert.equal(totalResult.rejected[0].code, "total-too-large");
+  assert.match(totalResult.rejected[0].message, /overflow\.pdf.*120 MB/s);
+
+  for (const invalidSize of [Number.NaN, Number.POSITIVE_INFINITY, -1, undefined]) {
+    assert.equal(validateFileSelection(merge, [], [file("invalid.pdf", invalidSize)]).rejected[0].code, "invalid-size");
+  }
+});
+
+test("rejection summaries stay compact while reporting partial acceptance", () => {
+  const rejected = [
+    { code: "unsupported-type", message: "one" },
+    { code: "unsupported-type", message: "two" },
+    { code: "file-too-large", message: "three" },
+    { code: "total-too-large", message: "four" },
+  ];
+  assert.equal(summarizeRejections(2, rejected), "2 files were added; 4 files were not added: 2 unsupported types, 1 over the per-file size limit, 1 over the combined-size limit.");
+  assert.equal(summarizeRejections(1, rejected, { acceptedAction: "replaced" }), "The previous file was replaced; 4 files were not added: 2 unsupported types, 1 over the per-file size limit, 1 over the combined-size limit.");
+});
+
+test("minimum count and optional HTML policies are enforced from the same registry", () => {
+  const merge = tool("merge-pdf", { name: "Merge PDF" });
+  const compare = tool("compare-pdf", { name: "Compare PDF" });
+  const html = tool("html-to-pdf", { name: "HTML to PDF", accepts: [".html", ".htm"] });
+  assert.throws(() => assertMinimumFileCount(merge, 1), /Add 1 more/);
+  assert.throws(() => assertMinimumFileCount(compare, 0), /Add 2 more/);
+  assert.doesNotThrow(() => assertMinimumFileCount(html, 0));
+  assert.deepEqual(validateFileSelection(html, [], []).nextFiles, []);
+  assert.doesNotThrow(() => assertMarkupLength(html, "x".repeat(500_000)));
+  assert.throws(() => assertMarkupLength(html, "x".repeat(500_001)), /500,001 characters.*500,000/s);
+  assert.equal(getTextSettingLimit(html, "html"), 500_000);
+  for (const slug of ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"]) {
+    const subject = tool(slug, { name: slug, accepts: [".pdf"] });
+    assert.equal(getToolLimits(subject).maxPageSelectionEntries, 2_000);
+    assert.match(describeToolLimits(subject).secondary, /2,000 expanded page-selection entries max/);
+  }
+});
+
+test("HTML tools require a local file or nonblank pasted markup before processing", async () => {
+  const html = tool("html-to-pdf", { name: "HTML to PDF", accepts: [".html", ".htm"] });
+  await assert.rejects(
+    () => runTool(html, [], { html: "   " }),
+    (error) => error instanceof FileLimitError
+      && error.code === "missing-html-input"
+      && /HTML file or pasted markup/.test(error.message),
+  );
+
+  const htmlImage = tool("html-to-image", { name: "HTML to Image", kind: "image", accepts: [".html", ".htm"] });
+  assert.match(describeToolLimits(htmlImage).secondary, /12 MP · 8,192 px wide · 4,096 px tall capture/);
+});
+
+test("every registered text setting accepts its exact cap and rejects one extra character", () => {
+  const policies = {
+    "split-pdf": { pages: 4096 },
+    "remove-pdf-pages": { pages: 4096 },
+    "extract-pdf-pages": { pages: 4096 },
+    "organize-pdf": { order: 4096 },
+    "watermark-pdf": { text: 200 },
+    "edit-pdf": { text: 500 },
+    "sign-pdf": { name: 200 },
+    "pdf-forms": { values: 256 * 1024, value: 10_000 },
+    "unlock-pdf": { password: 1024 },
+    "protect-pdf": { password: 1024 },
+    "watermark-image": { text: 500 },
+    "photo-editor": { text: 500 },
+    "meme-generator": { topText: 500, bottomText: 500 },
+  };
+
+  for (const [slug, settingLimits] of Object.entries(policies)) {
+    const subject = {
+      ...tool(slug, {
+        name: slug.replaceAll("-", " "),
+        kind: slug.includes("image") || slug === "photo-editor" || slug === "meme-generator" ? "image" : "pdf",
+      }),
+      settings: Object.keys(settingLimits).map((key) => ({ key, label: `${key} label` })),
+    };
+
+    for (const [key, maxLength] of Object.entries(settingLimits)) {
+      assert.equal(getTextSettingLimit(subject, key), maxLength, `${slug}.${key} should expose its UI cap`);
+      assert.doesNotThrow(() => assertTextSettingLengths(subject, { [key]: "x".repeat(maxLength) }));
+      assert.throws(
+        () => assertTextSettingLengths(subject, { [key]: "x".repeat(maxLength + 1) }),
+        (error) => error instanceof FileLimitError
+          && error.code === "text-setting-too-long"
+          && error.message.includes(`${key} label`)
+          && error.message.includes(maxLength.toLocaleString()),
+        `${slug}.${key} should reject a one-character overflow`,
+      );
+    }
+  }
+
+  assert.equal(getTextSettingLimit("compress-pdf", "quality"), undefined);
+  assert.doesNotThrow(() => assertTextSettingLengths(tool("compress-pdf"), { quality: "strong" }));
+});
+
+test("Office policies expose every archive-expansion guard in the picker copy", () => {
+  const word = tool("word-to-pdf", { name: "Word to PDF", accepts: [".docx"] });
+  const limits = getToolLimits(word);
+  assert.equal(limits.maxArchiveEntries, 2000);
+  assert.equal(limits.maxExpandedArchiveItemBytes, 25 * MiB);
+  assert.equal(limits.maxExpandedArchiveBytes, 100 * MiB);
+  assert.equal(limits.maxArchiveExpansionRatio, 20);
+  const copy = describeToolLimits(word).secondary;
+  assert.match(copy, /2,000 internal items/);
+  assert.match(copy, /25 MB per expanded item/);
+  assert.match(copy, /100 MB expanded total/);
+  assert.match(copy, /20× max expansion/);
+});
+
+test("processor-amplification budgets are exact and visible from the shared policy", () => {
+  const word = tool("word-to-pdf", { name: "Word to PDF", accepts: [".docx"] });
+  const powerpoint = tool("powerpoint-to-pdf", { name: "PowerPoint to PDF", accepts: [".pptx"] });
+  const excel = tool("excel-to-pdf", { name: "Excel to PDF", accepts: [".xlsx"] });
+  const compare = tool("compare-pdf", { name: "Compare PDF" });
+  const forms = tool("pdf-forms", { name: "PDF Forms" });
+  const organize = tool("organize-pdf", { name: "Organize PDF" });
+
+  assert.equal(getToolLimits(word).maxExtractedCharactersTotal, 2_000_000);
+  assert.equal(getToolLimits(word).maxGeneratedPdfPages, 500);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(getToolLimits(powerpoint)).filter(([key]) => ["maxExtractedCharactersTotal", "maxPresentationSlides", "maxGeneratedPdfPages"].includes(key))),
+    { maxExtractedCharactersTotal: 1_000_000, maxGeneratedPdfPages: 500, maxPresentationSlides: 250 },
+  );
+  assert.equal(getToolLimits(excel).maxExtractedCharactersTotal, 2_000_000);
+  assert.equal(getToolLimits(excel).maxSpreadsheetSheets, 100);
+  assert.equal(getToolLimits(excel).maxSpreadsheetCellSlots, 500_000);
+  assert.equal(getToolLimits(forms).maxPdfFormFields, 1_000);
+  assert.equal(getToolLimits(organize).maxOrganizedPageMultiplier, 2);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(getToolLimits(compare)).filter(([key]) => ["maxExtractedLinesPerFile", "maxExtractedLinesTotal", "maxDiffEditLength", "maxDiffMilliseconds", "maxDiffHardMilliseconds"].includes(key))),
+    { maxExtractedLinesPerFile: 25_000, maxExtractedLinesTotal: 40_000, maxDiffEditLength: 2_000, maxDiffMilliseconds: 3_000, maxDiffHardMilliseconds: 4_000 },
+  );
+
+  assert.match(describeToolLimits(powerpoint).secondary, /1,000,000 extracted characters.*250 slides.*500 generated PDF pages/s);
+  assert.match(describeToolLimits(excel).secondary, /100 sheets.*500,000 used-range cells.*500 generated PDF pages/s);
+  assert.match(describeToolLimits(forms).secondary, /1,000 form fields/);
+  assert.match(describeToolLimits(organize).secondary, /2× source pages max output/);
+  assert.match(describeToolLimits(compare).secondary, /25,000 extracted lines\/file.*40,000 extracted lines combined.*2,000 line edits max.*3 s diff budget.*4 s hard stop/s);
+});
+
+test("central processor guards accept each exact boundary and reject one-unit overflow", () => {
+  assert.doesNotThrow(() => assertExtractedTextLength(2_000_000, "word-to-pdf", "report.docx"));
+  assert.throws(() => assertExtractedTextLength(2_000_001, "word-to-pdf", "report.docx"), /2,000,001 extracted characters.*2,000,000/s);
+  assert.doesNotThrow(() => assertPresentationSlideCount(250));
+  assert.throws(() => assertPresentationSlideCount(251), /251 slides.*250/s);
+  assert.doesNotThrow(() => assertSpreadsheetComplexity(100, 500_000));
+  assert.throws(() => assertSpreadsheetComplexity(101, 500_000), /101 sheets.*100/s);
+  assert.throws(() => assertSpreadsheetComplexity(100, 500_001), /500,001 cells.*500,000/s);
+  assert.doesNotThrow(() => assertGeneratedPdfPageCount(500, "word-to-pdf"));
+  assert.throws(() => assertGeneratedPdfPageCount(501, "word-to-pdf"), /501 PDF pages.*500/s);
+  assert.doesNotThrow(() => assertPdfFormFieldCount(1_000));
+  assert.throws(() => assertPdfFormFieldCount(1_001), /1,001 form fields.*1,000/s);
+  assert.doesNotThrow(() => assertOrganizedPageCount(1_000, 500));
+  assert.throws(() => assertOrganizedPageCount(1_001, 500), /1,001 pages.*2×.*1,000/s);
+  assert.doesNotThrow(() => assertOcrCharacterCount(16_800, 1));
+  assert.throws(() => assertOcrCharacterCount(16_801, 1), /16,801 characters.*16,800/s);
+  assert.doesNotThrow(() => assertImagePixelTotal(240_000_000, "jpg-to-pdf"));
+  assert.throws(() => assertImagePixelTotal(240_000_001, "jpg-to-pdf"), /240\.000001 MP.*240 MP/s);
+});
+
+test("Compare line counting matches jsdiff tokens and enforces per-file plus combined caps", () => {
+  assert.equal(countLogicalLines(""), 0);
+  assert.equal(countLogicalLines("one"), 1);
+  assert.equal(countLogicalLines("one\n"), 1);
+  assert.equal(countLogicalLines("one\ntwo"), 2);
+  const twentyThousandLines = `${"x\n".repeat(20_000)}`;
+  const twentyFiveThousandLines = `${"x\n".repeat(25_000)}`;
+  assert.deepEqual(assertComparisonLineCounts(twentyThousandLines, twentyThousandLines), { leftLines: 20_000, rightLines: 20_000, totalLines: 40_000 });
+  assert.throws(() => assertComparisonLineCounts(twentyFiveThousandLines, `${"x\n".repeat(15_001)}`), /40,001 extracted lines combined.*40,000/s);
+  assert.throws(() => assertComparisonLineCounts(`${"x\n".repeat(25_001)}`, "x"), /first PDF contains 25,001.*25,000/s);
+});
+
+test("Compare worker uses policy budgets, terminates on success, and maps budget aborts", async () => {
+  const makeWorker = (response) => {
+    const worker = {
+      terminated: false,
+      posted: null,
+      postMessage(payload) {
+        this.posted = payload;
+        queueMicrotask(() => this.onmessage({ data: response }));
+      },
+      terminate() { this.terminated = true; },
+    };
+    queueMicrotask(() => worker.onmessage({ data: { type: "ready" } }));
+    return worker;
+  };
+
+  const successWorker = makeWorker({ type: "result", changes: [{ value: "same" }] });
+  let settled = false;
+  const success = runBoundedLineDiff("same", "same", getToolLimits("compare-pdf"), { createWorker: () => successWorker }).then((value) => {
+    settled = true;
+    return value;
+  });
+  assert.equal(settled, false, "comparison must settle asynchronously");
+  assert.deepEqual(await success, [{ value: "same" }]);
+  assert.equal(successWorker.terminated, true);
+  assert.equal(successWorker.posted.maxEditLength, 2_000);
+  assert.equal(successWorker.posted.timeoutMs, 3_000);
+
+  const limitedWorker = makeWorker({ type: "limited" });
+  await assert.rejects(
+    () => runBoundedLineDiff("old", "new", getToolLimits("compare-pdf"), { createWorker: () => limitedWorker }),
+    (error) => error instanceof FileLimitError && error.code === "comparison-complexity-limit" && /2,000 line edits.*3 seconds/s.test(error.message),
+  );
+  assert.equal(limitedWorker.terminated, true);
+
+  const hangingWorker = makeWorker({ type: "ignored" });
+  hangingWorker.postMessage = (payload) => { hangingWorker.posted = payload; };
+  let scheduledMilliseconds;
+  let clearedTimer;
+  await assert.rejects(
+    () => runBoundedLineDiff("old", "new", getToolLimits("compare-pdf"), {
+      createWorker: () => hangingWorker,
+      setTimer: (callback, milliseconds) => {
+        scheduledMilliseconds = milliseconds;
+        queueMicrotask(callback);
+        return 42;
+      },
+      clearTimer: (timer) => { clearedTimer = timer; },
+    }),
+    (error) => error instanceof FileLimitError && error.code === "comparison-hard-timeout" && /4 seconds/s.test(error.message),
+  );
+  assert.equal(scheduledMilliseconds, 4_000);
+  assert.equal(clearedTimer, 42);
+  assert.equal(hangingWorker.terminated, true);
+});
+
+test("Unlock and Protect expose and enforce the shared 1,024-character password cap", () => {
+  assert.equal(MAX_PDF_PASSWORD_CHARACTERS, 1_024);
+  for (const [slug, name] of [["unlock-pdf", "Unlock PDF"], ["protect-pdf", "Protect PDF"]]) {
+    const subject = { ...tool(slug, { name }), settings: [{ key: "password", label: "Password" }] };
+    assert.equal(getTextSettingLimit(subject, "password"), MAX_PDF_PASSWORD_CHARACTERS);
+    assert.doesNotThrow(() => assertTextSettingLengths(subject, { password: "x".repeat(1_024) }));
+    assert.throws(() => assertTextSettingLengths(subject, { password: "x".repeat(1_025) }), /1,025 characters.*1,024/s);
+    assert.match(describeToolLimits(subject).secondary, /1,024 characters max in (current|new) password/);
+  }
+});
+
+test("the libpdf adapter rejects oversized passwords before parsing PDF bytes", async () => {
+  for (const operation of [unlockPdf, protectPdf]) {
+    await assert.rejects(
+      () => operation(new Uint8Array([1]), "x".repeat(1_025)),
+      (error) => error.code === "PASSWORD_TOO_LONG" && /1,025 characters.*1,024/s.test(error.message),
+    );
+  }
+});
+
+test("Repair, Unlock, and Protect enforce their exact byte and page boundaries", () => {
+  const policies = [
+    ["repair-pdf", "Repair PDF", 50 * MiB, 300],
+    ["unlock-pdf", "Unlock PDF", 75 * MiB, 500],
+    ["protect-pdf", "Protect PDF", 75 * MiB, 500],
+  ];
+
+  for (const [slug, name, maxBytes, maxPages] of policies) {
+    const subject = tool(slug, { name });
+    const limits = getToolLimits(subject);
+    assert.equal(limits.maxFileBytes, maxBytes);
+    assert.equal(limits.maxTotalBytes, maxBytes);
+    assert.equal(limits.maxPdfPagesPerFile, maxPages);
+
+    const exactSelection = validateFileSelection(subject, [], [file(`${slug}-exact.pdf`, maxBytes)]);
+    assert.equal(exactSelection.accepted.length, 1);
+    assert.equal(exactSelection.rejected.length, 0);
+    assert.doesNotThrow(() => validatePreflightMetadata(subject, [{ name: `${slug}-exact.pdf`, pdfPages: maxPages }]));
+
+    const byteOverflow = validateFileSelection(subject, [], [file(`${slug}-large.pdf`, maxBytes + 1)]);
+    assert.equal(byteOverflow.accepted.length, 0);
+    assert.equal(byteOverflow.rejected[0].code, "file-too-large");
+    assert.match(byteOverflow.rejected[0].message, new RegExp(`${slug}-large\\.pdf`));
+    assert.throws(
+      () => validatePreflightMetadata(subject, [{ name: `${slug}-long.pdf`, pdfPages: maxPages + 1 }]),
+      (error) => error instanceof FileLimitError
+        && error.code === "too-many-pages"
+        && error.message.includes(`${slug}-long.pdf`),
+    );
+  }
+});
+
+test("PDF metadata accepts the merge boundary and rejects per-file or combined overflow", () => {
+  const merge = tool("merge-pdf", { name: "Merge PDF" });
+  assert.deepEqual(validatePreflightMetadata(merge, [
+    { name: "a.pdf", pdfPages: 250 },
+    { name: "b.pdf", pdfPages: 250 },
+  ]), { totalPages: 500, totalPixels: 0 });
+  assert.throws(
+    () => validatePreflightMetadata(merge, [{ name: "large.pdf", pdfPages: 301 }]),
+    (error) => error instanceof FileLimitError && error.code === "too-many-pages" && /large\.pdf/.test(error.message),
+  );
+  assert.throws(
+    () => validatePreflightMetadata(merge, [{ name: "a.pdf", pdfPages: 300 }, { name: "b.pdf", pdfPages: 201 }]),
+    (error) => error.code === "too-many-total-pages" && /b\.pdf/.test(error.message),
+  );
+  for (const pdfPages of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(
+      () => validatePreflightMetadata(merge, [{ name: "invalid.pdf", pdfPages }]),
+      (error) => error instanceof FileLimitError && error.code === "invalid-page-count" && /invalid\.pdf/.test(error.message),
+    );
+  }
+});
+
+test("image and raster guards accept exact pixel limits and reject one-pixel overflow", () => {
+  const imageLimits = getToolLimits("compress-image");
+  assert.doesNotThrow(() => assertImageDimensions(4000, 4000, imageLimits, "exact.png"));
+  assert.throws(() => assertImageDimensions(4001, 4000, imageLimits, "wide.png"), /wide\.png.*16 MP/s);
+  assert.throws(() => assertImageDimensions(8193, 1, imageLimits, "edge.png"), /8,192 px/s);
+
+  const rasterLimits = getToolLimits("compress-pdf");
+  assert.doesNotThrow(() => assertRasterDimensions(4000, 4000, rasterLimits, "page 1"));
+  assert.throws(() => assertRasterDimensions(4001, 4000, rasterLimits, "page 2"), /page 2.*safe canvas limit/s);
+  assert.doesNotThrow(() => assertOutputDimensions(4000, 4000, imageLimits, "output"));
+  assert.throws(() => assertOutputDimensions(Number.NaN, 4000, imageLimits, "output"), /invalid dimensions/);
+  assert.throws(() => assertRasterDimensions(0, 4000, rasterLimits, "page 3"), /invalid render dimensions/);
+});
+
+test("aggregate decoded-pixel budgets reject the file that crosses the boundary", () => {
+  const imageTool = tool("compress-image", { name: "Compress Image", kind: "image", accepts: [".jpg", ".jpeg", ".png", ".webp"], batch: true });
+  const exact = Array.from({ length: 10 }, (_, index) => ({ name: `${index}.png`, width: 4000, height: 4000 }));
+  assert.equal(validatePreflightMetadata(imageTool, exact).totalPixels, 160_000_000);
+  assert.throws(
+    () => validatePreflightMetadata(imageTool, [...exact, { name: "overflow.png", width: 4000, height: 4000 }]),
+    (error) => error.code === "too-many-total-pixels" && /overflow\.png/.test(error.message),
+  );
+});
+
+test("image-only safeguards are visible and generated names are not silently truncated", () => {
+  const blur = tool("blur-face", { name: "Blur Face", kind: "image", accepts: [".jpg", ".png", ".webp"], batch: true });
+  assert.equal(getToolLimits(blur).maxDetectedFaces, 40);
+  assert.match(describeToolLimits(blur).secondary, /40 detected faces max/);
+
+  const convert = tool("convert-to-jpg", { name: "Convert to JPG", kind: "image", accepts: [".gif", ".tiff"], batch: true });
+  const copy = describeToolLimits(convert).secondary;
+  assert.match(copy, /1 image per TIFF file/);
+  assert.match(copy, /animated GIF\/PNG\/WebP: first frame only/);
+
+  const compress = tool("compress-image", { name: "Compress Image", kind: "image", accepts: [".jpg", ".png", ".webp"], batch: true });
+  assert.match(describeToolLimits(compress).secondary, /animated PNG\/WebP: first frame only/);
+
+  const longName = "a".repeat(180);
+  assert.equal(safeFileName(longName), longName);
+});
+
+test("generated item, page-selection, and output guards fail before unsafe expansion", () => {
+  assert.doesNotThrow(() => assertGeneratedItemCount(100, "split-pdf", "PDF files"));
+  assert.throws(() => assertGeneratedItemCount(101, "split-pdf", "PDF files"), /101 PDF files.*safe limit is 100/s);
+  assert.doesNotThrow(() => assertOutputSize(128 * MiB, "result.pdf"));
+  assert.throws(() => assertOutputSize(128 * MiB + 1, "result.pdf"), /result\.pdf.*128 MB/s);
+  assert.throws(() => assertOutputSize(Number.NaN, "result.pdf"), /invalid size/);
+  assert.throws(() => assertGeneratedItemCount(Number.NaN, "split-pdf"), /number of generated results is invalid/);
+  assert.throws(() => parsePageSelection("1,".repeat(2050), 500), /4,096 characters/);
+  assert.throws(() => parsePageSelection("1-500,1-500,1-500,1-500,1-500", 500, "all", true), /beyond 2,000 entries/);
+});
+
+test("result retention accepts exact item, count, and aggregate boundaries", () => {
+  assert.deepEqual(createResultBudget(), {
+    count: 0,
+    totalBytes: 0,
+    maxItems: MAX_GENERATED_RESULTS,
+    maxItemBytes: ARCHIVE_ITEM_LIMIT_BYTES,
+    maxTotalBytes: ARCHIVE_INPUT_LIMIT_BYTES,
+  });
+
+  const budget = createResultBudget({ maxItems: 2, maxItemBytes: 5, maxTotalBytes: 8 });
+  const maxItem = { name: "max-item.bin", blob: { size: 5 } };
+  const fillsAggregate = { name: "fills-total.bin", blob: { size: 3 } };
+  assert.equal(retainResult(budget, maxItem), maxItem);
+  assert.equal(retainResult(budget, fillsAggregate), fillsAggregate);
+  assert.deepEqual(budget, { count: 2, totalBytes: 8, maxItems: 2, maxItemBytes: 5, maxTotalBytes: 8 });
+
+  assert.throws(
+    () => retainResult(budget, { name: "third.bin", blob: { size: 0 } }),
+    (error) => error instanceof FileLimitError && error.code === "result-count-limit",
+  );
+  assert.deepEqual(budget, { count: 2, totalBytes: 8, maxItems: 2, maxItemBytes: 5, maxTotalBytes: 8 });
+
+  const itemBudget = createResultBudget({ maxItems: 2, maxItemBytes: 5, maxTotalBytes: 10 });
+  assert.throws(
+    () => retainResult(itemBudget, { name: "item-over.bin", blob: { size: 6 } }),
+    (error) => error instanceof FileLimitError && error.code === "archive-item-too-large" && /item-over\.bin/.test(error.message),
+  );
+  assert.deepEqual(itemBudget, { count: 0, totalBytes: 0, maxItems: 2, maxItemBytes: 5, maxTotalBytes: 10 });
+
+  const aggregateBudget = createResultBudget({ maxItems: 3, maxItemBytes: 5, maxTotalBytes: 8 });
+  retainResult(aggregateBudget, { name: "first.bin", blob: { size: 5 } });
+  assert.throws(
+    () => retainResult(aggregateBudget, { name: "aggregate-over.bin", blob: { size: 4 } }),
+    (error) => error instanceof FileLimitError && error.code === "archive-input-too-large" && /aggregate-over\.bin/.test(error.message),
+  );
+  assert.deepEqual(aggregateBudget, { count: 1, totalBytes: 5, maxItems: 3, maxItemBytes: 5, maxTotalBytes: 8 });
+});
+
+test("result retention fails closed for invalid budgets and result sizes", () => {
+  for (const options of [
+    { maxItems: 0 },
+    { maxItems: 1.5 },
+    { maxItems: Number.POSITIVE_INFINITY },
+    { maxItemBytes: 0 },
+    { maxItemBytes: Number.NaN },
+    { maxTotalBytes: -1 },
+    { maxTotalBytes: Number.POSITIVE_INFINITY },
+  ]) {
+    assert.throws(
+      () => createResultBudget(options),
+      (error) => error instanceof FileLimitError && error.code === "invalid-result-budget",
+    );
+  }
+
+  for (const size of [undefined, Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+    const budget = createResultBudget({ maxItems: 2, maxItemBytes: 5, maxTotalBytes: 10 });
+    assert.throws(
+      () => retainResult(budget, { name: "invalid.bin", blob: { size } }),
+      (error) => error instanceof FileLimitError && error.code === "invalid-result-size" && /invalid\.bin/.test(error.message),
+    );
+    assert.equal(budget.count, 0);
+    assert.equal(budget.totalBytes, 0);
+  }
+
+  assert.throws(
+    () => retainResult(null, { name: "orphan.bin", blob: { size: 1 } }),
+    (error) => error instanceof FileLimitError && error.code === "invalid-result-size" && /orphan\.bin/.test(error.message),
+  );
+  assert.throws(
+    () => retainResult({ ...createResultBudget(), count: Number.NaN }, { name: "bad-state.bin", blob: { size: 1 } }),
+    (error) => error instanceof FileLimitError && error.code === "invalid-result-size" && /bad-state\.bin/.test(error.message),
+  );
+});
+
+test("ZIP guards reject excessive item count, individual size, and aggregate size before compression", async () => {
+  const tiny = (index) => ({ name: `${index}.txt`, blob: { size: 1, type: "text/plain" } });
+  await assert.rejects(() => zipResults(Array.from({ length: 101 }, (_, index) => tiny(index))), /create 101 files.*safe local limit is 100/s);
+  await assert.rejects(() => zipResults([
+    { name: "large.png", blob: { size: 48 * MiB + 1, type: "image/png" } },
+    tiny(2),
+  ]), /large\.png.*48 MB per-file ZIP limit/s);
+  await assert.rejects(() => zipResults([
+    { name: "one.bin", blob: { size: 44 * MiB, type: "application/octet-stream" } },
+    { name: "two.bin", blob: { size: 44 * MiB, type: "application/octet-stream" } },
+    { name: "three.bin", blob: { size: 44 * MiB, type: "application/octet-stream" } },
+  ]), /generated files total 132 MB.*128 MB in-memory ZIP limit/s);
+});

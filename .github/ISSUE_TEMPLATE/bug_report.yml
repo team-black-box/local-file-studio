@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug report
+description: Report a reproducible problem without sharing private documents.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Local File Studio. Do not upload customer, production, confidential, or otherwise sensitive files. Use a minimal synthetic fixture with identifying content and metadata removed. Report security vulnerabilities through SECURITY.md instead of this public form.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I am not attaching or linking to a private, customer, production, or confidential document.
+          required: true
+        - label: This is not a security vulnerability that should be reported privately through SECURITY.md.
+          required: true
+  - type: input
+    id: tool
+    attributes:
+      label: Tool
+      description: Use the exact catalog name and route if possible.
+      placeholder: Add Image to PDF — #tool/add-image-to-pdf
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection state
+      options:
+        - Online after a fresh load
+        - Offline after the app shell was installed
+        - Both online and offline
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include settings and synthetic input characteristics such as format, byte size, page count, pixel dimensions, or frame count.
+      placeholder: |
+        1. Open …
+        2. Select a synthetic …
+        3. Set …
+        4. Choose …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include the complete user-facing error text. Remove file names, paths, document contents, and secrets from logs.
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: Chrome 140.0 on macOS 15.6
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Operating system and device
+      placeholder: macOS 15.6, Apple silicon, desktop
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Sanitized console details
+      description: Optional. Paste only the minimal relevant error with document data, names, paths, URLs containing tokens, and secrets removed.
