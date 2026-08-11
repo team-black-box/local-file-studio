@@ -7,6 +7,28 @@ SPDX-License-Identifier: Apache-2.0
 
 This file records intentionally deferred repository work whose prerequisites are not yet satisfied. It is not a release promise or a substitute for scoped GitHub issues. Before implementation, open a focused issue with the current technical, security, licensing, and browser-support evidence.
 
+## Public repository and security launch gate
+
+The following is a dated audit snapshot, not a promise that external settings cannot drift. Recheck GitHub live immediately before changing visibility, accepting public contributions, or connecting production hosting.
+
+### Private-repository checkpoint — 2026-08-11
+
+- The repository is private. The inspected automation token is read-only.
+- GitHub Actions requires full commit SHAs and uses a selected-actions allowlist. The hardened `CI` workflow rerun passed.
+- `main` requires the `verify` check from the `CI` workflow, one independent approving review, approval of the most recent reviewable push by someone other than its pusher, stale-approval dismissal, resolved conversations, and administrator enforcement. Linear history is required; force pushes and branch deletion are blocked.
+- Merge commits are disabled. DCO sign-off is enabled for GitHub web commits.
+- Dependency alerts and Dependabot are enabled.
+- Private vulnerability reporting is unavailable while the repository remains private. Enable and verify it after public visibility is approved and before inviting public security reports; do not invent a contact address in the meantime.
+- GitHub Secret Protection and Code Security are not enabled because their licensing or purchase has not been approved. Re-evaluate the features available under the chosen public-repository plan and obtain explicit owner approval before enabling a paid or separately licensed capability.
+
+### Remaining gate
+
+- Re-run the clean-checkout CI and local verification on the exact public candidate.
+- Re-audit Actions pins and allowlist, workflow permissions, token access, branch protection, merge/DCO settings, dependency automation, security features, repository visibility, and the configured remote immediately before launch.
+- Decide and document the approved secret-scanning/code-security posture. Treat an unavailable or unapproved feature as an explicit residual risk, not as enabled protection.
+- Obtain explicit owner authorization before making the repository public. After visibility changes, verify public vulnerability reporting and every intended public security control before soliciting contributions.
+- Keep Vercel linking, deployment, domain changes, and production promotion behind their separate approval and production-QA gates.
+
 ## Restore local HEIC/HEIF input
 
 HEIC/HEIF decoding may return to Convert to JPG only after a replacement path is demonstrably suitable for a public, local-only browser application processing untrusted files.

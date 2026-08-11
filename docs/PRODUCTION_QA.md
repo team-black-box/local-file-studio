@@ -9,10 +9,17 @@ Complete this matrix against the exact production candidate before public launch
 
 Do not test with customer, production, personal, confidential, regulated, or irreplaceable documents. Use intentionally synthetic fixtures with known page counts, text, colors, dimensions, metadata, and passwords.
 
+## Current status
+
+The GitHub repository remains private. Its hardened Actions/branch settings and latest successful CI rerun are recorded in [RELEASE_OPERATIONS.md](RELEASE_OPERATIONS.md), but automated CI does not complete any manual row below and is not public-launch or production evidence. Leave the row checkboxes open until the named candidate is exercised in the recorded browser, connection, privacy/network, and independent-result checks.
+
+Vercel previews, a production deployment, and `localfilestudio.app` checks are future gates that require separate authorization. Until then, use a local production build/preview for iteration and do not describe it as deployed production QA.
+
 ## Test record
 
 - Candidate Git commit:
-- Preview/deployment identifier and URL:
+- Environment (`local production preview`, authorized Vercel preview, or production):
+- Preview/deployment identifier and URL, if applicable:
 - Service-worker revision:
 - Tester and date:
 - Desktop browsers and operating systems:

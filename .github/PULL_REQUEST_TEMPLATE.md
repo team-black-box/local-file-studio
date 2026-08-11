@@ -20,6 +20,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - [ ] `bun install --frozen-lockfile`
 - [ ] `bun run verify`
+- [ ] This branch is up to date with `main`, and the strict required `verify` check passes on the current revision.
 - [ ] Production preview exercised in the affected desktop and mobile browsers.
 - [ ] Relevant rows in `docs/PRODUCTION_QA.md` completed.
 - [ ] Malformed and over-limit inputs fail before expensive work without exposing a partial result.
@@ -34,7 +35,14 @@ Affected QA rows, browsers, and evidence:
 
 - [ ] No dependency, binary, model, codec, font, generated bundle, or other vendored asset changed.
 - [ ] Or: provenance, exact version/source, SHA-256 checksums, reproduction notes, upstream licenses, notices, and distribution implications are included.
+- [ ] Every GitHub Action reference is pinned to a full commit SHA; workflow permissions remain read-only and cannot create or approve pull requests.
 - [ ] Every commit includes a valid DCO `Signed-off-by` trailer.
+
+## Review and merge readiness
+
+- [ ] All review conversations are resolved.
+- [ ] After the most recent reviewable push, at least one reviewer other than that pusher has approved; I understand that a new reviewable push dismisses stale approval.
+- [ ] The change can be squash- or rebase-merged with a linear history and without force-pushing or deleting `main`.
 
 ## Deployment notes
 

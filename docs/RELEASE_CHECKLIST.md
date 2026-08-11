@@ -5,11 +5,28 @@ SPDX-License-Identifier: Apache-2.0
 
 # Release checklist
 
-Use this checklist for the first repository push, the public-source transition, and production releases. Checkboxes are evidence prompts, not standing authorization for an external action.
+Use this checklist for private-repository maintenance, the public-source transition, and production releases. Checkboxes are evidence prompts, not standing authorization for an external action.
 
-## Before the first approved private push
+## Current private-repository hardening
 
-- [ ] Review the exact first-commit file list and all ignored/untracked files.
+Last verified 2026-08-11. These items describe completed GitHub settings, not public-release or production-QA approval.
+
+Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254) and successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487).
+
+- [x] Repository visibility remains private.
+- [x] GitHub Actions requires full-length commit SHA references and allows selected actions only: GitHub-owned actions are allowed, other verified creators are not, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
+- [x] The default workflow token is read-only and GitHub Actions cannot approve pull requests.
+- [x] `main` requires the strict `verify` status check, including an up-to-date branch, one independent approval, stale-review dismissal, approval after the most recent push by someone other than the pusher, resolved conversations, and linear history. The rule applies to administrators.
+- [x] Force pushes and deletion of `main` are blocked.
+- [x] Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically and pull-request branches can be updated.
+- [x] GitHub web commits require a DCO sign-off. Command-line contributors remain responsible for `git commit -s` under `CONTRIBUTING.md`.
+- [x] Dependency alerts and Dependabot security updates are enabled.
+- [x] CI was rerun successfully after the Actions and branch-rule hardening.
+- [x] Current limitations are recorded: Private Vulnerability Reporting is unavailable while the repository is private, and GitHub secret scanning/code-security features remain disabled because private-repository licensing has not been authorized.
+
+## Before any approved source update
+
+- [ ] Review the exact intended commit file list and all ignored/untracked files.
 - [ ] Exclude local documents, screenshots, design-QA artifacts, editor state, logs, credentials, `.vercel/`, build output, and unrelated user work.
 - [ ] Confirm no committed file exceeds GitHub's per-file limit and review the repository's largest assets intentionally.
 - [ ] Confirm the configured remote is the approved `team-black-box/local-file-studio` repository and no push URL differs unexpectedly.
@@ -26,12 +43,21 @@ Use this checklist for the first repository push, the public-source transition, 
 - [ ] Ensure exact upstream licenses, notices, versions, source URLs, SHA-256 hashes, and reproducible acquisition/build notes are committed where applicable.
 - [ ] Separate verified copyright/license facts from unresolved legal or patent risk; obtain qualified counsel for unresolved questions rather than representing them as cleared.
 - [ ] Confirm the canonical Apache-2.0 `LICENSE` is unchanged and third-party/generated assets do not claim first-party ownership.
-- [ ] Configure `main` branch rules, required `CI / verify`, review requirements, DCO enforcement, secret scanning, and dependency alerts.
+- [ ] Re-audit the current Actions allowlist, read-only workflow token, strict `verify` requirement, independent-review rules, administrator enforcement, linear history, and merge restrictions; do not weaken them for publication.
+- [ ] Decide how DCO sign-off will be verified for non-web commits before accepting public contributions; the current GitHub setting covers web commits only.
 - [ ] Check public issue/PR forms and `SECURITY.md` without inventing a private-reporting address or response-time promise.
 - [ ] Run the full [production QA matrix](PRODUCTION_QA.md) against the exact public candidate in supported browsers.
 - [ ] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
 - [ ] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
+
+## Immediately after an approved public visibility change
+
+- [ ] Confirm the Actions policy, branch protection, dependency alerts, Dependabot security updates, merge settings, and administrator enforcement survived the visibility change.
+- [ ] Enable GitHub Private Vulnerability Reporting and verify that `SECURITY.md` and the issue-template security route point reporters to the working private channel.
+- [ ] Re-evaluate secret-scanning and code-security availability/licensing for the public repository. Obtain owner authorization and enable the approved controls, or document the approved alternative; do not claim these controls are enabled before verification.
+- [ ] Verify DCO enforcement for command-line as well as web-based contributions before inviting external pull requests.
+- [ ] Rerun CI on the public repository and record the successful run and settings review.
 
 ## Before Vercel production and domain launch
 

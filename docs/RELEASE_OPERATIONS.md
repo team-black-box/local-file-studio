@@ -5,12 +5,12 @@ SPDX-License-Identifier: Apache-2.0
 
 # GitHub and Vercel operations
 
-This is the intended operating model for the public Local File Studio project. It does not authorize a commit, push, visibility change, Vercel link, deployment, environment change, or DNS change. A maintainer must approve each external action.
+This document separates the GitHub controls already applied to the private repository from the future public-source and production operating model. It does not authorize a commit, push, visibility change, Vercel link, deployment, environment change, or DNS change. A maintainer must approve each external action.
 
 ## Source, package, and deployment model
 
 - Canonical source repository: `https://github.com/team-black-box/local-file-studio`.
-- Default and production source branch: `main`.
+- Default source branch and intended future Vercel production source branch: `main`.
 - Runtime: a static Vite application built with the pinned Bun toolchain and frozen `bun.lock`.
 - Vercel output: `dist/client`, as declared in `vercel.json`.
 - Application backend: none. No upload endpoint, database, or runtime secret is required.
@@ -20,21 +20,47 @@ This is the intended operating model for the public Local File Studio project. I
 
 Apache-2.0 and Vercel address different layers. Apache-2.0 permits use, modification, and redistribution of covered source and built first-party code subject to its terms; Vercel serves a compiled copy of the application. Hosting the app does not change the source license, grant trademark rights, or replace the separate licenses and notices for third-party components. Keep `LICENSE`, `NOTICE`, `TRADEMARKS.md`, `THIRD_PARTY_NOTICES.md`, and component-local notices with every applicable source or binary distribution.
 
-## Repository rules before public contributions
+## Current GitHub posture: private repository
 
-Configure these rules for `main` after the first approved push and before opening the repository to contributions:
+Last verified 2026-08-11:
 
-1. Require a pull request before merge and at least one approving review.
-2. Dismiss stale approvals when code changes and require all review conversations to be resolved.
-3. Require the `CI / verify` status check to pass on the latest commit.
-4. Install or enable a DCO check and require it. Every contributed commit must contain a valid `Signed-off-by` trailer.
-5. Block force pushes and branch deletion. Do not allow routine direct pushes to `main`.
-6. Restrict rule bypass to the smallest maintainer group. Record emergency bypasses in an issue or incident note after the repository is safe.
-7. Enable dependency alerts and secret scanning supported by the repository's GitHub plan. Review automated updates through the same CI and preview flow as contributor changes.
+- Repository visibility is private.
+- Actions must use full-length commit SHA references. The repository allows selected actions only: GitHub-owned actions are allowed, actions from other verified creators are disallowed, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
+- The default workflow token has read-only permissions and workflows cannot approve pull requests.
+- `main` requires pull requests, one independent approval, dismissal of stale approvals, approval of the most recent push by someone other than its pusher, resolution of review conversations, linear history, and the strict required `verify` status check. Branches must be up to date before merge.
+- The `main` rule applies to administrators. Force pushes and branch deletion are disabled.
+- Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically, and updating pull-request branches is enabled.
+- GitHub web commits require a DCO sign-off. Contributors committing outside the web interface must use `git commit -s` as documented in `CONTRIBUTING.md`.
+- Dependency alerts and Dependabot security updates are enabled. Automated security updates must pass the same strict CI and review rules as other changes.
+- CI was rerun successfully after these settings were applied.
 
-Use squash, rebase, or merge commits only if the resulting history retains the required DCO evidence and is consistent with the repository settings. Do not make signed commits and DCO sign-off interchangeable; they attest to different things.
+Private Vulnerability Reporting is not available in the current private state. GitHub secret scanning and code-security features are also disabled because private-repository licensing has not been authorized. Do not describe any of those controls as active. Enabling paid or licensed private-repository security features requires explicit owner authorization.
+
+These repository controls reduce source-change risk; they are not evidence that the source is ready to become public or that the application has passed the production QA matrix.
+
+## Additional gates before public contributions
+
+Before inviting public issues or pull requests:
+
+1. Complete the public-release section of [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) and obtain explicit approval for the visibility change.
+2. Re-audit the Actions policy, workflow permissions, `main` rules, merge settings, dependency alerts, and Dependabot security updates after the visibility change.
+3. Enable Private Vulnerability Reporting as soon as it becomes available and verify the private reporting path from `SECURITY.md` and the issue forms.
+4. Re-evaluate secret-scanning and code-security availability/licensing in the public state. Enable only owner-approved controls and record what was actually verified.
+5. Add or verify DCO enforcement for command-line contributions; the current GitHub setting supplies sign-off for web commits only.
+6. Preserve strict `verify`, independent review, administrator enforcement, linear history, and the force-push/deletion blocks. Do not weaken these rules to simplify contribution intake.
+
+Use squash or rebase merges only if the resulting history retains the required DCO evidence. Merge commits are disabled. Do not make cryptographic commit signing and DCO sign-off interchangeable; they attest to different things.
 
 ## Change flow
+
+The current private-repository source flow is:
+
+```text
+issue -> topic branch -> pull request -> strict CI -> independent approval
+      -> squash/rebase merge to main
+```
+
+After an owner separately authorizes Vercel linking and deployment, extend it to:
 
 ```text
 issue -> topic branch -> pull request -> CI -> Vercel preview -> production QA
@@ -44,12 +70,13 @@ issue -> topic branch -> pull request -> CI -> Vercel preview -> production QA
 1. Triage the issue for privacy, data-integrity, resource-limit, compatibility, provenance, and licensing impact.
 2. Create a focused branch from current `main`; use `fix/…`, `feat/…`, `docs/…`, or another descriptive prefix.
 3. Develop with synthetic fixtures. Run `bun install --frozen-lockfile`, focused tests, and `bun run verify`.
-4. Open a pull request with signed-off commits. CI builds from checked-out repository files only.
-5. Let the Vercel Git integration create a preview for the pull request. Treat preview URLs as public enough that no secrets, customer documents, or confidential fixture data may be embedded in them.
-6. Complete affected rows in [PRODUCTION_QA.md](PRODUCTION_QA.md), including a no-upload network inspection and offline test against the production build.
-7. Merge only after CI, DCO, review, preview, and applicable legal/provenance gates pass.
-8. Produce the public deployment only from `main`, or explicitly promote the exact preview deployment already approved for that commit. Do not deploy an unreviewed working tree or arbitrary topic branch to production.
-9. Run production smoke checks on the Vercel hostname and `localfilestudio.app` when configured. Confirm the deployed commit and service-worker revision.
+4. Open a pull request with signed-off commits. CI builds from checked-out repository files only and the strict `verify` check must pass on an up-to-date branch.
+5. Obtain the required independent approval after the latest reviewable push and resolve every conversation. Merge by squash or rebase only.
+6. After Vercel is authorized, let the Git integration create a preview for the pull request. Treat preview URLs as public enough that no secrets, customer documents, or confidential fixture data may be embedded in them.
+7. Complete affected rows in [PRODUCTION_QA.md](PRODUCTION_QA.md), including a no-upload network inspection and offline test against the production build.
+8. Merge only after CI, DCO, review, applicable preview QA, and legal/provenance gates pass.
+9. Produce the public deployment only from `main`, or explicitly promote the exact preview deployment already approved for that commit. Do not deploy an unreviewed working tree or arbitrary topic branch to production.
+10. Run production smoke checks on the Vercel hostname and `localfilestudio.app` when configured. Confirm the deployed commit and service-worker revision.
 
 ## Vercel configuration
 
