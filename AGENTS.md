@@ -42,8 +42,11 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/file-utils.js`: bounded result/download helpers and cleanup utilities.
 - `public/`: PWA shell, icons, service worker, and vendored local engines.
 - `scripts/prepare-production-build.mjs`: deterministic offline precache manifest and service-worker revision injection.
+- `scripts/audit-repository.mjs`: intended-file, secret-pattern, removed-runtime, and hosting-configuration checks.
 - `scripts/verify-ocr-assets.mjs`: vendored OCR integrity checks.
 - `scripts/verify-third-party-assets.mjs`: package, native-code, license, and visual-asset provenance checks.
+- `.github/workflows/ci.yml`: read-only clean-checkout verification workflow with full-SHA-pinned actions.
+- `TASKS.md`: dated external-readiness snapshot and deferred capability gates; it is not a product roadmap.
 - `tests/`: Node tests for policy and production/offline artifacts.
 
 Keep processing logic independent of React where practical. New interfaces such as a CLI or MCP server must reuse the same catalog, policies, preflight, processors, structured errors, and local-only guarantees rather than creating a second behavior path. Isolate browser-only APIs behind small adapters and support cancellation/cleanup so non-UI callers can be added without changing tool semantics.
@@ -123,11 +126,22 @@ bun run preview
 
 `bun run verify` is the required full check. Run focused tests while iterating, then the full command before handoff. For UI or conversion changes, also inspect the production preview at relevant desktop/mobile sizes and exercise representative files, malformed inputs, boundary limits, cancellation, repeated runs, downloads, and a reload while offline.
 
+## Repository and CI security
+
+GitHub settings, token scopes, plan entitlements, and successful workflow runs are mutable external state. Verify them live before a release or visibility change, record dated readiness snapshots in `TASKS.md`, and do not present them as application behavior or permanent guarantees.
+
+- Keep workflow permissions least-privilege and read-only unless a narrowly scoped write is explicitly approved. Pin every action reference, including GitHub-owned actions, to a full commit SHA, and keep the repository's selected-actions allowlist consistent with every referenced action.
+- Preserve the protected-`main` baseline: required `verify` status check in the `CI` workflow, one independent approval, approval of the most recent reviewable push by someone other than its pusher, stale-approval dismissal, resolved conversations, administrator enforcement, linear history, and no force pushes or branch deletion.
+- Keep merge commits disabled. Retain GitHub's web-commit sign-off setting, and require every contribution to carry the DCO sign-off described in `CONTRIBUTING.md`. A cryptographically signed commit and DCO sign-off are not substitutes for one another.
+- Treat dependency alerts and Dependabot as additional signals, not replacements for the frozen install, vulnerability audit, provenance checks, or full verification.
+- Do not enable paid or separately licensed GitHub security features, change token access, weaken repository rules, alter the Actions policy, change visibility, or modify merge/security settings without explicit owner authorization.
+- Reverify all controls after the repository becomes public. Features unavailable to a private repository, including public vulnerability reporting, are future launch steps rather than current guarantees.
+
 ## Documentation, version control, and deployment
 
 Keep README setup, architecture, privacy/offline behavior, verified formats, resource limits, and known caveats aligned with the code. Record contributor workflow in `CONTRIBUTING.md`; legal and provenance facts belong in `LICENSE`, `NOTICE`, `TRADEMARKS.md`, `THIRD_PARTY_NOTICES.md`, and component-local notices.
 
-Do not stage, commit, amend, create/switch branches, push, alter remotes, open pull requests, link hosting projects, change environment variables, or deploy unless the user explicitly authorizes that action. Build and test locally without mutating unrelated files.
+Do not stage, commit, amend, create/switch branches, push, alter remotes, open pull requests, change repository or security settings, link hosting projects, change environment variables, or deploy unless the user explicitly authorizes that action. Build and test locally without mutating unrelated files.
 
 ## Definition of done
 

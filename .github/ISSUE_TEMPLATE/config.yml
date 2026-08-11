@@ -3,6 +3,6 @@
 
 blank_issues_enabled: false
 contact_links:
-  - name: Report a vulnerability privately
-    url: https://github.com/team-black-box/local-file-studio/security/advisories/new
-    about: Use GitHub's private vulnerability reporting flow; do not include sensitive details in a public issue.
+  - name: Security reporting guidance
+    url: https://github.com/team-black-box/local-file-studio/security/policy
+    about: Read the security policy before sharing vulnerability details; never include sensitive details in an issue.
