@@ -76,11 +76,11 @@ import {
   WrenchIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { categories, categoryById, tools } from "./tools.js";
+import { categories, categoryById, rankToolSearchResults, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
-import { assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
+import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { runTool } from "./lib/processors.js";
 import { useProtectedPdfGate } from "./useProtectedPdfGate.js";
@@ -301,12 +301,13 @@ function Header({ kind, onKind, onHome, onSearchFocus }) {
             </nav>
           </details>
           <button className="command-button" onClick={onSearchFocus} aria-label="Focus tool search">
+            <MagnifyingGlassIcon size={16} aria-hidden="true" />
+            <span>Search tools</span>
             <kbd>⌘ K</kbd>
-            <span>Search tools or type a command</span>
           </button>
           <span className={`connectivity ${online ? "online" : "offline"}`} role="status" aria-live="polite" aria-atomic="true" title={offlineReady ? "App shell saved for offline use" : "Files are still processed locally"}>
             <span className="status-dot" aria-hidden="true" />
-            <span>{online ? (offlineReady ? "Local / Offline" : "Local / On-device") : "Local / Offline"}</span>
+            <span>{online ? "Local only" : (offlineReady ? "Offline ready" : "Offline")}</span>
           </span>
         </div>
       </div>
@@ -314,26 +315,99 @@ function Header({ kind, onKind, onHome, onSearchFocus }) {
   );
 }
 
-function Hero({ query, setQuery, searchRef, onQuickTool }) {
+function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCount, onViewAll }) {
+  const searchShellRef = useRef(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const hasQuery = Boolean(query.trim());
+
+  useEffect(() => {
+    setActiveIndex(0);
+    if (!hasQuery) setSearchOpen(false);
+  }, [hasQuery, query]);
+
+  const openResult = (tool) => {
+    setSearchOpen(false);
+    onQuickTool(tool);
+  };
+
+  const handleSearchKeyDown = (event) => {
+    if (event.key === "Escape" && searchOpen) {
+      event.preventDefault();
+      setSearchOpen(false);
+      return;
+    }
+    if (!hasQuery || !searchResults.length) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setSearchOpen(true);
+      setActiveIndex((current) => event.key === "ArrowDown"
+        ? (current + 1) % searchResults.length
+        : (current - 1 + searchResults.length) % searchResults.length);
+      return;
+    }
+    if (event.key === "Enter" && searchOpen) {
+      event.preventDefault();
+      openResult(searchResults[Math.min(activeIndex, searchResults.length - 1)]);
+    }
+  };
+
   return (
     <section className="hero shell" aria-labelledby="hero-title">
       <div className="hero-copy">
         <div className="eyebrow"><LockIcon size={15} weight="bold" /> Private by default</div>
         <h1 id="hero-title"><span className="hero-line hero-line-first">Every file tool</span><span className="hero-line">you need.</span><span className="hero-line hero-line-accent">Nothing uploaded<b aria-hidden="true">.</b></span></h1>
         <p><span>Work with PDFs and images right in your browser.</span><span>Your files never leave this device—there is no account,</span><span>queue, or server copy.</span></p>
-        <label className="hero-search">
-          <MagnifyingGlassIcon size={23} aria-hidden="true" />
-          <input
-            ref={searchRef}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search tools or type a command"
-            aria-label="Search all tools"
-          />
-          {query
-            ? <button onClick={() => setQuery("")} aria-label="Clear search"><XIcon size={17} /></button>
-            : <kbd className="hero-shortcut" aria-hidden="true">⌘ K</kbd>}
-        </label>
+        <div
+          ref={searchShellRef}
+          className="hero-search-shell"
+          onBlur={(event) => { if (!searchShellRef.current?.contains(event.relatedTarget)) setSearchOpen(false); }}
+        >
+          <label className="hero-search">
+            <MagnifyingGlassIcon size={23} aria-hidden="true" />
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(event) => { setQuery(event.target.value); setSearchOpen(Boolean(event.target.value.trim())); }}
+              onFocus={() => { if (hasQuery) setSearchOpen(true); }}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search tools or type a command"
+              aria-label="Search all tools"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={searchOpen && hasQuery}
+              aria-controls="hero-search-results"
+              aria-activedescendant={searchOpen && searchResults[activeIndex] ? `hero-search-result-${searchResults[activeIndex].slug}` : undefined}
+            />
+            {query
+              ? <button type="button" onClick={() => { setQuery(""); searchRef.current?.focus(); }} aria-label="Clear search"><XIcon size={17} /></button>
+              : <kbd className="hero-shortcut" aria-hidden="true">⌘ K</kbd>}
+          </label>
+          {searchOpen && hasQuery && (
+            <div id="hero-search-results" className="hero-search-results" role="listbox" aria-label="Matching tools">
+              {searchResults.length ? searchResults.map((tool, index) => (
+                <button
+                  type="button"
+                  role="option"
+                  id={`hero-search-result-${tool.slug}`}
+                  aria-selected={index === activeIndex}
+                  className={index === activeIndex ? "active" : ""}
+                  key={tool.slug}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => openResult(tool)}
+                >
+                  <span className={`hero-result-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={19} /></span>
+                  <span><strong>{tool.name}</strong><small>{tool.description}</small></span>
+                  <b>{tool.kind === "pdf" ? "PDF" : "IMAGE"}</b>
+                </button>
+              )) : <div className="hero-search-empty" role="status"><MagnifyingGlassIcon size={18} aria-hidden="true" /><span><strong>No matching tools</strong><small>Try a format or simpler action.</small></span></div>}
+              <button type="button" className="hero-search-view-all" onClick={() => { setSearchOpen(false); onViewAll(); }} disabled={!resultCount}>
+                <span>{resultCount ? `${resultCount} matching ${resultCount === 1 ? "tool" : "tools"}` : "No tools to show"}</span>
+                <strong>View full list <ArrowRightIcon size={14} aria-hidden="true" /></strong>
+              </button>
+            </div>
+          )}
+        </div>
         <div className="hero-quick" aria-label="Popular tools">
           <span>Jump to</span>
           {["merge-pdf", "compress-pdf", "jpg-to-pdf", "compress-image"].map((slug, index) => {
@@ -1294,18 +1368,18 @@ function PdfPreviewCanvas({ document, pageIndex, limits, onState, onError }) {
       page = await document.getPage(pageIndex + 1);
       const base = page.getViewport({ scale: 1 });
       const availableWidth = Math.max(320, canvasRef.current?.parentElement?.clientWidth - 32 || 760);
-      let scale = Math.min(limits.maxPreviewRasterEdge / base.width, availableWidth / base.width);
+      let scale = Math.min(limits.maxRasterEdge / base.width, availableWidth / base.width);
       const projectedPixels = base.width * scale * base.height * scale;
-      if (projectedPixels > limits.maxPreviewRasterPixels) {
-        scale *= Math.sqrt(limits.maxPreviewRasterPixels / projectedPixels);
+      if (projectedPixels > limits.maxRasterPixels) {
+        scale *= Math.sqrt(limits.maxRasterPixels / projectedPixels);
       }
       const viewport = page.getViewport({ scale });
       const width = Math.max(1, Math.ceil(viewport.width));
       const height = Math.max(1, Math.ceil(viewport.height));
       assertRasterDimensions(width, height, {
-        maxRasterPixels: limits.maxPreviewRasterPixels,
-        maxRasterEdge: limits.maxPreviewRasterEdge,
-      }, `Merged PDF page ${pageIndex + 1} preview`);
+        maxRasterPixels: limits.maxRasterPixels,
+        maxRasterEdge: limits.maxRasterEdge,
+      }, `PDF page ${pageIndex + 1} preview`);
       const canvas = canvasRef.current;
       if (!canvas || cancelled) return;
       canvas.width = width;
@@ -1332,16 +1406,19 @@ function PdfPreviewCanvas({ document, pageIndex, limits, onState, onError }) {
     };
   }, [document, pageIndex, limits, onState, onError]);
 
-  return <canvas ref={canvasRef} className="pdf-preview-canvas" role="img" aria-label={`Preview of merged PDF page ${pageIndex + 1}`} />;
+  return <canvas ref={canvasRef} className="pdf-preview-canvas" role="img" aria-label={`Preview of PDF page ${pageIndex + 1}`} />;
 }
 
 function PdfPreviewDialog({ result, limits, onClose }) {
   const dialogRef = useRef(null);
   const titleRef = useRef(null);
+  const passwordUpdateRef = useRef(null);
   const [pdfDocument, setPdfDocument] = useState(null);
   const [pageIndex, setPageIndex] = useState(0);
   const [previewState, setPreviewState] = useState("loading");
   const [previewError, setPreviewError] = useState("");
+  const [previewPassword, setPreviewPassword] = useState("");
+  const [passwordIncorrect, setPasswordIncorrect] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -1360,6 +1437,9 @@ function PdfPreviewDialog({ result, limits, onClose }) {
     setPdfDocument(null);
     setPreviewState("loading");
     setPreviewError("");
+    setPreviewPassword("");
+    setPasswordIncorrect(false);
+    passwordUpdateRef.current = null;
     setPageIndex(0);
     (async () => {
       const blob = assertPdfPreviewResult(result, limits.maxOutputBytes);
@@ -1367,9 +1447,16 @@ function PdfPreviewDialog({ result, limits, onClose }) {
       const bytes = new Uint8Array(await blob.arrayBuffer());
       if (cancelled) return;
       loadingTask = pdfjs.getDocument({ data: bytes });
+      loadingTask.onPassword = (updatePassword, reason) => {
+        if (cancelled) return;
+        passwordUpdateRef.current = updatePassword;
+        setPasswordIncorrect(reason === 2);
+        setPreviewPassword("");
+        setPreviewState("password");
+      };
       loadedDocument = await loadingTask.promise;
-      if (!Number.isInteger(loadedDocument.numPages) || loadedDocument.numPages < 1 || loadedDocument.numPages > limits.maxPdfPagesTotal) {
-        throw new Error("The merged PDF reported an invalid page count for preview.");
+      if (!Number.isInteger(loadedDocument.numPages) || loadedDocument.numPages < 1 || loadedDocument.numPages > limits.maxPages) {
+        throw new Error(`This PDF cannot be previewed because it exceeds the ${limits.maxPages.toLocaleString()}-page local preview limit.`);
       }
       if (cancelled) {
         await destroyPdfJsDocument(loadedDocument);
@@ -1384,10 +1471,11 @@ function PdfPreviewDialog({ result, limits, onClose }) {
       loadedDocument = null;
       loadingTask = null;
       setPreviewState("error");
-      setPreviewError(error?.message || "The merged PDF could not be opened in the browser preview.");
+      setPreviewError(error?.message || "This PDF could not be opened in the browser preview.");
     });
     return () => {
       cancelled = true;
+      passwordUpdateRef.current = null;
       void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
     };
   }, [result, limits]);
@@ -1397,6 +1485,16 @@ function PdfPreviewDialog({ result, limits, onClose }) {
     setPreviewError("");
     setPreviewState("loading");
     setPageIndex(nextPage);
+  };
+  const submitPreviewPassword = (event) => {
+    event.preventDefault();
+    if (!previewPassword || typeof passwordUpdateRef.current !== "function") return;
+    const updatePassword = passwordUpdateRef.current;
+    passwordUpdateRef.current = null;
+    setPasswordIncorrect(false);
+    setPreviewState("loading");
+    updatePassword(previewPassword);
+    setPreviewPassword("");
   };
 
   return (
@@ -1413,12 +1511,12 @@ function PdfPreviewDialog({ result, limits, onClose }) {
           <div>
             <span className="pdf-preview-kicker">Local result preview</span>
             <h2 ref={titleRef} id="pdf-preview-title" tabIndex="-1">{result.name}</h2>
-            <p id="pdf-preview-description">Review merged pages here without uploading them. Download remains available for your preferred PDF viewer.</p>
+            <p id="pdf-preview-description">Review this PDF here without uploading it. Download remains available for your preferred PDF viewer.</p>
           </div>
           <button className="dialog-close" onClick={onClose} aria-label="Close PDF preview"><XIcon size={21} aria-hidden="true" /></button>
         </header>
 
-        <nav className="pdf-preview-toolbar" aria-label="Merged PDF preview pages">
+        <nav className="pdf-preview-toolbar" aria-label="PDF preview pages">
           <button onClick={() => openPage(Math.max(0, pageIndex - 1))} disabled={!pageCount || pageIndex === 0} aria-label="Preview previous page"><ArrowLeftIcon size={16} aria-hidden="true" />Previous</button>
           <span aria-live="polite">{pageCount ? `Page ${pageIndex + 1} of ${pageCount}` : "Opening PDF…"}</span>
           <button onClick={() => openPage(Math.min(pageCount - 1, pageIndex + 1))} disabled={!pageCount || pageIndex === pageCount - 1} aria-label="Preview next page">Next<ArrowRightIcon size={16} aria-hidden="true" /></button>
@@ -1435,7 +1533,16 @@ function PdfPreviewDialog({ result, limits, onClose }) {
             />
           )}
           {previewState === "loading" && <div className="pdf-preview-state" role="status"><SpinnerGapIcon size={22} className="spin" aria-hidden="true" /><strong>Rendering page locally</strong><span>No file data leaves this device.</span></div>}
-          {previewError && <div className="pdf-preview-state error" role="alert"><WarningCircleIcon size={23} weight="fill" aria-hidden="true" /><strong>Preview unavailable</strong><span>{previewError} Your merged PDF is still ready to download.</span></div>}
+          {previewState === "password" && (
+            <form className="pdf-preview-password" onSubmit={submitPreviewPassword}>
+              <LockIcon size={24} weight="duotone" aria-hidden="true" />
+              <strong>{passwordIncorrect ? "That password didn’t open this PDF" : "Password-protected PDF"}</strong>
+              <span>Enter the output password to preview it. It stays in memory only and is cleared when this preview closes.</span>
+              <label htmlFor="pdf-preview-password">PDF password</label>
+              <div><input id="pdf-preview-password" type="password" value={previewPassword} maxLength={MAX_PDF_PASSWORD_CHARACTERS} autoComplete="off" autoCapitalize="none" spellCheck="false" onChange={(event) => setPreviewPassword(event.target.value)} /><button type="submit" disabled={!previewPassword}>Open preview</button></div>
+            </form>
+          )}
+          {previewError && <div className="pdf-preview-state error" role="alert"><WarningCircleIcon size={23} weight="fill" aria-hidden="true" /><strong>Preview unavailable</strong><span>{previewError} Your PDF is still ready to download.</span></div>}
         </div>
 
         <footer className="pdf-preview-footer">
@@ -1806,7 +1913,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
                     <span><strong>{result.name}</strong><small>{formatBytes(result.size)} · {result.details}</small></span>
                     <span className="result-actions">
-                      {tool.slug === "merge-pdf" && result.type === "application/pdf" && (
+                      {isPdfPreviewResult(result) && (
                         <button onClick={(event) => openResultPreview(result, event.currentTarget)} aria-label={`Preview ${result.name}`}><EyeIcon size={16} aria-hidden="true" />Preview</button>
                       )}
                       <button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}>Download</button>
@@ -1867,7 +1974,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     {previewResult && (
       <PdfPreviewDialog
         result={previewResult}
-        limits={limits}
+        limits={PDF_PREVIEW_LIMITS}
         onClose={closeResultPreview}
       />
     )}
@@ -1877,7 +1984,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
 function ToolWorkbench(props) {
   return props.tool.slug === "add-image-to-pdf"
-    ? <PdfImageWorkbench {...props} />
+    ? <PdfImageWorkbench {...props} PreviewDialog={PdfPreviewDialog} previewLimits={PDF_PREVIEW_LIMITS} />
     : <GenericToolWorkbench {...props} />;
 }
 
@@ -2018,6 +2125,7 @@ export function App() {
       return `${tool.name} ${tool.description} ${tool.tags.join(" ")} ${categoryById[tool.category].label}`.toLowerCase().includes(needle);
     });
   }, [query, kind, category]);
+  const heroSearchResults = useMemo(() => rankToolSearchResults(filtered, query), [filtered, query]);
 
   return (
     <>
@@ -2031,7 +2139,7 @@ export function App() {
       <main>
         <div className="hero-stage">
           <img className="terminal-ruler" src="/assets/paper-terminal-ruler.png" alt="" aria-hidden="true" />
-          <Hero query={query} setQuery={setQuery} searchRef={searchRef} onQuickTool={openTool} />
+          <Hero query={query} setQuery={setQuery} searchRef={searchRef} onQuickTool={openTool} searchResults={heroSearchResults} resultCount={filtered.length} onViewAll={() => document.getElementById("tool-library")?.scrollIntoView({ block: "start", behavior: "smooth" })} />
         </div>
 
         <section className="trust-strip" aria-label="Privacy features">

@@ -10,6 +10,7 @@ import {
   GLOBAL_OUTPUT_LIMIT_BYTES,
   MAX_GENERATED_RESULTS,
   MAX_PDF_PASSWORD_CHARACTERS,
+  PDF_PREVIEW_LIMITS,
   assertComparisonLineCounts,
   assertExtractedTextLength,
   assertGeneratedItemCount,
@@ -39,7 +40,7 @@ import { runBoundedLineDiff } from "../src/lib/diff-worker-client.js";
 import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
 import { createResultBudget, createSplitPdfGroups, formatPageSelection, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
-import { tools } from "../src/tools.js";
+import { rankToolSearchResults, tools } from "../src/tools.js";
 
 const MiB = 1024 * 1024;
 
@@ -53,15 +54,25 @@ function file(name, size) {
 
 test("tool policies expose the intended exact count and byte budgets", () => {
   assert.deepEqual(
-    Object.fromEntries(Object.entries(getToolLimits("merge-pdf")).filter(([key]) => ["minFiles", "maxFiles", "maxFileBytes", "maxTotalBytes", "maxPdfPagesTotal", "maxPreviewRasterPixels", "maxPreviewRasterEdge"].includes(key))),
-    { minFiles: 2, maxFiles: 20, maxFileBytes: 50 * MiB, maxTotalBytes: 120 * MiB, maxPdfPagesTotal: 500, maxPreviewRasterPixels: 8_000_000, maxPreviewRasterEdge: 4096 },
+    Object.fromEntries(Object.entries(getToolLimits("merge-pdf")).filter(([key]) => ["minFiles", "maxFiles", "maxFileBytes", "maxTotalBytes", "maxPdfPagesTotal"].includes(key))),
+    { minFiles: 2, maxFiles: 20, maxFileBytes: 50 * MiB, maxTotalBytes: 120 * MiB, maxPdfPagesTotal: 500 },
   );
+  assert.deepEqual(PDF_PREVIEW_LIMITS, { maxOutputBytes: 128 * MiB, maxPages: 500, maxRasterPixels: 8_000_000, maxRasterEdge: 4096 });
   assert.equal(getToolLimits("compare-pdf").maxFiles, 2);
   assert.equal(getToolLimits("ocr-pdf").maxPdfPagesPerFile, 25);
   assert.equal(getToolLimits("remove-background").maxImagePixelsPerFile, 12_000_000);
   assert.equal(getToolLimits("compress-image").maxImagePixelsPerFile, 16_000_000);
   assert.equal(GLOBAL_OUTPUT_LIMIT_BYTES, 128 * MiB);
   assert.equal(ARCHIVE_INPUT_LIMIT_BYTES, 128 * MiB);
+});
+
+test("hero search ranks immediate tool matches without changing the catalog", () => {
+  assert.equal(rankToolSearchResults(tools, "ocr")[0].slug, "ocr-pdf");
+  assert.equal(rankToolSearchResults(tools, "merge")[0].slug, "merge-pdf");
+  assert.equal(rankToolSearchResults(tools, "reader")[0].slug, "ocr-pdf");
+  assert.equal(rankToolSearchResults(tools, "pdf", 2).length, 2);
+  assert.deepEqual(rankToolSearchResults(tools, "", 4), []);
+  assert.deepEqual(rankToolSearchResults(tools, "pdf", 0), []);
 });
 
 test("visible limit copy is generated from the same policy as validation", () => {
@@ -71,7 +82,6 @@ test("visible limit copy is generated from the same policy as validation", () =>
   assert.match(copy.primary, /50 MB each/);
   assert.match(copy.primary, /120 MB combined/);
   assert.match(copy.secondary, /500 pages combined/);
-  assert.match(copy.secondary, /8 MP \/ 4,096 px preview page/);
   assert.match(copy.secondary, /128 MB max result/);
 
   const split = tool("split-pdf", { name: "Split PDF" });

@@ -2802,6 +2802,17 @@ kbd {
   cursor: pointer;
 }
 
+.pdf-editor-result > .result-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.pdf-editor-result > .result-actions button {
+  grid-column: auto;
+}
+
 .settings-heading {
   display: flex;
   align-items: center;
@@ -3440,6 +3451,156 @@ kbd {
 @media (max-width: 620px) {
   .ocr-reader-actions { flex-wrap: wrap; }
   .ocr-copy-status { flex-basis: 100%; }
+}
+
+.hero-copy { z-index: 20; }
+
+.hero-search-shell {
+  position: relative;
+  width: 536px;
+  max-width: 100%;
+  margin-top: 27px;
+}
+
+.hero-search-shell .hero-search {
+  width: 100%;
+  max-width: 100%;
+  margin-top: 0;
+}
+
+.hero-search-results {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid #b8b4aa;
+  border-radius: 10px;
+  background: #fffefa;
+  box-shadow: 0 18px 46px rgba(25, 30, 31, .2);
+}
+
+.hero-search-results > button[role="option"] {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-bottom: 1px solid #e9e5dc;
+  padding: 8px 11px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hero-search-results > button[role="option"]:hover,
+.hero-search-results > button[role="option"].active {
+  background: #edf5f0;
+}
+
+.hero-search-results > button[role="option"].active {
+  box-shadow: inset 3px 0 var(--privacy);
+}
+
+.hero-result-icon {
+  --accent: var(--primary);
+  --accent-soft: var(--primary-soft);
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.hero-search-results > button[role="option"] > span:nth-child(2) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-search-results > button[role="option"] strong {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.hero-search-results > button[role="option"] small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-search-results > button[role="option"] > b {
+  border-radius: 5px;
+  padding: 3px 5px;
+  background: #f0eee8;
+  color: var(--muted-strong);
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: .06em;
+}
+
+.hero-search-empty {
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  color: var(--muted);
+}
+
+.hero-search-empty > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-search-empty strong { color: var(--ink); font-size: 11px; }
+.hero-search-empty small { margin-top: 2px; font-size: 9px; }
+
+.hero-search-view-all {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  padding: 0 12px;
+  background: #f2f0e9;
+  color: var(--muted-strong);
+  font: 9px/1 var(--mono);
+  cursor: pointer;
+}
+
+.hero-search-view-all strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--privacy);
+  font-size: 9px;
+}
+
+.hero-search-view-all:disabled {
+  cursor: default;
+  opacity: .62;
+}
+
+@media (max-width: 720px) {
+  .hero-search-shell {
+    width: 100%;
+  }
+
+  .hero-search-results > button[role="option"] {
+    min-height: 54px;
+  }
 }
 
 .setting-field select {
@@ -6124,28 +6285,37 @@ body {
 }
 
 .header-actions {
-  gap: 24px;
+  gap: 10px;
 }
 
 .command-button {
-  width: 263px;
-  min-width: 263px;
+  width: auto;
+  min-width: 176px;
   min-height: 41px;
   justify-content: flex-start;
-  gap: 11px;
+  gap: 8px;
   border-color: #c8c3b7;
   border-radius: 7px;
-  padding: 0 10px;
+  padding: 0 7px 0 12px;
   background: var(--surface);
   box-shadow: none;
   font-size: 12px;
   font-weight: 470;
 }
 
+.command-button > svg {
+  flex: 0 0 auto;
+  color: var(--primary-dark);
+}
+
+.command-button > span {
+  white-space: nowrap;
+}
+
 .command-button kbd {
-  min-width: 34px;
-  order: 0;
-  margin-left: 0;
+  min-width: 38px;
+  order: 2;
+  margin-left: auto;
   padding: 4px 6px;
   border-color: #c8c3b7;
   background: #f8f6f0;
@@ -6153,17 +6323,19 @@ body {
 }
 
 .connectivity {
-  width: 162px;
+  width: auto;
+  min-width: 112px;
   min-height: 41px;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 9px;
   border: 1px solid #c8c3b7;
   border-radius: 7px;
-  padding: 0 15px;
+  padding: 0 13px;
   background: var(--surface);
   color: var(--ink-soft);
-  font: 650 11px/1 var(--mono);
+  font: 650 10px/1 var(--mono);
   letter-spacing: 0.035em;
+  white-space: nowrap;
 }
 
 .connectivity .status-dot {
@@ -6851,10 +7023,7 @@ body {
   }
 
   .command-button kbd {
-    display: block;
-    min-width: auto;
-    border: 0;
-    padding: 0;
+    display: none;
   }
 
   .connectivity {
@@ -7289,6 +7458,76 @@ body {
 
 .pdf-preview-state.error > svg {
   color: var(--error);
+}
+
+.pdf-preview-password {
+  width: min(430px, calc(100% - 32px));
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+  border: 1px solid #c8c3b7;
+  border-radius: 9px;
+  padding: 24px;
+  background: var(--surface);
+  box-shadow: 0 12px 36px rgba(28, 30, 29, .11);
+}
+
+.pdf-preview-password > svg {
+  align-self: center;
+  color: var(--privacy);
+}
+
+.pdf-preview-password > strong,
+.pdf-preview-password > span {
+  text-align: center;
+}
+
+.pdf-preview-password > span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pdf-preview-password > label {
+  margin-top: 5px;
+  color: var(--ink-soft);
+  font: 700 10px/1 var(--mono);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.pdf-preview-password > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.pdf-preview-password input,
+.pdf-preview-password button {
+  min-height: 40px;
+  border: 1px solid #bdb8ad;
+  border-radius: 7px;
+}
+
+.pdf-preview-password input {
+  min-width: 0;
+  padding: 0 11px;
+  background: #fffefa;
+}
+
+.pdf-preview-password button {
+  padding: 0 14px;
+  background: var(--privacy);
+  color: white;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.pdf-preview-password button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
 }
 
 .pdf-preview-footer {

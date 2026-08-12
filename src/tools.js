@@ -1204,4 +1204,30 @@ export const imageTools = Object.freeze(
   tools.filter((tool) => tool.kind === "image"),
 );
 
+export function rankToolSearchResults(candidates, query, limit = 4) {
+  const needle = String(query || "").trim().toLowerCase();
+  if (!needle || !Array.isArray(candidates) || !Number.isInteger(limit) || limit < 1) return [];
+  return candidates
+    .map((tool, index) => {
+      const name = tool.name.toLowerCase();
+      const tags = tool.tags.map((tag) => tag.toLowerCase());
+      const searchable = `${name} ${tool.description} ${tags.join(" ")} ${categoryById[tool.category]?.label || ""}`.toLowerCase();
+      if (!searchable.includes(needle)) return null;
+      const score = name === needle
+        ? 0
+        : name.startsWith(needle)
+          ? 1
+          : name.includes(needle)
+            ? 2
+            : tags.some((tag) => tag === needle || tag.startsWith(needle))
+              ? 3
+              : 4;
+      return { tool, index, score };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .slice(0, limit)
+    .map(({ tool }) => tool);
+}
+
 export default tools;

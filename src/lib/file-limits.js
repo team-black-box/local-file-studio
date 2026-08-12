@@ -12,6 +12,12 @@ export const MAX_GENERATED_RESULTS = 100;
 export const MAX_PAGE_SELECTION_CHARACTERS = 4_096;
 export const MAX_PAGE_SELECTION_ENTRIES = 2_000;
 export const MAX_PDF_PASSWORD_CHARACTERS = 1_024;
+export const PDF_PREVIEW_LIMITS = Object.freeze({
+  maxOutputBytes: GLOBAL_OUTPUT_LIMIT_BYTES,
+  maxPages: 500,
+  maxRasterPixels: 8 * MEGAPIXEL,
+  maxRasterEdge: 4096,
+});
 
 const DEFAULTS = Object.freeze({
   minFiles: 1,
@@ -126,8 +132,6 @@ export function getToolLimits(toolOrSlug) {
       maxTotalBytes: 120 * MIB,
       maxPdfPagesPerFile: 300,
       maxPdfPagesTotal: 500,
-      maxPreviewRasterPixels: 8 * MEGAPIXEL,
-      maxPreviewRasterEdge: 4096,
     });
   }
 
@@ -384,7 +388,6 @@ export function describeToolLimits(tool) {
   if (limits.firstFrameImageFormats) details.push(`${limits.firstFrameImageFormats}: first frame only`);
   if (limits.maxRasterPixels) details.push(`${formatPixels(limits.maxRasterPixels)} / ${limits.maxRasterEdge.toLocaleString()} px per rendered page`);
   if (limits.maxRasterPixelsTotal) details.push(`${formatPixels(limits.maxRasterPixelsTotal)} rendered per job`);
-  if (limits.maxPreviewRasterPixels) details.push(`${formatPixels(limits.maxPreviewRasterPixels)} / ${limits.maxPreviewRasterEdge.toLocaleString()} px preview page`);
   if (limits.maxExtractedCharactersTotal) details.push(`${limits.maxExtractedCharactersTotal.toLocaleString()} extracted characters`);
   if (limits.maxExtractedLinesPerFile) details.push(`${limits.maxExtractedLinesPerFile.toLocaleString()} extracted lines/file`);
   if (limits.maxExtractedLinesTotal) details.push(`${limits.maxExtractedLinesTotal.toLocaleString()} extracted lines combined`);

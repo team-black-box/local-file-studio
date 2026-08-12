@@ -17,7 +17,7 @@ import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
 import { createOcrReaderResult, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 
 const MiB = 1024 * 1024;
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -108,6 +108,15 @@ test("Merge PDF preserves selected order in a previewable PDF result", async () 
   );
 });
 
+test("JPG to PDF creates a PDF result that is eligible for the shared preview", async () => {
+  const image = namedBlob(onePixelPng, "page.png", "image/png");
+  const [result] = await processPdfTool("jpg-to-pdf", [image], { pageSize: "fit", margin: 0 });
+  assert.equal(isPdfPreviewResult(result), true);
+  assert.equal(assertPdfPreviewResult(result, result.size), result.blob);
+  const document = await PDFDocument.load(await result.blob.arrayBuffer());
+  assert.equal(document.getPageCount(), 1);
+});
+
 test("Split PDF creates the exact visually selected one-page file", async () => {
   const source = await PDFDocument.create();
   source.addPage([200, 300]);
@@ -182,6 +191,8 @@ test("PDF previews validate type and size before reading the result", () => {
   const pdf = new Blob(["%PDF"], { type: "application/pdf" });
   const result = { name: "merged-local.pdf", type: "application/pdf", blob: pdf };
   assert.equal(assertPdfPreviewResult(result, pdf.size), pdf);
+  assert.equal(isPdfPreviewResult(result), true);
+  assert.equal(isPdfPreviewResult({ ...result, type: "application/zip" }), false);
 
   assert.throws(
     () => assertPdfPreviewResult({ ...result, type: "text/plain" }, pdf.size),

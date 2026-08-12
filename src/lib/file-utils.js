@@ -115,10 +115,16 @@ export function resultFromBlob(name, blob, details = "Ready to save") {
   };
 }
 
+export function isPdfPreviewResult(result) {
+  return result?.blob instanceof Blob
+    && result?.type === "application/pdf"
+    && result.blob.type === "application/pdf";
+}
+
 export function assertPdfPreviewResult(result, maxBytes) {
   const blob = result?.blob;
   const name = result?.name || "PDF preview";
-  if (!(blob instanceof Blob) || result?.type !== "application/pdf" || blob.type !== "application/pdf") {
+  if (!isPdfPreviewResult(result)) {
     throw new FileLimitError("unsupported-preview-type", `${name} is not a valid PDF result and cannot be previewed.`);
   }
   assertOutputSize(blob.size, name, maxBytes);

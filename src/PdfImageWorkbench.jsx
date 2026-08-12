@@ -10,6 +10,7 @@ import {
   CheckCircleIcon,
   CopyIcon,
   DownloadSimpleIcon,
+  EyeIcon,
   GaugeIcon,
   ImageSquareIcon,
   MinusIcon,
@@ -153,7 +154,7 @@ function MainPageCanvas({ document, pageIndex, limits, onPageSize }) {
   return <canvas ref={canvasRef} className="pdf-editor-page-canvas" aria-label={`Preview of PDF page ${pageIndex + 1}`} />;
 }
 
-export function PdfImageWorkbench({ tool, onClose, onComplete }) {
+export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, previewLimits }) {
   const dialogRef = useRef(null);
   const titleRef = useRef(null);
   const openerRef = useRef(null);
@@ -163,6 +164,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
   const documentRef = useRef(null);
   const urlsRef = useRef(new Set());
   const interactionCleanupRef = useRef(null);
+  const previewOpenerRef = useRef(null);
   const dismissedRef = useRef(false);
   const placementsRef = useRef([]);
   const limits = useMemo(() => getToolLimits(tool), [tool]);
@@ -190,6 +192,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
   const [error, setError] = useState("");
   const [fileIssue, setFileIssue] = useState(null);
   const [results, setResults] = useState([]);
+  const [previewResult, setPreviewResult] = useState(null);
   const gateFiles = useMemo(() => pendingPdf ? [pendingPdf] : [], [pendingPdf]);
   const setGateFiles = useCallback((update) => {
     setPendingPdf((current) => {
@@ -244,6 +247,21 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
       const opener = openerRef.current;
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
       else window.document.querySelector(".hero-search input")?.focus();
+    });
+  };
+
+  const openResultPreview = (result, opener) => {
+    previewOpenerRef.current = opener;
+    if (dialogRef.current?.open) dialogRef.current.close();
+    setPreviewResult(result);
+  };
+
+  const closeResultPreview = () => {
+    const opener = previewOpenerRef.current;
+    setPreviewResult(null);
+    window.requestAnimationFrame(() => {
+      if (!dismissedRef.current && dialogRef.current && !dialogRef.current.open) dialogRef.current.showModal();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     });
   };
 
@@ -660,6 +678,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
   };
 
   return (
+    <>
     <dialog ref={dialogRef} className="workbench-dialog pdf-image-workbench" onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
@@ -806,12 +825,16 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
               </div>
 
               {results.map((result) => (
-                <div className="pdf-editor-result" key={result.id}><span><CheckCircleIcon size={20} weight="fill" /></span><span><strong>Your PDF is ready</strong><small>{result.name} · {formatBytes(result.size)}</small></span><button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}><DownloadSimpleIcon size={17} /> Download</button></div>
+                <div className="pdf-editor-result" key={result.id}><span><CheckCircleIcon size={20} weight="fill" /></span><span><strong>Your PDF is ready</strong><small>{result.name} · {formatBytes(result.size)}</small></span><span className="result-actions"><button onClick={(event) => openResultPreview(result, event.currentTarget)} aria-label={`Preview ${result.name}`}><EyeIcon size={16} /> Preview</button><button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}><DownloadSimpleIcon size={17} /> Download</button></span></div>
               ))}
             </aside>
           </div>
         )}
       </div>
     </dialog>
+    {previewResult && PreviewDialog && (
+      <PreviewDialog result={previewResult} limits={previewLimits} onClose={closeResultPreview} />
+    )}
+    </>
   );
 }
