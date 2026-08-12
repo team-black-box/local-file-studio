@@ -15,10 +15,10 @@ import {
   validatePdfOverlayPlacements,
 } from "../src/lib/file-limits.js";
 import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
-import { createOcrReaderResult, processPdfTool } from "../src/lib/pdf-processors.js";
+import { createOcrReaderResult, createTextReaderResult, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 
 const MiB = 1024 * 1024;
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -80,6 +80,37 @@ test("OCR reader results keep bounded page text in memory without a download blo
     { pageNumber: 2, text: "", confidence: 0 },
   ]);
   assert.equal(buildOcrCopyText(result.ocrPages), "PAGE 1\nFirst page\n\nPAGE 2\n[No text recognized]");
+});
+
+test("Translate and Markdown results expose complete copyable text beside optional downloads", async () => {
+  const translation = createTextReaderResult("local-notes.pdf", "[Limited glossary]\n\ndocumento privado", "translation");
+  assert.equal(translation.viewer, "translation");
+  assert.equal(translation.type, "text/plain");
+  assert.match(translation.textContent, /glossary/i);
+  assert.match(translation.textContent, /documento/i);
+  assert.equal(await translation.blob.text(), translation.textContent);
+
+  const markdown = createTextReaderResult("local-notes.pdf", "# Page 1\n\n## PRIVATE DOCUMENT", "markdown");
+  assert.equal(markdown.viewer, "markdown");
+  assert.equal(markdown.type, "text/markdown");
+  assert.match(markdown.textContent, /^# Page 1/m);
+  assert.match(markdown.textContent, /^## PRIVATE DOCUMENT/m);
+  assert.equal(await markdown.blob.text(), markdown.textContent);
+});
+
+test("Markdown preview parsing stays structural and caps only the visual preview", () => {
+  const preview = parseMarkdownPreview("# Title\n\n- One\n- Two\n\n<script>alert('no')</script>\n\n---\n\nEnd", { maxCharacters: 1_000, maxBlocks: 20 });
+  assert.deepEqual(preview.blocks, [
+    { type: "heading", level: 1, text: "Title" },
+    { type: "list", items: ["One", "Two"] },
+    { type: "paragraph", text: "<script>alert('no')</script>" },
+    { type: "divider" },
+    { type: "paragraph", text: "End" },
+  ]);
+  assert.equal(preview.truncated, false);
+  const capped = parseMarkdownPreview("# One\n\n# Two\n\n# Three", { maxCharacters: 1_000, maxBlocks: 2 });
+  assert.equal(capped.blocks.length, 2);
+  assert.equal(capped.truncated, true);
 });
 
 test("Merge PDF preserves selected order in a previewable PDF result", async () => {

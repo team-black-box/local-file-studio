@@ -203,6 +203,10 @@ export function getToolLimits(toolOrSlug) {
       maxTotalBytes: slug === "translate-pdf" ? 30 * MIB : 50 * MIB,
       maxPdfPagesPerFile: slug === "translate-pdf" ? 150 : slug === "pdf-to-powerpoint" ? 100 : 300,
       maxExtractedCharactersTotal: textLimits[slug],
+      ...(slug === "pdf-to-markdown" ? {
+        maxTextPreviewCharacters: 250_000,
+        maxTextPreviewBlocks: 1_000,
+      } : {}),
     });
   }
 

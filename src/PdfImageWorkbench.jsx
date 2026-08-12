@@ -7,6 +7,8 @@ import {
   ArrowCounterClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  ArrowsOutSimpleIcon,
+  CaretRightIcon,
   CheckCircleIcon,
   CopyIcon,
   DownloadSimpleIcon,
@@ -15,7 +17,6 @@ import {
   ImageSquareIcon,
   MinusIcon,
   PlusIcon,
-  ResizeIcon,
   ShieldCheckIcon,
   SpinnerGapIcon,
   TrashIcon,
@@ -709,7 +710,14 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
               <span className="choose-files">{loadingPdf ? "Opening locally" : "Choose PDF"}</span>
             </button>
             <input ref={pdfInputRef} hidden type="file" accept=".pdf" onChange={(event) => { choosePdf(event.target.files); event.target.value = ""; }} />
-            <div className="limits-note" role="note"><GaugeIcon size={17} /><span><strong>PDF limits</strong><span>{pdfLimitCopy.primary}</span><span className="limits-details">{pdfLimitCopy.secondary}</span></span></div>
+            <details className="limits-note">
+              <summary>
+                <GaugeIcon size={17} aria-hidden="true" />
+                <span><strong>PDF limits</strong><span>{pdfLimitCopy.primary}</span></span>
+                <span className="limits-disclosure" aria-hidden="true">Details <CaretRightIcon size={13} /></span>
+              </summary>
+              <div className="limits-details"><strong>Additional safeguards</strong><span>{pdfLimitCopy.secondary}</span></div>
+            </details>
             <PdfPasswordGate entry={passwordGate.active} password={passwordGate.password} onPasswordChange={passwordGate.setPassword} onVerify={passwordGate.verify} verifying={passwordGate.verifying} outputProtection={passwordGate.outputProtection} />
             {fileIssue && <div className="error-card file-error"><WarningCircleIcon size={20} weight="fill" /><span><strong>{fileIssue.title}</strong>{fileIssue.summary && <span>{fileIssue.summary}</span>}<ul>{fileIssue.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></span></div>}
             {error && <div className="error-card" role="alert"><WarningCircleIcon size={20} weight="fill" /><span><strong>Couldn’t open this PDF</strong>{error}</span></div>}
@@ -764,7 +772,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
                           <img src={asset.previewUrl} alt="" draggable="false" style={{ opacity: placement.opacity }} />
                           {selected && <>
                             <span className="placement-rotate-handle" onPointerDown={(event) => beginInteraction(event, placement, "rotate")} aria-hidden="true"><ArrowClockwiseIcon size={13} weight="bold" /></span>
-                            <span className="placement-resize-handle" onPointerDown={(event) => beginInteraction(event, placement, "resize")} aria-hidden="true"><ResizeIcon size={13} weight="bold" /></span>
+                            <span className="placement-resize-handle" onPointerDown={(event) => beginInteraction(event, placement, "resize")} aria-hidden="true"><ArrowsOutSimpleIcon size={14} weight="bold" mirrored /></span>
                           </>}
                         </div>
                       );

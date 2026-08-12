@@ -62,6 +62,8 @@ test("tool policies expose the intended exact count and byte budgets", () => {
   assert.equal(getToolLimits("ocr-pdf").maxPdfPagesPerFile, 25);
   assert.equal(getToolLimits("remove-background").maxImagePixelsPerFile, 12_000_000);
   assert.equal(getToolLimits("compress-image").maxImagePixelsPerFile, 16_000_000);
+  assert.equal(getToolLimits("pdf-to-markdown").maxTextPreviewCharacters, 250_000);
+  assert.equal(getToolLimits("pdf-to-markdown").maxTextPreviewBlocks, 1_000);
   assert.equal(GLOBAL_OUTPUT_LIMIT_BYTES, 128 * MiB);
   assert.equal(ARCHIVE_INPUT_LIMIT_BYTES, 128 * MiB);
 });

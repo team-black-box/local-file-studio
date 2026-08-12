@@ -79,7 +79,7 @@ import {
 import { categories, categoryById, rankToolSearchResults, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
@@ -159,6 +159,7 @@ function updatePageMetadata(tool) {
 }
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
+const inlineReaderTools = new Set(["ocr-pdf", "translate-pdf", "pdf-to-markdown"]);
 const contextualSettings = {
   "remove-pdf-pages": [
     { key: "pages", type: "text", label: "Pages to remove", default: "", hint: "Example: 1,3-5" },
@@ -1436,6 +1437,85 @@ function OcrReaderResult({ result, headingRef, onReset }) {
   );
 }
 
+function MarkdownPreview({ text, limits }) {
+  const preview = useMemo(() => parseMarkdownPreview(text, {
+    maxCharacters: limits.maxTextPreviewCharacters,
+    maxBlocks: limits.maxTextPreviewBlocks,
+  }), [limits, text]);
+
+  return (
+    <div className="markdown-preview-panel">
+      <article aria-label="Rendered Markdown preview">
+        {preview.blocks.map((block, index) => {
+          if (block.type === "divider") return <hr key={`divider-${index}`} />;
+          if (block.type === "list" || block.type === "ordered-list") {
+            const List = block.type === "ordered-list" ? "ol" : "ul";
+            return <List key={`list-${index}`}>{block.items.map((item, itemIndex) => <li key={`${index}-${itemIndex}`}>{item}</li>)}</List>;
+          }
+          if (block.type === "heading") {
+            const Heading = block.level <= 1 ? "h4" : block.level === 2 ? "h5" : "h6";
+            return <Heading key={`heading-${index}`}>{block.text}</Heading>;
+          }
+          return <p key={`paragraph-${index}`}>{block.text}</p>;
+        })}
+      </article>
+      {preview.truncated && <p className="markdown-preview-limit" role="note"><WarningCircleIcon size={16} aria-hidden="true" />This visual preview is capped for browser safety. The Text tab, Copy, and downloaded Markdown remain complete.</p>}
+    </div>
+  );
+}
+
+function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
+  const markdown = tool.slug === "pdf-to-markdown";
+  const text = String(result?.textContent || "");
+  const [activeTab, setActiveTab] = useState("text");
+  const [copyState, setCopyState] = useState({ kind: "idle", message: "" });
+  const textPanelId = `${tool.slug}-result-text`;
+  const previewPanelId = `${tool.slug}-result-preview`;
+
+  const copy = async () => {
+    try {
+      await copyOcrText(text);
+      setCopyState({ kind: "success", message: markdown ? "Markdown copied." : "Translation copied." });
+    } catch (error) {
+      setCopyState({ kind: "error", message: error?.message || "Text could not be copied." });
+    }
+  };
+
+  return (
+    <section className="ocr-reader-card text-reader-card" aria-labelledby={`${tool.slug}-reader-title`}>
+      <header className="ocr-reader-header text-reader-header">
+        <span>{markdown ? <MarkdownLogoIcon size={24} weight="duotone" aria-hidden="true" /> : <TranslateIcon size={24} weight="duotone" aria-hidden="true" />}</span>
+        <div><h3 id={`${tool.slug}-reader-title`} ref={headingRef} tabIndex="-1">{markdown ? "Markdown result" : "Translated text"}</h3><p>{result.details} · held only in this tab</p></div>
+        <b>{markdown ? "MARKDOWN" : "LOCAL"}</b>
+      </header>
+
+      {markdown && (
+        <div className="text-reader-tabs" role="tablist" aria-label="Markdown result views">
+          <button type="button" role="tab" id={`${textPanelId}-tab`} aria-controls={textPanelId} aria-selected={activeTab === "text"} onClick={() => setActiveTab("text")}><TextTIcon size={16} aria-hidden="true" />Text</button>
+          <button type="button" role="tab" id={`${previewPanelId}-tab`} aria-controls={previewPanelId} aria-selected={activeTab === "preview"} onClick={() => setActiveTab("preview")}><EyeIcon size={16} aria-hidden="true" />Preview</button>
+        </div>
+      )}
+
+      {(!markdown || activeTab === "text") && (
+        <div className="ocr-text-panel" id={textPanelId} role={markdown ? "tabpanel" : undefined} aria-labelledby={markdown ? `${textPanelId}-tab` : undefined}>
+          <label htmlFor={`${tool.slug}-result-value`}>{markdown ? "Markdown text" : "Translated text"}</label>
+          <textarea id={`${tool.slug}-result-value`} readOnly value={text} spellCheck="false" />
+        </div>
+      )}
+      {markdown && activeTab === "preview" && (
+        <div id={previewPanelId} role="tabpanel" aria-labelledby={`${previewPanelId}-tab`}><MarkdownPreview text={text} limits={limits} /></div>
+      )}
+
+      <footer className="ocr-reader-actions text-reader-actions">
+        <span className={`ocr-copy-status ${copyState.kind}`} role="status" aria-live="polite">{copyState.message || "Text stays local until you copy or download it."}</span>
+        <button type="button" onClick={() => downloadResult(result)}><DownloadSimpleIcon size={16} aria-hidden="true" />Download {markdown ? ".md" : ".txt"}</button>
+        <button type="button" className="primary" onClick={copy} disabled={!text}><FilesIcon size={16} aria-hidden="true" />Copy {markdown ? "Markdown" : "translation"}</button>
+      </footer>
+      <button className="start-another ocr-start-another" onClick={onReset}>{markdown ? "Convert another PDF" : "Translate another PDF"}</button>
+    </section>
+  );
+}
+
 function accessibleProgressMessage(phase = "") {
   if (/checking/i.test(phase)) return "Checking files against local safety limits.";
   if (/loading/i.test(phase)) return "Loading the local processing engine.";
@@ -2010,7 +2090,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <OcrReaderResult result={results[0]} headingRef={resultHeadingRef} onReset={() => { passwordGate.resetForFileChange(); clearResults(); setFiles([]); setStatus("idle"); setProcessError(""); setFileIssue(null); setQueueAnnouncement(null); }} />
             )}
 
-            {results.length > 0 && tool.slug !== "ocr-pdf" && (
+            {results.length > 0 && ["translate-pdf", "pdf-to-markdown"].includes(tool.slug) && (
+              <TextReaderResult tool={tool} result={results[0]} limits={limits} headingRef={resultHeadingRef} onReset={() => { passwordGate.resetForFileChange(); clearResults(); setFiles([]); setStatus("idle"); setProcessError(""); setFileIssue(null); setQueueAnnouncement(null); }} />
+            )}
+
+            {results.length > 0 && !inlineReaderTools.has(tool.slug) && (
               <div className="results-card">
                 <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : "Created locally. Download it before closing this tab."}</p></div></div>
                 {tool.slug === "compress-pdf" && files[0] && results[0] && (
@@ -2073,7 +2157,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {tool.slug === "extract-pdf-pages" && extractPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{settings.combine === false ? `${extractPlan.outputCount.toLocaleString()} ${extractPlan.outputCount === 1 ? "PDF" : "PDFs"} in ZIP` : "1 PDF"} ready</strong>
               )}
-              {!(tool.slug === "ocr-pdf" && results.length) && (
+              {!(inlineReaderTools.has(tool.slug) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
                   {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
                 </button>

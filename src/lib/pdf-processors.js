@@ -9,6 +9,7 @@ import {
   parsePageSelection,
   parseRemovalPageSelection,
   resultFromBlob,
+  resultFromText,
   retainResult,
   safeFileName,
   zipResults,
@@ -789,6 +790,17 @@ function markdownFromPages(pages, pageBreaks = false) {
   }).join(pageBreaks ? "\n\n---\n\n" : "\n\n");
 }
 
+export function createTextReaderResult(name, text, viewer) {
+  const safeName = safeFileName(baseName(name));
+  if (viewer === "translation") {
+    return resultFromText(`${safeName}-translation.txt`, text, "text/plain", "Device-local text translation", viewer);
+  }
+  if (viewer === "markdown") {
+    return resultFromText(`${safeName}.md`, text, "text/markdown", "Layout-aware Markdown draft", viewer);
+  }
+  throw new FileLimitError("invalid-text-viewer", "The local text result could not be prepared. Reload the app and try again.");
+}
+
 async function translateLocally(text, targetLanguage, report) {
   const TranslatorApi = globalThis.Translator || globalThis.ai?.translator;
   if (TranslatorApi?.create) {
@@ -834,10 +846,10 @@ async function intelligenceTool(slug, file, options, report) {
   }
   if (slug === "translate-pdf") {
     const translated = await translateLocally(text, options.language || options.targetLanguage || "es", report);
-    return [resultFromBlob(`${name}-translation.txt`, new Blob([translated], { type: "text/plain" }), "Device-local text translation")];
+    return [createTextReaderResult(name, translated, "translation")];
   }
   const markdown = markdownFromPages(pages, options.pageBreaks === true || options.pageBreaks === "true");
-  return [resultFromBlob(`${name}.md`, new Blob([markdown], { type: "text/markdown" }), "Layout-aware Markdown draft")];
+  return [createTextReaderResult(name, markdown, "markdown")];
 }
 
 function escapeHtml(value) {

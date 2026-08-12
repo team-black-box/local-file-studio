@@ -3563,9 +3563,99 @@ kbd {
 
 .ocr-start-another { margin-top: 2px; }
 
+.text-reader-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 12px 0;
+  background: color-mix(in srgb, var(--privacy-soft) 42%, white);
+}
+
+.text-reader-tabs button {
+  min-height: 35px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.text-reader-tabs button[aria-selected="true"] {
+  border-color: var(--control-border);
+  background: var(--surface);
+  color: var(--privacy);
+  box-shadow: inset 0 2px 0 var(--privacy);
+}
+
+.text-reader-tabs button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--privacy) 24%, transparent);
+  outline-offset: 2px;
+}
+
+.text-reader-card .ocr-text-panel textarea {
+  min-height: 300px;
+}
+
+.markdown-preview-panel {
+  padding: 12px;
+}
+
+.markdown-preview-panel article {
+  min-height: 300px;
+  max-height: 480px;
+  overflow: auto;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  padding: 20px 22px;
+  background: #fffefb;
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.markdown-preview-panel h4,
+.markdown-preview-panel h5,
+.markdown-preview-panel h6 {
+  margin: 1.2em 0 .45em;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.markdown-preview-panel h4:first-child,
+.markdown-preview-panel h5:first-child,
+.markdown-preview-panel h6:first-child { margin-top: 0; }
+.markdown-preview-panel h4 { font-size: 18px; }
+.markdown-preview-panel h5 { font-size: 14px; }
+.markdown-preview-panel h6 { font-size: 12px; }
+.markdown-preview-panel p { margin: 0 0 1em; white-space: pre-wrap; }
+.markdown-preview-panel ul,
+.markdown-preview-panel ol { margin: 0 0 1em; padding-left: 22px; }
+.markdown-preview-panel hr { margin: 22px 0; border: 0; border-top: 1px solid var(--control-border); }
+
+.markdown-preview-limit {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 9px 0 0;
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: var(--warm-soft);
+  color: var(--muted-strong);
+  font-size: 9px;
+}
+
 @media (max-width: 620px) {
   .ocr-reader-actions { flex-wrap: wrap; }
   .ocr-copy-status { flex-basis: 100%; }
+  .text-reader-actions button { flex: 1; }
+  .markdown-preview-panel article { padding: 16px; }
 }
 
 .hero-copy { z-index: 20; }

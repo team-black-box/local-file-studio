@@ -115,6 +115,74 @@ export function resultFromBlob(name, blob, details = "Ready to save") {
   };
 }
 
+export function resultFromText(name, text, type = "text/plain", details = "Ready to copy", viewer = "text") {
+  const textContent = String(text ?? "");
+  const result = resultFromBlob(name, new Blob([textContent], { type }), details);
+  return { ...result, textContent, viewer };
+}
+
+export function parseMarkdownPreview(markdown, {
+  maxCharacters = 250_000,
+  maxBlocks = 1_000,
+} = {}) {
+  const source = String(markdown ?? "").replace(/\r\n?/g, "\n");
+  const characterLimited = source.length > maxCharacters;
+  const previewSource = source.slice(0, maxCharacters);
+  const lines = previewSource.split("\n");
+  const blocks = [];
+  let index = 0;
+
+  const isBlockStart = (line) => /^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|---+\s*$)/.test(line);
+  while (index < lines.length && blocks.length < maxBlocks) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    const heading = line.match(/^\s*(#{1,6})\s+(.+)$/);
+    if (heading) {
+      blocks.push({ type: "heading", level: heading[1].length, text: heading[2] });
+      index += 1;
+      continue;
+    }
+    if (/^\s*---+\s*$/.test(line)) {
+      blocks.push({ type: "divider" });
+      index += 1;
+      continue;
+    }
+    const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      const listType = ordered ? "ordered-list" : "list";
+      const items = [];
+      while (index < lines.length) {
+        const item = listType === "ordered-list"
+          ? lines[index].match(/^\s*\d+[.)]\s+(.+)$/)
+          : lines[index].match(/^\s*[-*+]\s+(.+)$/);
+        if (!item) break;
+        items.push(item[1]);
+        index += 1;
+      }
+      blocks.push({ type: listType, items });
+      continue;
+    }
+    const paragraph = [line];
+    index += 1;
+    while (index < lines.length && lines[index].trim() && !isBlockStart(lines[index])) {
+      paragraph.push(lines[index]);
+      index += 1;
+    }
+    blocks.push({ type: "paragraph", text: paragraph.join("\n") });
+  }
+
+  return {
+    blocks,
+    truncated: characterLimited || index < lines.length,
+    sourceCharacters: source.length,
+    previewCharacters: previewSource.length,
+  };
+}
+
 export function isPdfPreviewResult(result) {
   return result?.blob instanceof Blob
     && result?.type === "application/pdf"
