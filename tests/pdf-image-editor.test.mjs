@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 import {
   FileLimitError,
@@ -185,6 +186,28 @@ test("Remove Pages keeps the unmarked pages and rejects unsafe selections", asyn
     () => processPdfTool("remove-pages", [file], { pages: "1-4" }),
     /Removing every page would create an empty PDF/,
   );
+});
+
+test("Extract Pages preserves selected order in one PDF or separate ZIP entries", async () => {
+  const source = await PDFDocument.create();
+  source.addPage([200, 300]);
+  source.addPage([210, 310]);
+  source.addPage([220, 320]);
+  source.addPage([230, 330]);
+  const file = namedBlob(await source.save(), "four-pages.pdf", "application/pdf");
+
+  const [combined] = await processPdfTool("extract-pages", [file], { pages: "4,2", combine: true });
+  const combinedPdf = await PDFDocument.load(await combined.blob.arrayBuffer());
+  assert.deepEqual(combinedPdf.getPages().map((page) => page.getWidth()), [230, 210]);
+
+  const [archive] = await processPdfTool("extract-pages", [file], { pages: "4,2", combine: false });
+  assert.equal(archive.type, "application/zip");
+  const zip = await JSZip.loadAsync(await archive.blob.arrayBuffer());
+  assert.deepEqual(Object.keys(zip.files).sort(), ["four-pages-page-2.pdf", "four-pages-page-4.pdf"]);
+  const pageFour = await PDFDocument.load(await zip.file("four-pages-page-4.pdf").async("uint8array"));
+  const pageTwo = await PDFDocument.load(await zip.file("four-pages-page-2.pdf").async("uint8array"));
+  assert.equal(pageFour.getPage(0).getWidth(), 230);
+  assert.equal(pageTwo.getPage(0).getWidth(), 210);
 });
 
 test("PDF previews validate type and size before reading the result", () => {

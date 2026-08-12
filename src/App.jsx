@@ -79,7 +79,7 @@ import {
 import { categories, categoryById, rankToolSearchResults, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
@@ -655,6 +655,19 @@ function getRemovePlan(settings, info) {
   }
 }
 
+function getExtractPlan(settings, info, limits) {
+  if (info.state === "idle") return { valid: false, selection: [], outputCount: 0, message: "Add one PDF to choose pages." };
+  if (info.state === "loading") return { valid: false, selection: [], outputCount: 0, message: "Reading the page count locally…" };
+  if (info.state === "error") return { valid: false, selection: [], outputCount: 0, message: info.message };
+  try {
+    return { valid: true, ...createExtractPagePlan(settings.pages, info.pageCount, settings.combine, limits.maxGeneratedItems), message: "" };
+  } catch (error) {
+    let selection = [];
+    try { selection = parseSplitPageSelection(settings.pages, info.pageCount); } catch { /* Keep valid over-limit selections visible when possible. */ }
+    return { valid: false, selection, outputCount: 0, message: error?.message || "Choose valid pages to extract." };
+  }
+}
+
 function PdfPageSourceStatus({ info }) {
   return (
     <div className={`split-source-status ${info.state}`} role="status" aria-live="polite">
@@ -667,6 +680,7 @@ function PdfPageSourceStatus({ info }) {
 function PageSelectionPicker({ value, pageCount, selection, onChange, intent, maxSelection, valid, document }) {
   const selected = new Set(selection);
   const isRemove = intent === "remove";
+  const isExtract = intent === "extract";
   const selectedCount = selected.size;
   const pagesPerWindow = 6;
   const [pageWindowStart, setPageWindowStart] = useState(0);
@@ -756,7 +770,7 @@ function PageSelectionPicker({ value, pageCount, selection, onChange, intent, ma
   return (
     <section className={`page-selection-picker ${isRemove ? "remove" : "include"}`} aria-labelledby={`${intent}-page-picker-title`}>
       <div className="page-selection-heading">
-        <span><strong id={`${intent}-page-picker-title`}>{isRemove ? "Choose pages to delete" : "Choose pages to split"}</strong><small>{isRemove ? "Tap page previews to mark them. Every unmarked page stays in the PDF." : "Tap page previews to include them. Each selected page becomes its own PDF."}</small></span>
+        <span><strong id={`${intent}-page-picker-title`}>{isRemove ? "Choose pages to delete" : isExtract ? "Choose pages to extract" : "Choose pages to split"}</strong><small>{isRemove ? "Tap page previews to mark them. Every unmarked page stays in the PDF." : isExtract ? "Tap the pages you want to copy into the new output." : "Tap page previews to include them. Each selected page becomes its own PDF."}</small></span>
         <b aria-live="polite">{selectionLabel}</b>
       </div>
       <div className="page-selection-actions" aria-label={isRemove ? "Quick removal selections" : "Quick page selections"}>
@@ -779,7 +793,7 @@ function PageSelectionPicker({ value, pageCount, selection, onChange, intent, ma
         className="page-selection-strip"
         ref={pageRailRef}
         role="group"
-        aria-label={`${isRemove ? "Mark pages to remove" : "Select pages to split"} from ${pageRangeLabel.toLowerCase()}`}
+        aria-label={`${isRemove ? "Mark pages to remove" : isExtract ? "Select pages to extract" : "Select pages to split"} from ${pageRangeLabel.toLowerCase()}`}
         onWheel={scrollPageRailHorizontally}
       >
         {visiblePages.map((pageIndex) => {
@@ -790,7 +804,7 @@ function PageSelectionPicker({ value, pageCount, selection, onChange, intent, ma
               key={pageIndex}
               className={`page-selection-card ${isSelected ? "selected" : ""}`}
               aria-pressed={isSelected}
-              aria-label={`Page ${pageIndex + 1}, ${isRemove ? isSelected ? "marked for removal" : "will be kept" : isSelected ? "selected for splitting" : "not selected"}`}
+              aria-label={`Page ${pageIndex + 1}, ${isRemove ? isSelected ? "marked for removal" : "will be kept" : isSelected ? isExtract ? "selected for extraction" : "selected for splitting" : "not selected"}`}
               onClick={() => togglePage(pageIndex)}
             >
               <span className="page-selection-preview">
@@ -805,7 +819,7 @@ function PageSelectionPicker({ value, pageCount, selection, onChange, intent, ma
       <details className="page-manual-entry">
         <summary><KeyboardIcon size={15} aria-hidden="true" /><span>Enter page numbers instead</span><CaretRightIcon size={13} aria-hidden="true" /></summary>
         <div className="setting-field">
-          <label htmlFor={`${intent}-page-ranges`}><strong>{isRemove ? "Pages to remove" : "Pages to split"}</strong></label>
+          <label htmlFor={`${intent}-page-ranges`}><strong>{isRemove ? "Pages to remove" : isExtract ? "Pages to extract" : "Pages to split"}</strong></label>
           <small id={`${intent}-page-ranges-description`} className="field-description">Examples: 1-4, 6, or 8-5. The page buttons stay in sync.</small>
           <input
             id={`${intent}-page-ranges`}
@@ -1119,6 +1133,59 @@ function RemovePdfControls({ settings, onChange, info, plan }) {
       <div id="remove-plan-message" className={`split-output-plan ${plan.valid ? "ready" : planIsWarning ? "warning" : "pending"}`} role={planIsWarning ? "alert" : "status"} aria-live="polite">
         {plan.valid ? <FilePdfIcon size={18} weight="duotone" aria-hidden="true" /> : <WarningCircleIcon size={18} weight="fill" aria-hidden="true" />}
         <span><strong>{plan.valid ? "Result preview" : "Choose pages"}</strong><small>{resultDescription}</small></span>
+      </div>
+    </div>
+  );
+}
+
+function ExtractPdfControls({ settings, onChange, info, plan, limits }) {
+  const separate = settings.combine === false;
+  const selectedPages = plan.selection.length;
+  const pageSequence = plan.selection.length <= 12
+    ? plan.selection.map((page) => page + 1).join(", ")
+    : `${plan.selection.slice(0, 10).map((page) => page + 1).join(", ")}, …`;
+  const resultDescription = plan.valid
+    ? separate
+      ? `${selectedPages.toLocaleString()} selected ${selectedPages === 1 ? "page becomes one PDF inside a ZIP" : "pages become separate PDFs in one ZIP"}.`
+      : `${selectedPages.toLocaleString()} selected ${selectedPages === 1 ? "page will be copied" : "pages will be copied"} into one PDF in this order: ${pageSequence}.`
+    : plan.message;
+  const planIsWarning = !plan.valid && !["idle", "loading"].includes(info.state);
+
+  return (
+    <div className="page-tool-controls extract-page-controls">
+      <PdfPageSourceStatus info={info} />
+      {info.state === "ready" && (
+        <>
+          <fieldset className="extract-output-picker">
+            <legend>How should the selected pages be saved?</legend>
+            <div>
+              <label className={!separate ? "selected" : ""}>
+                <input type="radio" name="extract-output" checked={!separate} onChange={() => onChange("combine", true)} />
+                <FilePdfIcon size={19} weight="duotone" aria-hidden="true" />
+                <span><strong>One PDF</strong><small>Keep selected pages together</small></span>
+              </label>
+              <label className={separate ? "selected" : ""}>
+                <input type="radio" name="extract-output" checked={separate} onChange={() => onChange("combine", false)} />
+                <FilesIcon size={19} weight="duotone" aria-hidden="true" />
+                <span><strong>Separate PDFs</strong><small>One PDF per page, downloaded as ZIP</small></span>
+              </label>
+            </div>
+          </fieldset>
+          <PageSelectionPicker
+            value={settings.pages}
+            pageCount={info.pageCount}
+            selection={plan.selection}
+            onChange={(value) => onChange("pages", value)}
+            intent="extract"
+            maxSelection={separate ? limits.maxGeneratedItems : undefined}
+            valid={plan.valid}
+            document={info.document}
+          />
+        </>
+      )}
+      <div id="extract-plan-message" className={`split-output-plan ${plan.valid ? "ready" : planIsWarning ? "warning" : "pending"}`} role={planIsWarning ? "alert" : "status"} aria-live="polite">
+        {plan.valid ? (separate ? <FileZipIcon size={18} weight="duotone" aria-hidden="true" /> : <FilePdfIcon size={18} weight="duotone" aria-hidden="true" />) : <WarningCircleIcon size={18} weight="fill" aria-hidden="true" />}
+        <span><strong>{plan.valid ? separate ? `${plan.outputCount.toLocaleString()} ${plan.outputCount === 1 ? "PDF" : "PDFs"} ready in ZIP` : "One PDF ready" : "Choose pages"}</strong><small>{resultDescription}</small></span>
       </div>
     </div>
   );
@@ -1617,11 +1684,12 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [fileIssue, setFileIssue] = useState(null);
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
-  const usesPagePicker = ["split-pdf", "remove-pdf-pages"].includes(tool.slug);
+  const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], usesPagePicker && passwordGate.ready, limits, tool.name);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
+  const extractPlan = useMemo(() => tool.slug === "extract-pdf-pages" ? getExtractPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
@@ -1760,7 +1828,13 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const hasRequiredInput = minFiles === 0
     ? files.length > 0 || Boolean(String(settings.html || "").trim())
     : files.length >= minFiles;
-  const pageSelectionReady = tool.slug === "split-pdf" ? Boolean(splitPlan?.valid) : tool.slug === "remove-pdf-pages" ? Boolean(removePlan?.valid) : true;
+  const pageSelectionReady = tool.slug === "split-pdf"
+    ? Boolean(splitPlan?.valid)
+    : tool.slug === "remove-pdf-pages"
+      ? Boolean(removePlan?.valid)
+      : tool.slug === "extract-pdf-pages"
+        ? Boolean(extractPlan?.valid)
+        : true;
   const compressionReady = tool.slug !== "compress-pdf" || !hasRequiredInput || compressionEstimateAllowsProcessing(activeCompressionEstimate);
   const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
@@ -1776,6 +1850,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? splitPlan?.message
     : tool.slug === "remove-pdf-pages" && !removePlan?.valid
       ? removePlan?.message
+    : tool.slug === "extract-pdf-pages" && !extractPlan?.valid
+      ? extractPlan?.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -1832,6 +1908,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       : `Create ${splitPlan.groups.length.toLocaleString()} PDFs`
     : tool.slug === "remove-pdf-pages" && removePlan?.valid
       ? `Remove ${removePlan.selection.length.toLocaleString()} ${removePlan.selection.length === 1 ? "page" : "pages"}`
+    : tool.slug === "extract-pdf-pages" && extractPlan?.valid
+      ? settings.combine === false
+        ? `Create ZIP · ${extractPlan.outputCount.toLocaleString()} ${extractPlan.outputCount === 1 ? "PDF" : "PDFs"}`
+        : `Create 1 PDF · ${extractPlan.selection.length.toLocaleString()} ${extractPlan.selection.length === 1 ? "page" : "pages"}`
     : tool.name;
 
   const updateSetting = (key, value) => {
@@ -1843,7 +1923,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : tool.slug === "remove-pdf-pages" ? "remove-pages-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages"].includes(tool.slug) ? "remove-pages-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -1857,7 +1937,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -1960,6 +2040,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
               <RemovePdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={removePlan} />
+            ) : tool.slug === "extract-pdf-pages" ? (
+              <ExtractPdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={extractPlan} limits={limits} />
             ) : tool.slug === "compress-pdf" ? (
               <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
             ) : settingsList.length ? settingsList.map((setting) => (
@@ -1987,6 +2069,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {processError && <div className="error-card" role="alert"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><strong>Couldn’t finish that job</strong>{processError}</span></div>}
               {tool.slug === "split-pdf" && splitPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{splitPlan.groups.length.toLocaleString()} {splitPlan.groups.length === 1 ? "PDF" : "PDFs"} ready</strong>
+              )}
+              {tool.slug === "extract-pdf-pages" && extractPlan?.valid && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{settings.combine === false ? `${extractPlan.outputCount.toLocaleString()} ${extractPlan.outputCount === 1 ? "PDF" : "PDFs"} in ZIP` : "1 PDF"} ready</strong>
               )}
               {!(tool.slug === "ocr-pdf" && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>

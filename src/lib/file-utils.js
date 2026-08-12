@@ -305,6 +305,29 @@ export function parseSplitPageSelection(value, pageCount) {
   return pages;
 }
 
+export function createExtractPagePlan(value, pageCount, combine, maxGeneratedItems) {
+  let selection;
+  try {
+    selection = parseSplitPageSelection(value, pageCount);
+  } catch (error) {
+    if (error instanceof FileLimitError && error.code === "missing-page-selection") {
+      throw new FileLimitError("missing-page-selection", "Choose at least one page to extract.");
+    }
+    throw error;
+  }
+  const outputCount = combine === false ? selection.length : 1;
+  if (combine === false && (!Number.isInteger(maxGeneratedItems) || maxGeneratedItems < 1)) {
+    throw new FileLimitError("invalid-generated-item-limit", "The generated-file safeguard is unavailable. Reload the tool and try again.");
+  }
+  if (combine === false && outputCount > maxGeneratedItems) {
+    throw new FileLimitError(
+      "too-many-generated-items",
+      `This would create ${outputCount.toLocaleString()} PDF files. Select up to ${maxGeneratedItems.toLocaleString()} pages, or combine them into one PDF.`,
+    );
+  }
+  return { selection, outputCount, combine: combine !== false };
+}
+
 function parseSplitBreaks(value, pageCount) {
   const raw = String(value || "").trim();
   if (!raw) return [];

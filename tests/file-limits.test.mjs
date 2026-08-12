@@ -38,7 +38,7 @@ import {
 } from "../src/lib/file-limits.js";
 import { runBoundedLineDiff } from "../src/lib/diff-worker-client.js";
 import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
-import { createResultBudget, createSplitPdfGroups, formatPageSelection, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
+import { createExtractPagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { rankToolSearchResults, tools } from "../src/tools.js";
 
@@ -500,6 +500,21 @@ test("Split PDF presets create understandable output groups and custom dividers 
   assert.throws(() => createSplitPdfGroups("custom", 6, "3,,5"), /empty entry.*not a valid split point/s);
   assert.throws(() => createSplitPdfGroups("custom", 6, "6"), /cannot be a split point/s);
   assert.throws(() => createSplitPdfGroups("even", 1), /no even-numbered pages/s);
+});
+
+test("Extract Pages plans combined and separate outputs from one strict visual selection", () => {
+  assert.deepEqual(
+    createExtractPagePlan("1,3-5", 8, true, 100),
+    { selection: [0, 2, 3, 4], outputCount: 1, combine: true },
+  );
+  assert.deepEqual(
+    createExtractPagePlan("1,3-5", 8, false, 4),
+    { selection: [0, 2, 3, 4], outputCount: 4, combine: false },
+  );
+  assert.throws(() => createExtractPagePlan("", 8, true, 100), /Choose at least one page to extract/);
+  assert.throws(() => createExtractPagePlan("2,,4", 8, true, 100), /empty entry.*not a valid page or range/s);
+  assert.throws(() => createExtractPagePlan("9", 8, true, 100), /outside this 8-page PDF/);
+  assert.throws(() => createExtractPagePlan("1-5", 8, false, 4), /create 5 PDF files.*up to 4 pages.*combine them/s);
 });
 
 test("result retention accepts exact item, count, and aggregate boundaries", () => {
