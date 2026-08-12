@@ -14,10 +14,10 @@ import {
   validatePdfOverlayPlacements,
 } from "../src/lib/file-limits.js";
 import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
-import { processPdfTool } from "../src/lib/pdf-processors.js";
+import { createOcrReaderResult, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
-import { assertPdfPreviewResult, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 
 const MiB = 1024 * 1024;
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -64,6 +64,21 @@ test("compression size summaries report reductions without hiding larger outputs
   assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "unchanged" }), false);
   assert.equal(compressionEstimateAllowsProcessing({ state: "loading" }), false);
   assert.equal(compressionEstimateAllowsProcessing({ state: "error" }), true);
+});
+
+test("OCR reader results keep bounded page text in memory without a download blob", () => {
+  const result = createOcrReaderResult("scan.pdf", [
+    { pageNumber: 1, text: "First page", confidence: 97.6 },
+    { pageNumber: 2, text: "", confidence: -5 },
+  ]);
+  assert.equal(result.type, "application/x-local-ocr-pages");
+  assert.equal(result.name, "scan text reader");
+  assert.equal(result.blob, undefined);
+  assert.deepEqual(result.ocrPages, [
+    { pageNumber: 1, text: "First page", confidence: 98 },
+    { pageNumber: 2, text: "", confidence: 0 },
+  ]);
+  assert.equal(buildOcrCopyText(result.ocrPages), "PAGE 1\nFirst page\n\nPAGE 2\n[No text recognized]");
 });
 
 test("Merge PDF preserves selected order in a previewable PDF result", async () => {

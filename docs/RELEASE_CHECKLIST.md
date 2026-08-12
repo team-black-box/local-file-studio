@@ -77,7 +77,7 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 ## After production promotion
 
 - [ ] Confirm the served build maps to the approved `main` commit.
-- [ ] Run high-value smoke tests: Merge PDF, Compress PDF, OCR PDF, Add Image to PDF, Protect/Unlock PDF, Convert to JPG with TIFF, and one standard image workflow.
+- [ ] Run high-value smoke tests: Merge PDF, Compress PDF, OCR Reader, Add Image to PDF, Protect/Unlock PDF, Convert to JPG with TIFF, and one standard image workflow.
 - [ ] Reload once online, then offline, and confirm the current service-worker revision installed completely.
 - [ ] Monitor user reports and hosting/build health without adding document-data telemetry.
 - [ ] Record final evidence, known limitations, and rollback target.

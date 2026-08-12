@@ -546,42 +546,43 @@ async function pdfToImages(file, options, report) {
 }
 
 async function ocrPdf(file, options, report) {
-  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const limits = getToolLimits("ocr-pdf");
   const rendered = await openRenderedPdf(file, options.inputPassword);
   if (rendered.numPages > limits.maxPdfPagesPerFile) {
     await destroyPdfJsDocument(rendered);
-    throw new FileLimitError("too-many-pages", `${file.name} has ${rendered.numPages} pages; OCR PDF supports ${limits.maxPdfPagesPerFile}. Split it first.`);
+    throw new FileLimitError("too-many-pages", `${file.name} has ${rendered.numPages} pages; OCR Reader supports ${limits.maxPdfPagesPerFile}. Split it first.`);
   }
   const { createWorker } = await import("tesseract.js");
-  const output = await PDFDocument.create();
-  const font = await output.embedFont(StandardFonts.Helvetica);
+  const pages = [];
+  let activeOcrPage = 0;
   const worker = await createWorker("eng", 1, {
     workerPath: "/engines/tesseract/worker.min.js",
     corePath: "/engines/tesseract",
     langPath: "/engines/tesseract",
     logger: (event) => {
-      if (event.status === "recognizing text") report?.({ phase: `Recognizing text · ${Math.round((event.progress || 0) * 100)}%`, progress: event.progress * 0.85 });
+      if (event.status === "recognizing text") {
+        const pageProgress = Math.max(0, Math.min(1, Number(event.progress || 0)));
+        report?.({
+          phase: `Recognizing page ${activeOcrPage + 1} of ${rendered.numPages} · ${Math.round(pageProgress * 100)}%`,
+          progress: (activeOcrPage + pageProgress) / rendered.numPages,
+        });
+      }
     },
   });
 
   try {
     for (let index = 0; index < rendered.numPages; index += 1) {
+      activeOcrPage = index;
       report?.({ phase: `OCR page ${index + 1} of ${rendered.numPages}`, progress: index / rendered.numPages });
       const renderedPage = await renderPdfPage(rendered, index, { scale: 1.55, quality: 0.9, limits, label: `${file.name}, page ${index + 1}` });
       try {
         const { data } = await worker.recognize(renderedPage.canvas);
-        const image = await output.embedJpg(await renderedPage.blob.arrayBuffer());
-        const sourcePage = await rendered.getPage(index + 1);
-        const viewport = sourcePage.getViewport({ scale: 1 });
-        sourcePage.cleanup();
-        const page = output.addPage([viewport.width, viewport.height]);
-        page.drawImage(image, { x: 0, y: 0, width: viewport.width, height: viewport.height });
-        const ocrText = String(data.text || "");
+        const ocrText = String(data.text || "").replace(/\r\n?/g, "\n").trim();
         assertOcrCharacterCount(ocrText.length, index + 1, limits);
-        const chunks = ocrText.replace(/\s+/g, " ").trim().match(/[\s\S]{1,140}/g) || [];
-        chunks.forEach((text, chunkIndex) => {
-          page.drawText(text, { x: 4, y: 4 + (chunkIndex % 3), size: 1, font, color: rgb(1, 1, 1), opacity: 0.01, maxWidth: viewport.width - 8 });
+        pages.push({
+          pageNumber: index + 1,
+          text: ocrText,
+          confidence: Number.isFinite(Number(data.confidence)) ? Math.max(0, Math.min(100, Math.round(Number(data.confidence)))) : null,
         });
       } finally {
         renderedPage.canvas.width = 1;
@@ -592,7 +593,23 @@ async function ocrPdf(file, options, report) {
     await worker.terminate();
     await destroyPdfJsDocument(rendered);
   }
-  return [pdfResult(`${safeFileName(baseName(file.name))}-searchable.pdf`, await output.save(), "OCR text layer added locally")];
+  return [createOcrReaderResult(file.name, pages)];
+}
+
+export function createOcrReaderResult(fileName, pages) {
+  const safePages = Array.isArray(pages) ? pages.map((page, index) => ({
+    pageNumber: Number.isInteger(page?.pageNumber) && page.pageNumber > 0 ? page.pageNumber : index + 1,
+    text: String(page?.text || ""),
+    confidence: Number.isFinite(Number(page?.confidence)) ? Math.max(0, Math.min(100, Math.round(Number(page.confidence)))) : null,
+  })) : [];
+  return {
+    id: crypto.randomUUID(),
+    name: `${safeFileName(baseName(fileName || "document"))} text reader`,
+    type: "application/x-local-ocr-pages",
+    size: safePages.reduce((sum, page) => sum + page.text.length, 0),
+    details: `${safePages.length} ${safePages.length === 1 ? "page" : "pages"} recognized locally`,
+    ocrPages: safePages,
+  };
 }
 
 function textToPdfDocument(text, title = "Local document", options = {}, toolSlug = "html-to-pdf") {
@@ -805,7 +822,7 @@ async function intelligenceTool(slug, file, options, report) {
   const limits = getToolLimits(slug);
   const pages = await extractPdfPagesText(file, options.inputPassword, report, limits.maxExtractedCharactersTotal);
   const text = pages.join("\n\n");
-  if (!text.trim()) throw new Error("No selectable text was found. Run OCR PDF first, then try again.");
+  if (!text.trim()) throw new Error("No selectable text was found. Use OCR Reader to recognize and copy scanned text page by page.");
   const name = safeFileName(baseName(file.name));
 
   if (slug === "ai-summarizer") {

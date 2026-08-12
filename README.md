@@ -16,7 +16,7 @@ The catalog provides 47 common PDF and image workflows in one independent, offli
 ### PDF — 34 actions
 
 - Organize: Merge, Split, Remove Pages, Extract Pages, Organize PDF, Scan to PDF.
-- Optimize: Compress, Repair, and English OCR.
+- Optimize: Compress, Repair, and a page-by-page English OCR reader with copyable text.
 - Convert to PDF: JPG, DOCX, PPTX, XLS/XLSX, and sanitized local HTML.
 - Convert from PDF: JPG, DOCX, PPTX, XLSX, archival rewrite, and Markdown.
 - Edit: Rotate, Page Numbers, Watermark, Crop, text annotation, visual image/signature placement, and Forms.

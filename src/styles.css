@@ -3239,6 +3239,209 @@ kbd {
   }
 }
 
+.ocr-reader-card {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid #bcded3;
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.ocr-reader-header {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #cfe5de;
+  padding: 13px;
+  background: var(--privacy-soft);
+}
+
+.ocr-reader-header > span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .72);
+  color: var(--privacy);
+}
+
+.ocr-reader-header h3,
+.ocr-reader-header p {
+  margin: 0;
+}
+
+.ocr-reader-header h3 { font-size: 13px; }
+
+.ocr-reader-header p {
+  margin-top: 2px;
+  color: #426c66;
+  font-size: 10px;
+}
+
+.ocr-reader-header > b {
+  border: 1px solid #b6d5cb;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, .6);
+  color: var(--privacy);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .08em;
+}
+
+.ocr-page-nav {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 7px 12px;
+}
+
+.ocr-page-nav button,
+.ocr-reader-actions button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: white;
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.ocr-page-nav button:disabled,
+.ocr-reader-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.ocr-page-nav > span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.ocr-page-nav small {
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.ocr-page-strip {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  scrollbar-width: thin;
+}
+
+.ocr-page-strip button {
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  border: 1px solid var(--control-border);
+  border-radius: 7px;
+  background: white;
+  color: var(--muted-strong);
+  font-family: var(--mono);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.ocr-page-strip button[aria-pressed="true"] {
+  border-color: var(--privacy);
+  background: var(--privacy);
+  color: white;
+}
+
+.ocr-text-panel { padding: 12px; }
+
+.ocr-text-panel label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted-strong);
+  font-size: 9px;
+  font-weight: 780;
+}
+
+.ocr-text-panel textarea {
+  width: 100%;
+  min-height: 210px;
+  resize: vertical;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  padding: 12px;
+  outline: 0;
+  background: #fffefb;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.ocr-text-panel textarea:focus {
+  border-color: var(--privacy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--privacy) 18%, transparent);
+}
+
+.ocr-empty-text {
+  min-height: 170px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px dashed var(--control-border);
+  border-radius: 9px;
+  color: var(--coral);
+}
+
+.ocr-empty-text > span { display: flex; flex-direction: column; }
+.ocr-empty-text strong { color: var(--ink); font-size: 11px; }
+.ocr-empty-text small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+
+.ocr-reader-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.ocr-copy-status {
+  min-width: 0;
+  flex: 1;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.ocr-copy-status.success { color: var(--privacy); }
+.ocr-copy-status.error { color: var(--coral); }
+
+.ocr-reader-actions button.primary {
+  border-color: var(--privacy);
+  background: var(--privacy);
+  color: white;
+}
+
+.ocr-start-another { margin-top: 2px; }
+
+@media (max-width: 620px) {
+  .ocr-reader-actions { flex-wrap: wrap; }
+  .ocr-copy-status { flex-basis: 100%; }
+}
+
 .setting-field select {
   appearance: auto;
 }

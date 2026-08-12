@@ -72,6 +72,15 @@ export function compressionEstimateAllowsProcessing(estimate) {
   return estimate?.state === "ready" && estimate.status === "reduced";
 }
 
+export function buildOcrCopyText(pages) {
+  if (!Array.isArray(pages)) return "";
+  return pages.map((page, index) => {
+    const pageNumber = Number.isInteger(page?.pageNumber) && page.pageNumber > 0 ? page.pageNumber : index + 1;
+    const text = String(page?.text || "").trim();
+    return `PAGE ${pageNumber}\n${text || "[No text recognized]"}`;
+  }).join("\n\n");
+}
+
 export function baseName(name = "file") {
   return name.replace(/\.[^/.]+$/, "");
 }

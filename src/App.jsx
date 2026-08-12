@@ -79,7 +79,7 @@ import {
 import { categories, categoryById, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { assertPdfPreviewResult, compressionEstimateAllowsProcessing, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { runTool } from "./lib/processors.js";
@@ -1208,6 +1208,65 @@ function CompressionResultSummary({ inputSize, result }) {
   );
 }
 
+async function copyOcrText(text) {
+  const value = String(text || "");
+  if (!value) throw new Error("There is no recognized text to copy.");
+  if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable in this browser. Select the text and copy it manually.");
+  await navigator.clipboard.writeText(value);
+}
+
+function OcrReaderResult({ result, headingRef, onReset }) {
+  const pages = result?.ocrPages || [];
+  const [pageIndex, setPageIndex] = useState(0);
+  const [copyState, setCopyState] = useState({ kind: "idle", message: "" });
+  const page = pages[pageIndex] || { pageNumber: pageIndex + 1, text: "", confidence: null };
+
+  const copy = async (kind) => {
+    const text = kind === "all" ? buildOcrCopyText(pages) : page.text;
+    try {
+      await copyOcrText(text);
+      setCopyState({ kind: "success", message: kind === "all" ? `Copied all ${pages.length} pages.` : `Copied page ${page.pageNumber}.` });
+    } catch (error) {
+      setCopyState({ kind: "error", message: error?.message || "Text could not be copied." });
+    }
+  };
+
+  const openPage = (nextIndex) => {
+    setPageIndex(Math.max(0, Math.min(pages.length - 1, nextIndex)));
+    setCopyState({ kind: "idle", message: "" });
+  };
+
+  return (
+    <section className="ocr-reader-card" aria-labelledby="ocr-reader-title">
+      <header className="ocr-reader-header">
+        <span><TextTIcon size={24} weight="duotone" aria-hidden="true" /></span>
+        <div><h3 id="ocr-reader-title" ref={headingRef} tabIndex="-1">Recognized text</h3><p>{result.details} · held only in this tab</p></div>
+        <b>ENGLISH</b>
+      </header>
+      <nav className="ocr-page-nav" aria-label="OCR reader pages">
+        <button type="button" onClick={() => openPage(pageIndex - 1)} disabled={pageIndex === 0} aria-label="Show previous recognized page"><ArrowLeftIcon size={15} aria-hidden="true" />Previous</button>
+        <span aria-live="polite"><strong>Page {page.pageNumber} of {pages.length}</strong>{page.confidence !== null && <small>{page.confidence}% recognition confidence</small>}</span>
+        <button type="button" onClick={() => openPage(pageIndex + 1)} disabled={pageIndex >= pages.length - 1} aria-label="Show next recognized page">Next<ArrowRightIcon size={15} aria-hidden="true" /></button>
+      </nav>
+      {pages.length > 1 && (
+        <div className="ocr-page-strip" role="group" aria-label="Open recognized page">
+          {pages.map((item, index) => <button key={item.pageNumber} type="button" aria-pressed={index === pageIndex} onClick={() => openPage(index)}>{item.pageNumber}</button>)}
+        </div>
+      )}
+      <div className="ocr-text-panel">
+        <label htmlFor="ocr-page-text">Page {page.pageNumber} text</label>
+        {page.text ? <textarea id="ocr-page-text" readOnly value={page.text} spellCheck="false" /> : <div className="ocr-empty-text"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><strong>No text recognized on this page</strong><small>Try a clearer scan with upright, high-contrast English text.</small></span></div>}
+      </div>
+      <footer className="ocr-reader-actions">
+        <span className={`ocr-copy-status ${copyState.kind}`} role="status" aria-live="polite">{copyState.message || "Text stays local until you copy it."}</span>
+        <button type="button" onClick={() => copy("page")} disabled={!page.text}><FilesIcon size={16} aria-hidden="true" />Copy page</button>
+        <button type="button" className="primary" onClick={() => copy("all")} disabled={!pages.some((item) => item.text)}><StackIcon size={16} aria-hidden="true" />Copy all pages</button>
+      </footer>
+      <button className="start-another ocr-start-another" onClick={onReset}>Read another PDF</button>
+    </section>
+  );
+}
+
 function accessibleProgressMessage(phase = "") {
   if (/checking/i.test(phase)) return "Checking files against local safety limits.";
   if (/loading/i.test(phase)) return "Loading the local processing engine.";
@@ -1626,7 +1685,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const dropzoneAction = files.length
     ? limits.maxFiles === 1 ? "Choose a different file" : "Add more files"
     : "Drop files here or choose files";
-  const processButtonLabel = tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
+  const processButtonLabel = tool.slug === "ocr-pdf" && hasRequiredInput
+    ? "Recognize text"
+    : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
       ? "No size reduction"
@@ -1730,7 +1791,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <PdfOutputProtectionControl control={passwordGate.outputProtection} compact />
             )}
 
-            {results.length > 0 && (
+            {results.length > 0 && tool.slug === "ocr-pdf" && (
+              <OcrReaderResult result={results[0]} headingRef={resultHeadingRef} onReset={() => { passwordGate.resetForFileChange(); clearResults(); setFiles([]); setStatus("idle"); setProcessError(""); setFileIssue(null); setQueueAnnouncement(null); }} />
+            )}
+
+            {results.length > 0 && tool.slug !== "ocr-pdf" && (
               <div className="results-card">
                 <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : "Created locally. Download it before closing this tab."}</p></div></div>
                 {tool.slug === "compress-pdf" && files[0] && results[0] && (
@@ -1788,9 +1853,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {tool.slug === "split-pdf" && splitPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{splitPlan.groups.length.toLocaleString()} {splitPlan.groups.length === 1 ? "PDF" : "PDFs"} ready</strong>
               )}
-              <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
-                {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
-              </button>
+              {!(tool.slug === "ocr-pdf" && results.length) && (
+                <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
+                  {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
+                </button>
+              )}
               {showProcessHint && <small id={processHintId} className="button-hint">{processHint}</small>}
             </div>
           </aside>
