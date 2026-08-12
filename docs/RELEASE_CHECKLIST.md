@@ -69,10 +69,16 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [ ] Verify desktop and mobile accessibility, limits/errors, cancellation, repeated runs, downloads, malformed input, offline reload, and storage-reset behavior. During an update, keep an old tab open and confirm a previously unopened lazy-loaded tool still works; close every old tab before checking that the new revision activates.
 - [ ] Verify the inline protected-PDF gate with wrong, reader, restricted-reader, owner, empty-reader, and unsupported-security fixtures across Split PDF, one structural edit, one raster/render tool, one text-conversion tool, Repair PDF, and Add Image to PDF. Confirm generated PDFs are unlocked by default; opted-in PDFs and every PDF inside Split/Extract ZIPs use the first verified non-empty password; non-PDF tools explain why protection is unavailable; no exact source-permission cloning is claimed. Confirm credentials never enter network/log/history/storage/cache/result data and are cleared after completion, reset, and error.
 - [ ] Confirm security and cache headers on HTML, hashed assets, engines, `sw.js`, `manifest.webmanifest`, and `precache-manifest.json`.
+- [ ] Confirm `/` and every one of the 47 canonical `/tools/{slug}` paths return the intended static source content and application, with unique title, description, canonical URL, social metadata, and valid `WebApplication`/breadcrumb JSON-LD.
+- [ ] Verify `sitemap.xml` has exactly the 48 canonical URLs and that `robots.txt`, `llms.txt`, and `sitemap.md` are reachable, accurate, source-controlled, and contain no secret or generated document data.
+- [ ] Confirm preview deployments are non-indexable; verify the Vercel hostname, apex domain, and explicit `www` decision cannot create unintended duplicate indexable hosts.
+- [ ] Review and approve the distinction between search/discovery and model-training crawler policy. Do not treat `llms.txt` or `robots.txt` as a guarantee that every crawler will comply.
+- [ ] Render the social image, validate representative structured data and link previews, and test canonical tool paths with JavaScript enabled and disabled.
 - [ ] Smoke-test the Vercel hostname before changing DNS.
 - [ ] Record the candidate commit/deployment and the previous known-good rollback deployment.
 - [ ] Obtain explicit approval before promotion, adding `localfilestudio.app`, or changing DNS.
 - [ ] After DNS: verify TLS, redirects, headers, manifest/service-worker scope, online processing, offline reload, and downloads on the final hostname.
+- [ ] After DNS: verify owner-controlled Search Console/Bing properties and submit the canonical sitemap without committing verification tokens or DNS secrets.
 
 ## After production promotion
 

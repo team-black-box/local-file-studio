@@ -35,6 +35,8 @@ test("emits a complete revisioned offline manifest", async () => {
   assert.ok(manifest.includes("/assets/paper-terminal-dots.png"));
   assert.ok(manifest.includes("/assets/paper-terminal-dots-short.png"));
   assert.ok(manifest.includes("/assets/paper-terminal-ruler.png"));
+  assert.ok(manifest.includes("/assets/local-file-studio-social.png"));
+  assert.ok(manifest.includes("/assets/local-file-studio-social.svg"));
 
   for (const pathname of manifest.filter((entry) => entry !== "/")) {
     await access(new URL(`../dist/client${pathname}`, import.meta.url));

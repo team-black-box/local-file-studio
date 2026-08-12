@@ -67,6 +67,14 @@ bun run preview
 
 Vercel uses the frozen-lockfile install and Bun build commands in `vercel.json`. It serves the static `dist/client` directory with SPA fallback routing, explicit cache behavior, and browser security headers; Local File Studio has no application backend or upload path.
 
+## Search and AI discovery
+
+The production build generates an indexable homepage and one static HTML entry point for every catalog tool at `/tools/{slug}`. All 47 tool pages have unique titles, descriptions, canonical URLs, social metadata, visible input/output and safeguard summaries, and `WebApplication` plus breadcrumb structured data. Legacy `#tool/{slug}` links are upgraded in the browser to the canonical path.
+
+The same build writes `sitemap.xml`, `robots.txt`, `llms.txt`, and `sitemap.md` from the checked-in catalog. Search discovery is allowed by default, including `OAI-SearchBot`; the initial policy blocks `GPTBot` because search visibility is not blanket permission for model-training crawling. Maintainers must review that policy explicitly before launch rather than changing it through a hosting-only override.
+
+This work remains open source in the same repository: metadata definitions, generation, verification, and social artwork are committed source; `dist/client` is reproducible build output and is not committed. No analytics, crawler SDK, runtime secret, server rendering service, or document-data telemetry is required. Search Console verification, sitemap submission, production-domain redirects, and crawler observations are external operational steps performed only after deployment is separately authorized.
+
 ## Offline behavior
 
 Offline mode becomes available after one successful production visit. The build emits a strict precache manifest for the HTML app shell, Vite-generated chunks, fonts, PDF worker, and bundled English OCR engine. Arbitrary requests, uploads, and generated documents are never added to Cache Storage. Local documents selected in the browser are not uploaded by the service worker.
@@ -81,7 +89,7 @@ Clearing site data, using private browsing, or browser storage eviction removes 
 bun run verify
 ```
 
-`bun run verify` checks repository hygiene and production-QA catalog coverage, validates vendored runtime assets, runs resource-limit, protected-PDF, and processor tests, creates the static production build, and verifies its offline/PWA artifacts. Responsive interaction, conversion, and offline-processing checks are also exercised manually where applicable.
+`bun run verify` checks repository hygiene and production-QA catalog coverage, validates vendored runtime assets, runs resource-limit, protected-PDF, and processor tests, creates the static production build, verifies all homepage/tool SEO and AI-discovery artifacts, and verifies offline/PWA output. Responsive interaction, conversion, crawler-source, and offline-processing checks are also exercised manually where applicable.
 
 The hardened private-repository CI rerun passed at the 2026-08-11 checkpoint. GitHub permissions, branch rules, security features, and workflow policy can change independently of this source tree, so that result is evidence for the audited revision rather than a product guarantee. The dated control snapshot and remaining public-launch gates are in [TASKS.md](TASKS.md).
 

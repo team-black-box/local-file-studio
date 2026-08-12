@@ -19,6 +19,8 @@ const verifyProduction = process.argv.includes("--production");
 
 const expectedFiles = new Map(Object.entries({
   "assets/local-file-studio-icon-source.png": "3e4eb6743d793110828cf69981fe6cd131329e8a5427e2fb7f174f5199d864d0",
+  "public/assets/local-file-studio-social.png": "5b0647891c783132b1c1373eda61e71b9ff3ce9d1b724dd856e4881b2595c04d",
+  "public/assets/local-file-studio-social.svg": "8e9838d4df613f00070dfe06e4f9e982bee271cd4e8f9baafb54c629f59bdaea",
   "public/assets/paper-terminal-dots-short.png": "0da98c7c16d8be0469fc2f6252e3f1a4f3703e913d84ff21406b7aebd481207b",
   "public/assets/paper-terminal-dots.png": "1e3105b1f386ea2a8964bc7bde2a5928aff250bf275e1e0e354accbe8d32b602",
   "public/assets/paper-terminal-ruler.png": "6343a30759edf1b876f0dd21d5e4395b2f5719529d54318b99df5b688fe832ea",

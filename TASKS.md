@@ -29,6 +29,23 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Obtain explicit owner authorization before making the repository public. After visibility changes, verify public vulnerability reporting and every intended public security control before soliciting contributions.
 - Keep Vercel linking, deployment, domain changes, and production promotion behind their separate approval and production-QA gates.
 
+## SEO and AI-discovery launch gate
+
+### Local foundation checkpoint — 2026-08-12
+
+- The source catalog now generates a crawlable homepage and 47 canonical `/tools/{slug}` pages with unique metadata, visible tool facts, social cards, and structured data.
+- `sitemap.xml`, `robots.txt`, `llms.txt`, and `sitemap.md` are deterministic production artifacts covered by `bun run test:seo`; no crawler SDK, analytics, backend, or secret is required.
+- Search discovery is initially allowed, including `OAI-SearchBot`, while `GPTBot` is blocked. This is a deliberate source-controlled starting policy, not a permanent consent or governance promise.
+- The generated output has been verified locally only. It is not evidence that the site is deployed, indexed, ranking, or approved for production.
+
+### Remaining external gate
+
+- After deployment and domain changes are separately authorized, verify that the apex domain, `www` decision, and Vercel hostname do not create uncontrolled duplicate indexable hosts; confirm canonical and redirect behavior on live responses.
+- Confirm all 48 canonical paths return the intended status, static source content, metadata, JSON-LD, security headers, and mobile/desktop application behavior. Ensure preview deployments remain non-indexable.
+- Validate and submit the production sitemap through owner-controlled Google Search Console and Bing Webmaster Tools accounts. Record verification ownership outside source; do not commit tokens or DNS secrets.
+- Validate representative pages with search-engine rich-result/schema tools and social-card debuggers, then monitor coverage and crawl errors without adding document-data telemetry.
+- Obtain explicit owner approval for the final AI-crawler policy, distinguishing search/discovery crawlers from model-training crawlers. Revisit `robots.txt` in a reviewed source change when policy changes.
+
 ## Restore local HEIC/HEIF input
 
 HEIC/HEIF decoding may return to Convert to JPG only after a replacement path is demonstrably suitable for a public, local-only browser application processing untrusted files.

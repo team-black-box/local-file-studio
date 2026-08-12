@@ -743,8 +743,123 @@ kbd {
   border-radius: inherit;
   padding: 20px;
   background: transparent;
+  color: inherit;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
+}
+
+.seo-prerender {
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 28px 0 64px;
+  color: #172027;
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+.seo-prerender > header,
+.seo-prerender > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #d8d4ca;
+  padding: 16px 0;
+}
+
+.seo-prerender > header a,
+.seo-prerender a {
+  color: #246c51;
+}
+
+.seo-prerender > article {
+  max-width: 780px;
+  padding: 72px 0 44px;
+}
+
+.seo-prerender h1 {
+  margin: 8px 0 18px;
+  font-size: clamp(40px, 7vw, 76px);
+  line-height: 1;
+  letter-spacing: -.05em;
+}
+
+.seo-prerender h2 {
+  margin: 30px 0 8px;
+  font-size: 20px;
+}
+
+.seo-prerender p {
+  color: #596168;
+  line-height: 1.65;
+}
+
+.seo-prerender .seo-kicker {
+  color: #246c51;
+  font: 700 12px/1.2 ui-monospace, monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.seo-prerender nav > section {
+  margin-top: 34px;
+}
+
+.seo-prerender ul {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seo-prerender li a {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid #d8d4ca;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fffefa;
+  color: #172027;
+  text-decoration: none;
+}
+
+.seo-prerender li span {
+  color: #6b7175;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.seo-tool-prerender > section {
+  max-width: 780px;
+}
+
+.seo-tool-prerender .seo-start {
+  min-height: 44px;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 12px;
+  border-radius: 7px;
+  padding: 0 18px;
+  background: #2f805f;
+  color: white;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.seo-tool-prerender ul {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .seo-prerender ul,
+  .seo-tool-prerender ul {
+    grid-template-columns: 1fr;
+  }
 }
 
 .tool-icon,

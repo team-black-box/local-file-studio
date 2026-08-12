@@ -10,7 +10,7 @@ const qaDocument = await readFile(
   "utf8",
 );
 
-const rowSlugs = [...qaDocument.matchAll(/^\|\s*\d+\s*\|\s*`#tool\/([^`]+)`/gm)].map(
+const rowSlugs = [...qaDocument.matchAll(/^\|\s*\d+\s*\|\s*`\/tools\/([^`]+)`/gm)].map(
   ([, slug]) => slug,
 );
 const catalogSlugs = tools.map(({ slug }) => slug);

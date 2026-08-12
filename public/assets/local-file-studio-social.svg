@@ -1,0 +1,30 @@
+<!--
+SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+SPDX-License-Identifier: Apache-2.0
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">Local File Studio</title>
+  <desc id="description">Private PDF and image tools that run on your device.</desc>
+  <rect width="1200" height="630" fill="#f5f2ea"/>
+  <path d="M0 0h1200v22H0z" fill="#2f805f"/>
+  <g fill="#c7c2b7" opacity=".65">
+    <circle cx="38" cy="70" r="3"/><circle cx="58" cy="70" r="3"/><circle cx="78" cy="70" r="3"/>
+    <circle cx="38" cy="90" r="3"/><circle cx="58" cy="90" r="3"/><circle cx="78" cy="90" r="3"/>
+    <circle cx="1122" cy="540" r="3"/><circle cx="1142" cy="540" r="3"/><circle cx="1162" cy="540" r="3"/>
+    <circle cx="1122" cy="560" r="3"/><circle cx="1142" cy="560" r="3"/><circle cx="1162" cy="560" r="3"/>
+  </g>
+  <g transform="translate(80 92)">
+    <rect width="78" height="78" rx="13" fill="#2f805f"/>
+    <path d="M23 18h23l12 12v30H23z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M46 18v13h12M31 49l8-8 7 7 6-6" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="184" y="143" fill="#172027" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="30" font-weight="700" letter-spacing="1">LOCAL FILE STUDIO</text>
+  <text x="80" y="270" fill="#172027" font-family="Manrope, Arial, sans-serif" font-size="78" font-weight="750" letter-spacing="-4">Every file tool you need.</text>
+  <text x="80" y="356" fill="#2f805f" font-family="Manrope, Arial, sans-serif" font-size="78" font-weight="750" letter-spacing="-4">Nothing uploaded.</text>
+  <text x="82" y="430" fill="#5e666b" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="25">PRIVATE PDF &amp; IMAGE TOOLS · ON-DEVICE · OFFLINE-CAPABLE</text>
+  <g transform="translate(82 500)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="700">
+    <rect width="185" height="52" rx="8" fill="#e5efe9" stroke="#9ebead"/><circle cx="25" cy="26" r="6" fill="#2f805f"/><text x="43" y="33" fill="#285d49">NO UPLOADS</text>
+    <rect x="205" width="205" height="52" rx="8" fill="#fffefa" stroke="#c7c2b7"/><text x="229" y="33" fill="#444b4f">OPEN SOURCE</text>
+  </g>
+  <text x="1118" y="591" text-anchor="end" fill="#6c736f" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">localfilestudio.app</text>
+</svg>

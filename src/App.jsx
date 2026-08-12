@@ -82,6 +82,7 @@ import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.j
 import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
+import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
 import { useProtectedPdfGate } from "./useProtectedPdfGate.js";
 
@@ -129,6 +130,33 @@ const iconMap = {
   TranslateIcon,
   WrenchIcon,
 };
+
+function toolFromLocation() {
+  const pathSlug = window.location.pathname.match(/^\/tools\/([^/]+)\/?$/)?.[1];
+  const legacySlug = window.location.hash.match(/^#tool\/(.+)$/)?.[1];
+  const slug = pathSlug || legacySlug;
+  return tools.find((tool) => tool.slug === slug) || null;
+}
+
+function updatePageMetadata(tool) {
+  const metadata = getPageMetadata(tool);
+  document.title = metadata.title;
+  const setContent = (selector, value) => document.querySelector(selector)?.setAttribute("content", value);
+  setContent("#seo-description", metadata.description);
+  setContent("#seo-og-title", metadata.title);
+  setContent("#seo-og-description", metadata.description);
+  setContent("#seo-og-url", metadata.canonical);
+  setContent("#seo-og-image", `${SITE_ORIGIN}${SOCIAL_IMAGE_PATH}`);
+  setContent("#seo-twitter-title", metadata.title);
+  setContent("#seo-twitter-description", metadata.description);
+  setContent("#seo-twitter-image", `${SITE_ORIGIN}${SOCIAL_IMAGE_PATH}`);
+  document.querySelector("#seo-canonical")?.setAttribute("href", metadata.canonical);
+  const structuredData = tool
+    ? createToolStructuredData(tool, categoryById[tool.category])
+    : createHomeStructuredData(tools.length);
+  const script = document.querySelector("#seo-structured-data");
+  if (script) script.textContent = JSON.stringify(structuredData).replaceAll("<", "\\u003c");
+}
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
 const contextualSettings = {
@@ -464,7 +492,7 @@ function ToolCard({ tool, favorite, onFavorite, onOpen, compact = false }) {
   const category = categoryById[tool.category];
   return (
     <article className={`tool-card accent-${category.accent} ${compact ? "compact" : ""}`}>
-      <button className="tool-card-main" onClick={() => onOpen(tool)} aria-label={`Open ${tool.name}`}>
+      <a className="tool-card-main" href={toolPath(tool)} onClick={(event) => { event.preventDefault(); onOpen(tool); }} aria-label={`Open ${tool.name}`}>
         <span className="tool-icon"><ToolIcon tool={tool} size={compact ? 22 : 25} /></span>
         <span className="tool-card-title-row">
           <strong>{tool.name}</strong>
@@ -476,7 +504,7 @@ function ToolCard({ tool, favorite, onFavorite, onOpen, compact = false }) {
           <span>{category.label}</span>
           {tool.maturity === "beta" && <span>Beta</span>}
         </span>
-      </button>
+      </a>
       {!compact && (
         <button className={`favorite-button ${favorite ? "selected" : ""}`} aria-pressed={favorite} onClick={() => onFavorite(tool.slug)} aria-label={`${favorite ? "Remove" : "Add"} ${tool.name} ${favorite ? "from" : "to"} favorites`}>
           <StarIcon size={17} weight={favorite ? "fill" : "regular"} />
@@ -2076,10 +2104,7 @@ export function App() {
   const [category, setCategory] = useState("all");
   const [favorites, setFavorites] = useState(() => loadLocal("lfs-favorites", []));
   const [recents, setRecents] = useState(() => loadLocal("lfs-recents", []));
-  const [selectedTool, setSelectedTool] = useState(() => {
-    const slug = window.location.hash.match(/^#tool\/(.+)$/)?.[1];
-    return tools.find((tool) => tool.slug === slug) || null;
-  });
+  const [selectedTool, setSelectedTool] = useState(toolFromLocation);
 
   useEffect(() => {
     const handleKey = (event) => {
@@ -2092,15 +2117,30 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
+  useEffect(() => {
+    const legacyTool = window.location.hash.startsWith("#tool/") ? toolFromLocation() : null;
+    if (legacyTool) window.history.replaceState(null, "", toolPath(legacyTool));
+  }, []);
+
+  useEffect(() => {
+    updatePageMetadata(selectedTool);
+  }, [selectedTool]);
+
+  useEffect(() => {
+    const handleHistory = () => setSelectedTool(toolFromLocation());
+    window.addEventListener("popstate", handleHistory);
+    return () => window.removeEventListener("popstate", handleHistory);
+  }, []);
+
   const openTool = (tool) => {
     toolOpenerRef.current = document.activeElement;
     setSelectedTool(tool);
-    window.history.replaceState(null, "", `#tool/${tool.slug}`);
+    window.history.pushState(null, "", toolPath(tool));
   };
 
   const closeTool = () => {
     setSelectedTool(null);
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    window.history.replaceState(null, "", HOME_METADATA.path);
     window.requestAnimationFrame(() => toolOpenerRef.current?.focus?.());
   };
 

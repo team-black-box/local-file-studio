@@ -132,6 +132,8 @@ SPDX ownership metadata to the binary files.
 | Asset | Provenance | SHA-256 |
 | --- | --- | --- |
 | `assets/local-file-studio-icon-source.png` | Project icon source visual | `3e4eb6743d793110828cf69981fe6cd131329e8a5427e2fb7f174f5199d864d0` |
+| `public/assets/local-file-studio-social.svg` | First-party social-card source authored for this repository | `8e9838d4df613f00070dfe06e4f9e982bee271cd4e8f9baafb54c629f59bdaea` |
+| `public/assets/local-file-studio-social.png` | 1200×630 PNG rasterization of the preceding first-party SVG source | `5b0647891c783132b1c1373eda61e71b9ff3ce9d1b724dd856e4881b2595c04d` |
 | `public/icons/apple-touch-icon.png` | Generated project icon rendition | `b05a643a3dfd065f87fcd8ed6ee88393f2bfc1ad5c2df27e8f83f72c1d4d42db` |
 | `public/icons/icon-192.png` | Generated project icon rendition | `041ea5a73c2a6c07a355b0d4d4140059422eb9ccdd0004440ffee59976ac4cf7` |
 | `public/icons/icon-512.png` | Generated project icon rendition | `102a481f5f6ba4dea909b39e4483b380509a5ca2b19788cd77beed0b2cf87527` |

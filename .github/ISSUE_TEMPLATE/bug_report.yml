@@ -25,7 +25,7 @@ body:
     attributes:
       label: Tool
       description: Use the exact catalog name and route if possible.
-      placeholder: Add Image to PDF — #tool/add-image-to-pdf
+      placeholder: Add Image to PDF — /tools/add-image-to-pdf
     validations:
       required: true
   - type: dropdown
