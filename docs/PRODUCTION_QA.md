@@ -17,15 +17,15 @@ Vercel previews, a production deployment, and `localfilestudio.app` checks are f
 
 ## Test record
 
-- Candidate Git commit:
-- Environment (`local production preview`, authorized Vercel preview, or production):
-- Preview/deployment identifier and URL, if applicable:
-- Service-worker revision:
-- Tester and date:
+- Candidate Git commit: working tree based on `e3ebc9369908beaf7ca9881bbbbe59dcbd4abd19`; exact candidate pending the uncommitted Merge PDF preview, Split PDF interaction, and inline protected-PDF changes
+- Environment (`local production preview`, authorized Vercel preview, or production): local production preview
+- Preview/deployment identifier and URL, if applicable: `http://127.0.0.1:4183/#tool/split-pdf` for the focused development interaction check; production/offline owner QA remains open
+- Service-worker revision: `37383e3040ef2f0c` for the current verified local production build
+- Tester and date: Codex focused local interaction, 2026-08-12; repository-owner row 2 approval remains open
 - Desktop browsers and operating systems:
 - Mobile browsers and devices:
 - Fixture-set version or hash:
-- Issues and waived rows (a launch waiver requires explicit owner approval):
+- Issues and waived rows (a launch waiver requires explicit owner approval): Merge PDF previously passed its pre-preview online/result check; row 1 was reopened because the new Preview flow requires owner retesting. Split PDF row 2 remains open for owner testing of Split in half, Every 2 pages, Odd pages, Even pages, clickable Custom dividers/manual split points, output grouping, ZIP contents, offline behavior, independent result integrity, and the full protected-PDF matrix. The development check confirmed wrong-password clearing, restricted-reader owner guidance, and same-screen continuation with an owner password; render/text/Add Image, offline, privacy-panel, and unsupported-security checks remain open.
 
 ## Shared protocol for every row
 
@@ -38,19 +38,21 @@ Each row has four required evidence boxes:
 
 Also inspect keyboard navigation, visible focus, accessible names, error announcement, narrow/mobile layout, memory growth across repeated runs, object-URL cleanup, and correct behavior after clearing a result. For batch/ZIP tools, verify names cannot escape directories and that entry counts and retained output stay bounded.
 
+For every tool that accepts PDF input, repeat the primary check with a synthetic password-protected PDF. Confirm the inline gate appears without navigating away, a wrong password is cleared and explained, an authorized reader password works only when its print/copy/modify permission is sufficient, a restricted reader password asks for the owner password, and the correct credential resumes the intended operation. Leave **Keep output files password-protected** unchecked and prove every generated PDF is unlocked; then opt in and prove every generated PDF requires the first non-empty password verified for the job. For Split and separate Extract results, inspect every PDF inside the ZIP rather than the ZIP alone. Confirm the UI does not claim exact permission cloning and disables the option with a useful explanation for JPG, DOCX, PPTX, XLSX, HTML, Markdown, TXT, or ZIP-only output. Confirm the password is absent from network requests, console output, job history, URLs, storage, Cache Storage, filenames, details, and results, and is requested again after completion, reset, or failure. Certificate/public-key encryption and unsupported security handlers must fail clearly without a partial result.
+
 ## Catalog matrix
 
 `Ready` and `Beta` below reproduce the catalog maturity, not a release verdict. Beta tools still require all four checks; document layout, codec, heuristic, or browser limitations as observed rather than silently changing the expected result.
 
 | # | Catalog route | Maturity | Synthetic input and primary result assertion | O | F | P | R |
 |---:|---|---|---|:---:|:---:|:---:|:---:|
-| 1 | `#tool/merge-pdf` — Merge PDF | Ready | Two PDFs with distinct labeled pages → one PDF with exact chosen file/page order and combined page count. | [ ] | [ ] | [ ] | [ ] |
-| 2 | `#tool/split-pdf` — Split PDF | Ready | Multi-page PDF and explicit selection → expected one-page PDFs/ZIP, exact page set, count, order, and safe names. | [ ] | [ ] | [ ] | [ ] |
-| 3 | `#tool/remove-pdf-pages` — Remove Pages | Ready | Labeled multi-page PDF → requested pages absent, all retained pages ordered and unchanged; rejecting removal of every page is actionable. | [ ] | [ ] | [ ] | [ ] |
+| 1 | `#tool/merge-pdf` — Merge PDF | Ready | Two PDFs with distinct labeled pages → one PDF with exact chosen file/page order and combined page count; Preview opens the local merged result, returns focus to Preview when closed, and Download saves the same independently verified PDF. | [ ] | [ ] | [ ] | [ ] |
+| 2 | `#tool/split-pdf` — Split PDF | Ready | Labeled 6-page PDF → Split in half previews and creates pages 1–3 / 4–6; Every 2 pages previews 1–2 / 3–4 / 5–6; Odd pages creates one PDF containing 1,3,5; Even pages creates one PDF containing 2,4,6. Custom dividers and the accessible manual split-point field stay synchronized; Reset selection restores Split in half, clears custom points, and returns to the first page window. With an 8+ page PDF, both a native sideways trackpad gesture and a vertical two-finger gesture move the rail horizontally; continuing past its edge automatically opens the next or previous six-page window, while the labeled arrow buttons remain available. At the first and final PDF window boundaries, ordinary page scrolling is not trapped. Invalid/out-of-range split points disable processing with an actionable error; the result contains the exact ordered PDFs or ZIP with safe names. Repeat with an odd page count, more than six pages, a restricted reader password, and then the owner password; the inline gate must resume the same split plan. Confirm every ZIP entry is unlocked by default and every entry requires the verified password when protection is selected. | [ ] | [ ] | [ ] | [ ] |
+| 3 | `#tool/remove-pdf-pages` — Remove Pages | Ready | Labeled multi-page PDF → no page is removed by default; click numbered page buttons and use Odd/Even/Clear actions, confirm the marked count and kept-page result preview update immediately, and confirm the manual range fallback remains synchronized. Requested pages must be absent while retained pages stay ordered and unchanged; invalid/out-of-range input and removing every page must be blocked with an actionable explanation. | [ ] | [ ] | [ ] | [ ] |
 | 4 | `#tool/extract-pdf-pages` — Extract Pages | Ready | Labeled multi-page PDF → exact selected pages in one combined PDF and, with combine disabled, separate outputs/ZIP. | [ ] | [ ] | [ ] | [ ] |
 | 5 | `#tool/organize-pdf` — Organize PDF | Ready | Labeled pages and an order containing moves, duplicates, and omissions → output exactly matches the declared page sequence. | [ ] | [ ] | [ ] | [ ] |
 | 6 | `#tool/scan-to-pdf` — Scan to PDF | Beta | Ordered portrait/landscape JPG, PNG, and WebP images → readable PDF in selected Auto, A4, and Letter page modes with no crop/stretch surprise. | [ ] | [ ] | [ ] | [ ] |
-| 7 | `#tool/compress-pdf` — Compress PDF | Ready | Image-heavy PDF → valid output at each compression setting; visually compare pages and record input/output sizes without promising reduction for every source. | [ ] | [ ] | [ ] | [ ] |
+| 7 | `#tool/compress-pdf` — Compress PDF | Ready | Image-heavy PDF → valid output at each compression setting; visually compare pages and record input/output sizes without promising reduction for every source. A reader password with print permission must resume rendering; a print-restricted password must request owner access. | [ ] | [ ] | [ ] | [ ] |
 | 8 | `#tool/repair-pdf` — Repair PDF | Beta | Minimally damaged but recoverable synthetic PDF plus irrecoverable bytes → recovered file opens when possible, irrecoverable input fails clearly without a bogus PDF. | [ ] | [ ] | [ ] | [ ] |
 | 9 | `#tool/ocr-pdf` — OCR PDF | Beta | Scanned English PDF with known text → searchable/selectable text corresponds to visible pages; record recognition errors and verify bundled OCR works offline. | [ ] | [ ] | [ ] | [ ] |
 | 10 | `#tool/jpg-to-pdf` — JPG to PDF | Ready | Ordered JPG/PNG images → PDF page count/order is exact and Fit, A4, and Letter settings preserve orientation and reasonable aspect ratio. | [ ] | [ ] | [ ] | [ ] |
@@ -59,7 +61,7 @@ Also inspect keyboard navigation, visible focus, accessible names, error announc
 | 13 | `#tool/excel-to-pdf` — Excel to PDF | Beta | XLS and XLSX with multiple named sheets, values, formulas, and used ranges → output contains expected sheets/values and no unexpected external fetch. | [ ] | [ ] | [ ] | [ ] |
 | 14 | `#tool/html-to-pdf` — HTML to PDF | Beta | Local HTML using headings, table text, script, remote URL, and unsafe markup → clean PDF contains expected readable text, no script execution/remote fetch, and bounded pages. | [ ] | [ ] | [ ] | [ ] |
 | 15 | `#tool/pdf-to-jpg` — PDF to JPG | Ready | Labeled color PDF pages → one JPG per page or safe ZIP, correct order/dimensions, and selected quality/scale reflected in output. | [ ] | [ ] | [ ] | [ ] |
-| 16 | `#tool/pdf-to-word` — PDF to Word | Beta | Text PDF with headings, paragraphs, and table-like text → DOCX opens and contains expected extracted text in reading order; record layout loss. | [ ] | [ ] | [ ] | [ ] |
+| 16 | `#tool/pdf-to-word` — PDF to Word | Beta | Text PDF with headings, paragraphs, and table-like text → DOCX opens and contains expected extracted text in reading order; record layout loss. A reader password with copy permission must resume extraction; a copy-restricted password must request owner access. | [ ] | [ ] | [ ] | [ ] |
 | 17 | `#tool/pdf-to-powerpoint` — PDF to PowerPoint | Beta | Labeled text PDF pages → PPTX opens with one ordered slide per page and expected editable extracted text; record layout/graphics loss. | [ ] | [ ] | [ ] | [ ] |
 | 18 | `#tool/pdf-to-excel` — PDF to Excel | Beta | Multi-page text PDF → XLSX opens with one ordered sheet per PDF page and expected extracted text; record that source table/layout reconstruction is limited. | [ ] | [ ] | [ ] | [ ] |
 | 19 | `#tool/pdf-to-pdfa` — Archive PDF Rewrite | Beta | Metadata-bearing PDF → rewritten PDF opens and retains expected pages/content; do not claim standards conformance beyond the catalog's archive-rewrite wording. | [ ] | [ ] | [ ] | [ ] |
@@ -68,7 +70,7 @@ Also inspect keyboard navigation, visible focus, accessible names, error announc
 | 22 | `#tool/watermark-pdf` — Add Watermark | Ready | PDF plus distinctive watermark text/opacity → expected centered diagonal mark appears on every page without corrupting source content. | [ ] | [ ] | [ ] | [ ] |
 | 23 | `#tool/crop-pdf` — Crop PDF | Ready | PDF with edge markers → output page boxes match requested margins/region, intended content remains, and invalid/empty crops are rejected. | [ ] | [ ] | [ ] | [ ] |
 | 24 | `#tool/edit-pdf` — Edit PDF | Beta | PDF plus text annotation settings → annotation appears at intended page/position with readable styling and all untouched pages remain intact. | [ ] | [ ] | [ ] | [ ] |
-| 25 | `#tool/add-image-to-pdf` — Add Image to PDF | Beta | PDF plus opaque and transparent PNG/JPG marks → drag, duplicate, multi-page paste, rotate, resize, undo/reset, and final placement match the editor preview. | [ ] | [ ] | [ ] | [ ] |
+| 25 | `#tool/add-image-to-pdf` — Add Image to PDF | Beta | PDF plus opaque and transparent PNG/JPG marks → drag, duplicate, multi-page paste, rotate, resize, undo/reset, and final placement match the editor preview. A protected PDF must unlock inline and open directly in the visual editor without routing through Unlock PDF. | [ ] | [ ] | [ ] | [ ] |
 | 26 | `#tool/pdf-forms` — PDF Forms | Beta | PDF with known AcroForm fields plus field-name JSON/fallback → supported values update correctly with flatten on/off; field count and malformed JSON/forms fail safely. | [ ] | [ ] | [ ] | [ ] |
 | 27 | `#tool/unlock-pdf` — Unlock PDF | Ready | Password-protected synthetic PDF → correct password creates a readable unlocked PDF; wrong/empty password fails without leaking or retaining it. | [ ] | [ ] | [ ] | [ ] |
 | 28 | `#tool/protect-pdf` — Protect PDF | Ready | Plain PDF plus synthetic password → output rejects a wrong password and opens with the correct one in independent compatible viewers; password never reaches network/log/cache. | [ ] | [ ] | [ ] | [ ] |

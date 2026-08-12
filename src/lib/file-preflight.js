@@ -13,22 +13,7 @@ import {
   validatePreflightMetadata,
   validatePdfOverlayImageSelection,
 } from "./file-limits.js";
-import { destroyPdfJsDocument } from "./pdfjs-utils.js";
-
-let pdfJsPromise;
-
-async function getPdfJs() {
-  if (!pdfJsPromise) {
-    pdfJsPromise = Promise.all([
-      import("pdfjs-dist"),
-      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-    ]).then(([pdfjs, worker]) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      return pdfjs;
-    });
-  }
-  return await pdfJsPromise;
-}
+import { destroyPdfJsDocument, getPdfJsEngine } from "./pdfjs-utils.js";
 
 function rasterScaleFor(tool, options) {
   if (tool.slug === "compress-pdf") {
@@ -46,21 +31,25 @@ function isPasswordError(error) {
 }
 
 async function inspectPdf(file, tool, options, limits, report, fileIndex, fileCount) {
-  const pdfjs = await getPdfJs();
-  const password = tool.slug === "compare-pdf" && fileIndex === 1 ? options.password2 : options.password;
+  const pdfjs = await getPdfJsEngine();
+  const password = Array.isArray(options.inputPasswords)
+    ? options.inputPasswords[fileIndex]
+    : tool.slug === "unlock-pdf"
+      ? options.password
+      : undefined;
   let document;
   try {
     document = await pdfjs.getDocument({
       data: new Uint8Array(await file.arrayBuffer()),
-      password: password || undefined,
+      password: password === undefined ? undefined : password,
     }).promise;
   } catch (error) {
     if (isPasswordError(error)) {
       throw new FileLimitError(
         "pdf-password-required",
         password
-          ? `${file.name} could not be opened with the supplied password. Check it, or use Unlock PDF first.`
-          : `${file.name} is password protected. Use Unlock PDF first, then retry ${tool.name}.`,
+          ? `${file.name} could not be opened with the supplied password. Check it and try again.`
+          : `${file.name} is password protected. Enter its password in ${tool.name} and try again.`,
         { name: file.name, cause: error },
       );
     }

@@ -31,6 +31,8 @@ Tools whose output depends heavily on source layout, browser codecs, heuristics,
 
 Word to PDF extracts readable DOCX text without preserving Word layout. Legacy symbol-font characters are kept visible as `[symbol …]` placeholders rather than being guessed incorrectly; a verified broader mapping is deferred in [TASKS.md](TASKS.md).
 
+Password-protected PDFs can be opened in place in every applicable PDF workbench. The password is held only in tab memory for the current operation and is cleared after completion, reset, or failure. Reader passwords work when the PDF grants the permission the selected tool needs; structural changes require modification permission or the owner password, rendering requires print permission, and text conversion requires copy permission. Generated PDFs are unlocked by default. An explicit **Keep output files password-protected** checkbox can instead apply fresh AES-256 protection using the first non-empty password verified for that job, including every PDF inside Split/Extract ZIP results. This does not promise to clone the source PDF's original permission flags or every security detail. Non-PDF outputs cannot receive PDF password protection. The dedicated Unlock and Protect PDF tools retain their explicit purposes. Standard password security is supported; certificate/public-key encrypted PDFs and unsupported security handlers fail locally with an actionable message.
+
 ## Visible local safety limits
 
 Every workbench shows its exact file-count, per-file, combined-size, page/pixel, and result limits next to the file picker. These deterministic limits protect browsers with roughly a 4 GB device-memory budget; files are validated before local engines allocate large canvases, page buffers, or ZIP archives.
@@ -77,7 +79,7 @@ Clearing site data, using private browsing, or browser storage eviction removes 
 bun run verify
 ```
 
-`bun run verify` checks repository hygiene and production-QA catalog coverage, validates vendored runtime assets, runs resource-limit and processor tests, creates the static production build, and verifies its offline/PWA artifacts. Responsive interaction, conversion, and offline-processing checks are also exercised manually where applicable.
+`bun run verify` checks repository hygiene and production-QA catalog coverage, validates vendored runtime assets, runs resource-limit, protected-PDF, and processor tests, creates the static production build, and verifies its offline/PWA artifacts. Responsive interaction, conversion, and offline-processing checks are also exercised manually where applicable.
 
 The hardened private-repository CI rerun passed at the 2026-08-11 checkpoint. GitHub permissions, branch rules, security features, and workflow policy can change independently of this source tree, so that result is evidence for the audited revision rather than a product guarantee. The dated control snapshot and remaining public-launch gates are in [TASKS.md](TASKS.md).
 

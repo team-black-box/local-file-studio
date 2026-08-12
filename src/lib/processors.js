@@ -32,6 +32,10 @@ export async function runTool(tool, files, options = {}, report) {
   const slug = ALIASES[tool.slug] || tool.slug;
   const startedAt = performance.now();
   const normalizedOptions = { ...options };
+  if (Array.isArray(options.inputPasswords)) {
+    normalizedOptions.inputPassword = options.inputPasswords[0];
+    normalizedOptions.inputPassword2 = options.inputPasswords[1];
+  }
   const selection = validateFileSelection(tool, [], files);
   validateNumericOptions(tool, normalizedOptions);
   assertTextSettingLengths(tool, normalizedOptions);
@@ -71,6 +75,10 @@ export async function runTool(tool, files, options = {}, report) {
     results = tool.kind === "image"
       ? await import("./image-processors.js").then(({ processImageTool }) => processImageTool(slug, files, normalizedOptions, report))
       : await import("./pdf-processors.js").then(({ processPdfTool }) => processPdfTool(slug, files, normalizedOptions, report));
+    if (normalizedOptions.outputPassword) {
+      results = await import("./pdf-output-protection.js")
+        .then(({ protectGeneratedPdfResults }) => protectGeneratedPdfResults(results, normalizedOptions.outputPassword));
+    }
   } catch (error) {
     throw toFriendlyResourceError(error, tool.name);
   }

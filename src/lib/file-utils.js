@@ -55,6 +55,16 @@ export function resultFromBlob(name, blob, details = "Ready to save") {
   };
 }
 
+export function assertPdfPreviewResult(result, maxBytes) {
+  const blob = result?.blob;
+  const name = result?.name || "PDF preview";
+  if (!(blob instanceof Blob) || result?.type !== "application/pdf" || blob.type !== "application/pdf") {
+    throw new FileLimitError("unsupported-preview-type", `${name} is not a valid PDF result and cannot be previewed.`);
+  }
+  assertOutputSize(blob.size, name, maxBytes);
+  return blob;
+}
+
 export function createResultBudget({
   maxItems = MAX_GENERATED_RESULTS,
   maxItemBytes = ARCHIVE_ITEM_LIMIT_BYTES,
@@ -139,7 +149,7 @@ export async function zipResults(results, archiveName = "local-file-studio-resul
         ? `${result.name.slice(0, extensionIndex)}-${count}${result.name.slice(extensionIndex)}`
         : `${result.name}-${count}`;
     const alreadyCompressed = /^(application\/(pdf|zip)|image\/(jpeg|png|webp|gif))$/i.test(result.blob.type);
-    zip.file(uniqueName, result.blob, { compression: alreadyCompressed ? "STORE" : "DEFLATE" });
+    zip.file(uniqueName, new Uint8Array(await result.blob.arrayBuffer()), { compression: alreadyCompressed ? "STORE" : "DEFLATE" });
   }
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
   return [resultFromBlob(archiveName, blob, `${results.length} files in one archive`)];
@@ -185,6 +195,144 @@ export function parsePageSelection(value, pageCount, fallback = "all", preserveD
     }
   }
   return preserveDuplicates ? pages : [...new Set(pages)];
+}
+
+export function parseSplitPageSelection(value, pageCount) {
+  if (!Number.isInteger(pageCount) || pageCount < 1) return [];
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw.length > MAX_PAGE_SELECTION_CHARACTERS) {
+    throw new FileLimitError("page-selection-too-long", `The page selection is longer than ${MAX_PAGE_SELECTION_CHARACTERS.toLocaleString()} characters. Use fewer ranges and process another job for the rest.`);
+  }
+  if (raw === "all") return Array.from({ length: pageCount }, (_, index) => index);
+  if (!raw) throw new FileLimitError("missing-page-selection", "Choose at least one page to split.");
+
+  const pages = [];
+  const seen = new Set();
+  const addPage = (page) => {
+    if (page < 1 || page > pageCount) {
+      throw new FileLimitError("page-out-of-range", `Page ${page.toLocaleString()} is outside this ${pageCount.toLocaleString()}-page PDF.`);
+    }
+    const index = page - 1;
+    if (!seen.has(index)) {
+      pages.push(index);
+      seen.add(index);
+    }
+    if (pages.length > MAX_PAGE_SELECTION_ENTRIES) {
+      throw new FileLimitError("page-selection-too-large", `The page selection expands beyond ${MAX_PAGE_SELECTION_ENTRIES.toLocaleString()} entries. Use fewer ranges and split the work into another job.`);
+    }
+  };
+
+  for (const token of raw.split(",")) {
+    const part = token.trim();
+    const match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(part);
+    if (!match) {
+      throw new FileLimitError("invalid-page-selection", `“${part || "empty entry"}” is not a valid page or range. Use entries like 2, 4-7, or 8-5.`);
+    }
+    const start = Number(match[1]);
+    const end = match[2] ? Number(match[2]) : start;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) {
+      throw new FileLimitError("invalid-page-selection", `“${part}” is not a valid page or range.`);
+    }
+    const step = start <= end ? 1 : -1;
+    for (let page = start; step > 0 ? page <= end : page >= end; page += step) addPage(page);
+  }
+  return pages;
+}
+
+function parseSplitBreaks(value, pageCount) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  if (raw.length > MAX_PAGE_SELECTION_CHARACTERS) {
+    throw new FileLimitError("page-selection-too-long", `The custom split rule is longer than ${MAX_PAGE_SELECTION_CHARACTERS.toLocaleString()} characters. Use fewer split points.`);
+  }
+
+  const breaks = new Set();
+  for (const token of raw.split(",")) {
+    const part = token.trim();
+    if (!/^\d+$/.test(part)) {
+      throw new FileLimitError("invalid-split-point", `“${part || "empty entry"}” is not a valid split point. Enter page numbers like 3, 6, 9.`);
+    }
+    const page = Number(part);
+    if (!Number.isSafeInteger(page) || page < 1 || page >= pageCount) {
+      throw new FileLimitError("split-point-out-of-range", `Split after a page from 1 to ${(pageCount - 1).toLocaleString()}. Page ${part} cannot be a split point.`);
+    }
+    breaks.add(page);
+    if (breaks.size >= MAX_PAGE_SELECTION_ENTRIES) {
+      throw new FileLimitError("page-selection-too-large", `The custom split rule expands beyond ${MAX_PAGE_SELECTION_ENTRIES.toLocaleString()} split points. Use fewer splits.`);
+    }
+  }
+  return [...breaks].sort((a, b) => a - b);
+}
+
+export function createSplitPdfGroups(mode, pageCount, customBreaks = "", selectedPages = "") {
+  if (!Number.isInteger(pageCount) || pageCount < 1) return [];
+  const normalizedMode = String(mode || "half").toLowerCase();
+  const allPages = Array.from({ length: pageCount }, (_, index) => index);
+
+  if (["all", "every", "every-page"].includes(normalizedMode)) return allPages.map((page) => [page]);
+  if (normalizedMode === "selected") return parseSplitPageSelection(selectedPages, pageCount).map((page) => [page]);
+  if (normalizedMode === "odd") return [allPages.filter((page) => page % 2 === 0)];
+  if (normalizedMode === "even") {
+    const evenPages = allPages.filter((page) => page % 2 === 1);
+    if (!evenPages.length) throw new FileLimitError("empty-pdf-result", "This PDF has no even-numbered pages.");
+    return [evenPages];
+  }
+  if (normalizedMode === "every2") {
+    const groups = [];
+    for (let index = 0; index < allPages.length; index += 2) groups.push(allPages.slice(index, index + 2));
+    return groups;
+  }
+  if (normalizedMode === "half") {
+    if (pageCount === 1) return [allPages];
+    const midpoint = Math.ceil(pageCount / 2);
+    return [allPages.slice(0, midpoint), allPages.slice(midpoint)];
+  }
+  if (normalizedMode === "custom") {
+    const breaks = parseSplitBreaks(customBreaks, pageCount);
+    const groups = [];
+    let start = 0;
+    for (const endPage of [...breaks, pageCount]) {
+      groups.push(allPages.slice(start, endPage));
+      start = endPage;
+    }
+    return groups;
+  }
+
+  throw new FileLimitError("invalid-split-mode", "Choose a valid PDF split method.");
+}
+
+export function parseRemovalPageSelection(value, pageCount) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    throw new FileLimitError("missing-page-selection", "Choose at least one page to remove.");
+  }
+  const pages = parseSplitPageSelection(raw, pageCount);
+  if (pages.length >= pageCount) {
+    throw new FileLimitError("empty-pdf-result", "Keep at least one page. Removing every page would create an empty PDF.");
+  }
+  return pages;
+}
+
+export function formatPageSelection(indices) {
+  const pages = [...new Set(indices)]
+    .filter((index) => Number.isInteger(index) && index >= 0)
+    .sort((a, b) => a - b)
+    .map((index) => index + 1);
+  if (!pages.length) return "";
+  const ranges = [];
+  let start = pages[0];
+  let end = pages[0];
+  for (let index = 1; index <= pages.length; index += 1) {
+    const page = pages[index];
+    if (page === end + 1) {
+      end = page;
+      continue;
+    }
+    ranges.push(start === end ? String(start) : `${start}-${end}`);
+    start = page;
+    end = page;
+  }
+  return ranges.join(",");
 }
 
 export function safeFileName(value, fallback = "result") {

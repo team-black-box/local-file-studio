@@ -37,7 +37,7 @@ import {
 } from "../src/lib/file-limits.js";
 import { runBoundedLineDiff } from "../src/lib/diff-worker-client.js";
 import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
-import { createResultBudget, parsePageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
+import { createResultBudget, createSplitPdfGroups, formatPageSelection, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
 
@@ -53,8 +53,8 @@ function file(name, size) {
 
 test("tool policies expose the intended exact count and byte budgets", () => {
   assert.deepEqual(
-    Object.fromEntries(Object.entries(getToolLimits("merge-pdf")).filter(([key]) => ["minFiles", "maxFiles", "maxFileBytes", "maxTotalBytes", "maxPdfPagesTotal"].includes(key))),
-    { minFiles: 2, maxFiles: 20, maxFileBytes: 50 * MiB, maxTotalBytes: 120 * MiB, maxPdfPagesTotal: 500 },
+    Object.fromEntries(Object.entries(getToolLimits("merge-pdf")).filter(([key]) => ["minFiles", "maxFiles", "maxFileBytes", "maxTotalBytes", "maxPdfPagesTotal", "maxPreviewRasterPixels", "maxPreviewRasterEdge"].includes(key))),
+    { minFiles: 2, maxFiles: 20, maxFileBytes: 50 * MiB, maxTotalBytes: 120 * MiB, maxPdfPagesTotal: 500, maxPreviewRasterPixels: 8_000_000, maxPreviewRasterEdge: 4096 },
   );
   assert.equal(getToolLimits("compare-pdf").maxFiles, 2);
   assert.equal(getToolLimits("ocr-pdf").maxPdfPagesPerFile, 25);
@@ -71,7 +71,13 @@ test("visible limit copy is generated from the same policy as validation", () =>
   assert.match(copy.primary, /50 MB each/);
   assert.match(copy.primary, /120 MB combined/);
   assert.match(copy.secondary, /500 pages combined/);
+  assert.match(copy.secondary, /8 MP \/ 4,096 px preview page/);
   assert.match(copy.secondary, /128 MB max result/);
+
+  const split = tool("split-pdf", { name: "Split PDF" });
+  const splitCopy = describeToolLimits(split);
+  assert.equal(splitCopy.primary, "1 PDF file · 75 MB");
+  assert.doesNotMatch(splitCopy.primary, /each|combined/);
 });
 
 test("Convert to JPG advertises and accepts only its supported browser-local formats", () => {
@@ -163,7 +169,7 @@ test("HTML tools require a local file or nonblank pasted markup before processin
 
 test("every registered text setting accepts its exact cap and rejects one extra character", () => {
   const policies = {
-    "split-pdf": { pages: 4096 },
+    "split-pdf": { pages: 4096, customBreaks: 4096 },
     "remove-pdf-pages": { pages: 4096 },
     "extract-pdf-pages": { pages: 4096 },
     "organize-pdf": { order: 4096 },
@@ -461,6 +467,29 @@ test("generated item, page-selection, and output guards fail before unsafe expan
   assert.throws(() => assertGeneratedItemCount(Number.NaN, "split-pdf"), /number of generated results is invalid/);
   assert.throws(() => parsePageSelection("1,".repeat(2050), 500), /4,096 characters/);
   assert.throws(() => parsePageSelection("1-500,1-500,1-500,1-500,1-500", 500, "all", true), /beyond 2,000 entries/);
+});
+
+test("Split PDF uses strict, reversible page rules that round-trip with the visual picker", () => {
+  assert.deepEqual(parseSplitPageSelection("1-3, 6, 8-7, 2", 8), [0, 1, 2, 5, 7, 6]);
+  assert.deepEqual(parseSplitPageSelection("all", 4), [0, 1, 2, 3]);
+  assert.equal(formatPageSelection([0, 1, 2, 5, 7, 6]), "1-3,6-8");
+  assert.throws(() => parseSplitPageSelection("1,,3", 8), /empty entry.*not a valid page or range/s);
+  assert.throws(() => parseSplitPageSelection("2-four", 8), /not a valid page or range/s);
+  assert.throws(() => parseSplitPageSelection("9", 8), /outside this 8-page PDF/s);
+  assert.throws(() => parseSplitPageSelection("", 8), /Choose at least one page/s);
+});
+
+test("Split PDF presets create understandable output groups and custom dividers fail closed", () => {
+  assert.deepEqual(createSplitPdfGroups("half", 6), [[0, 1, 2], [3, 4, 5]]);
+  assert.deepEqual(createSplitPdfGroups("half", 5), [[0, 1, 2], [3, 4]]);
+  assert.deepEqual(createSplitPdfGroups("every2", 5), [[0, 1], [2, 3], [4]]);
+  assert.deepEqual(createSplitPdfGroups("odd", 6), [[0, 2, 4]]);
+  assert.deepEqual(createSplitPdfGroups("even", 6), [[1, 3, 5]]);
+  assert.deepEqual(createSplitPdfGroups("custom", 8, "3, 6"), [[0, 1, 2], [3, 4, 5], [6, 7]]);
+  assert.deepEqual(createSplitPdfGroups("custom", 4, ""), [[0, 1, 2, 3]]);
+  assert.throws(() => createSplitPdfGroups("custom", 6, "3,,5"), /empty entry.*not a valid split point/s);
+  assert.throws(() => createSplitPdfGroups("custom", 6, "6"), /cannot be a split point/s);
+  assert.throws(() => createSplitPdfGroups("even", 1), /no even-numbered pages/s);
 });
 
 test("result retention accepts exact item, count, and aggregate boundaries", () => {

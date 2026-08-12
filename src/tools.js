@@ -86,7 +86,7 @@ export const tools = withPhosphorExports([
   {
     slug: "split-pdf",
     name: "Split PDF",
-    description: "Save selected PDF pages as separate one-page files.",
+    description: "Divide one PDF into the page groups you need.",
     kind: "pdf",
     category: "organize",
     accepts: [".pdf"],
@@ -96,7 +96,28 @@ export const tools = withPhosphorExports([
     icon: "Scissors",
     featured: true,
     maturity: "ready",
-    settings: [],
+    settings: [
+      {
+        key: "mode",
+        type: "choice",
+        label: "Split method",
+        default: "half",
+        options: [
+          { value: "half", label: "Split in half", hint: "Create two balanced PDFs." },
+          { value: "every2", label: "Every 2 pages", hint: "Create consecutive two-page PDFs." },
+          { value: "odd", label: "Odd pages", hint: "Group all odd pages in one PDF." },
+          { value: "even", label: "Even pages", hint: "Group all even pages in one PDF." },
+          { value: "custom", label: "Custom", hint: "Choose exactly where each PDF ends." },
+        ],
+      },
+      {
+        key: "customBreaks",
+        type: "text",
+        label: "Split after pages",
+        default: "",
+        hint: "Example: 3, 6 creates pages 1–3, 4–6, and 7 onward.",
+      },
+    ],
   },
   {
     slug: "remove-pdf-pages",

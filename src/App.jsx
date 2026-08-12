@@ -6,6 +6,7 @@ import {
   ArchiveIcon,
   ArrowClockwiseIcon,
   ArrowDownIcon,
+  ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
   ArrowsLeftRightIcon,
@@ -19,6 +20,7 @@ import {
   CommandIcon,
   CropIcon,
   DownloadSimpleIcon,
+  EyeIcon,
   EyeSlashIcon,
   FileArrowUpIcon,
   FileArrowDownIcon,
@@ -73,9 +75,12 @@ import {
 } from "@phosphor-icons/react";
 import { categories, categoryById, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
-import { downloadResult, formatBytes } from "./lib/file-utils.js";
-import { describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
+import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
+import { assertPdfPreviewResult, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, parseSplitPageSelection } from "./lib/file-utils.js";
+import { assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
+import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { runTool } from "./lib/processors.js";
+import { useProtectedPdfGate } from "./useProtectedPdfGate.js";
 
 const iconMap = {
   ArchiveIcon,
@@ -124,11 +129,8 @@ const iconMap = {
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
 const contextualSettings = {
-  "split-pdf": [
-    { key: "pages", type: "text", label: "Pages", default: "all", hint: "Use all, 1-4,6, or 3-1." },
-  ],
   "remove-pdf-pages": [
-    { key: "pages", type: "text", label: "Pages to remove", default: "1", hint: "Example: 1,3-5" },
+    { key: "pages", type: "text", label: "Pages to remove", default: "", hint: "Example: 1,3-5" },
   ],
   "extract-pdf-pages": [
     { key: "pages", type: "text", label: "Pages to extract", default: "1", hint: "Example: 2-4,8" },
@@ -483,6 +485,461 @@ function SettingControl({ setting, value, onChange }) {
   );
 }
 
+function usePdfPageInfo(file, enabled, limits, toolName) {
+  const [info, setInfo] = useState({ state: "idle", pageCount: 0, message: "", document: null });
+
+  useEffect(() => {
+    if (!enabled || !file) {
+      setInfo({ state: "idle", pageCount: 0, message: "", document: null });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let loadingTask;
+    let loadedDocument;
+    setInfo({ state: "loading", pageCount: 0, message: "Reading the PDF locally…", document: null });
+    (async () => {
+      const pdfjs = await getPdfJsEngine();
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (cancelled) return;
+      loadingTask = pdfjs.getDocument({ data: bytes });
+      loadedDocument = await loadingTask.promise;
+      const pageCount = loadedDocument.numPages;
+      if (!Number.isInteger(pageCount) || pageCount < 1) throw new Error("This PDF did not report a valid page count.");
+      if (pageCount > limits.maxPdfPagesPerFile) {
+        throw new Error(`This PDF has ${pageCount.toLocaleString()} pages; ${toolName} supports ${limits.maxPdfPagesPerFile.toLocaleString()} per file.`);
+      }
+      if (!cancelled) setInfo({ state: "ready", pageCount, message: `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} found locally`, document: loadedDocument });
+    })().catch((error) => {
+      if (cancelled || error?.name === "RenderingCancelledException") return;
+      void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
+      loadedDocument = null;
+      loadingTask = null;
+      setInfo({ state: "error", pageCount: 0, message: error?.message || "The page count could not be read. Unlock or repair the PDF, then try again.", document: null });
+    });
+
+    return () => {
+      cancelled = true;
+      void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
+    };
+  }, [enabled, file, limits.maxPdfPagesPerFile, toolName]);
+
+  return info;
+}
+
+function getRemovePlan(settings, info) {
+  if (info.state === "idle") return { valid: false, selection: [], keptCount: 0, message: "Add one PDF to choose pages." };
+  if (info.state === "loading") return { valid: false, selection: [], keptCount: 0, message: "Reading the page count locally…" };
+  if (info.state === "error") return { valid: false, selection: [], keptCount: 0, message: info.message };
+  if (!String(settings.pages || "").trim()) {
+    return { valid: false, selection: [], keptCount: info.pageCount, message: "Choose at least one page to remove." };
+  }
+  try {
+    const selection = parseSplitPageSelection(settings.pages, info.pageCount);
+    if (selection.length >= info.pageCount) {
+      return {
+        valid: false,
+        selection,
+        keptCount: 0,
+        message: "Keep at least one page. Removing every page would create an empty PDF.",
+      };
+    }
+    return { valid: true, selection, keptCount: info.pageCount - selection.length, message: "" };
+  } catch (error) {
+    return { valid: false, selection: [], keptCount: info.pageCount, message: error?.message || "Choose valid pages to remove." };
+  }
+}
+
+function PdfPageSourceStatus({ info }) {
+  return (
+    <div className={`split-source-status ${info.state}`} role="status" aria-live="polite">
+      {info.state === "loading" ? <SpinnerGapIcon size={17} className="spin" aria-hidden="true" /> : <FilePdfIcon size={17} weight="duotone" aria-hidden="true" />}
+      <span><strong>{info.state === "ready" ? info.message : info.state === "idle" ? "Waiting for a PDF" : info.message}</strong><small>Page details are read on this device. Nothing is uploaded.</small></span>
+    </div>
+  );
+}
+
+function PageSelectionPicker({ value, pageCount, selection, onChange, intent, maxSelection, valid }) {
+  const selected = new Set(selection);
+  const isRemove = intent === "remove";
+  const selectedCount = selected.size;
+
+  const setRule = (rule) => {
+    let pages = [];
+    if (rule === "all") pages = Array.from({ length: Math.min(pageCount, maxSelection || pageCount) }, (_, index) => index);
+    if (rule === "odd") pages = Array.from({ length: pageCount }, (_, index) => index).filter((index) => index % 2 === 0);
+    if (rule === "even") pages = Array.from({ length: pageCount }, (_, index) => index).filter((index) => index % 2 === 1);
+    onChange(formatPageSelection(pages));
+  };
+
+  const togglePage = (pageIndex) => {
+    let current = [];
+    try {
+      current = parseSplitPageSelection(value, pageCount);
+    } catch {
+      current = [];
+    }
+    const next = new Set(current);
+    if (next.has(pageIndex)) next.delete(pageIndex);
+    else next.add(pageIndex);
+    onChange(formatPageSelection([...next]));
+  };
+
+  const selectionLabel = selectedCount
+    ? `${selectedCount.toLocaleString()} ${isRemove ? "marked for removal" : "selected"}`
+    : isRemove ? "No pages marked" : "No pages selected";
+
+  return (
+    <section className={`page-selection-picker ${isRemove ? "remove" : "include"}`} aria-labelledby={`${intent}-page-picker-title`}>
+      <div className="page-selection-heading">
+        <span><strong id={`${intent}-page-picker-title`}>{isRemove ? "Choose pages to delete" : "Choose pages to split"}</strong><small>{isRemove ? "Tap page numbers to mark them. Every unmarked page stays in the PDF." : "Tap page numbers to include them. Each selected page becomes its own PDF."}</small></span>
+        <b aria-live="polite">{selectionLabel}</b>
+      </div>
+      <div className="page-selection-actions" aria-label={isRemove ? "Quick removal selections" : "Quick page selections"}>
+        {!isRemove && <button type="button" onClick={() => setRule("all")}>{pageCount > maxSelection ? `First ${maxSelection}` : "Select all"}</button>}
+        <button type="button" onClick={() => setRule("odd")}>Odd pages</button>
+        <button type="button" onClick={() => setRule("even")}>Even pages</button>
+        <button type="button" onClick={() => setRule("clear")} disabled={!selectedCount}>Clear</button>
+      </div>
+      <div className="page-selection-grid" role="group" aria-label={`${isRemove ? "Mark pages to remove" : "Select pages to split"} from this ${pageCount}-page PDF`}>
+        {Array.from({ length: pageCount }, (_, pageIndex) => {
+          const isSelected = selected.has(pageIndex);
+          return (
+            <button
+              type="button"
+              key={pageIndex}
+              className={isSelected ? "selected" : ""}
+              aria-pressed={isSelected}
+              aria-label={`Page ${pageIndex + 1}, ${isRemove ? isSelected ? "marked for removal" : "will be kept" : isSelected ? "selected for splitting" : "not selected"}`}
+              onClick={() => togglePage(pageIndex)}
+            >
+              <span>{pageIndex + 1}</span>
+              {isSelected && (isRemove ? <TrashIcon size={13} weight="fill" aria-hidden="true" /> : <CheckCircleIcon size={14} weight="fill" aria-hidden="true" />)}
+            </button>
+          );
+        })}
+      </div>
+      <details className="page-manual-entry">
+        <summary><KeyboardIcon size={15} aria-hidden="true" /><span>Enter page numbers instead</span><CaretRightIcon size={13} aria-hidden="true" /></summary>
+        <div className="setting-field">
+          <label htmlFor={`${intent}-page-ranges`}><strong>{isRemove ? "Pages to remove" : "Pages to split"}</strong></label>
+          <small id={`${intent}-page-ranges-description`} className="field-description">Examples: 1-4, 6, or 8-5. The page buttons stay in sync.</small>
+          <input
+            id={`${intent}-page-ranges`}
+            type="text"
+            maxLength={4096}
+            value={value}
+            aria-describedby={`${intent}-page-ranges-description ${intent}-plan-message`}
+            aria-invalid={!valid}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function getSplitPlan(settings, info, limits) {
+  if (info.state === "idle") return { valid: false, groups: [], selection: [], message: "Add one PDF to see its pages." };
+  if (info.state === "loading") return { valid: false, groups: [], selection: [], message: "Reading the page count locally…" };
+  if (info.state === "error") return { valid: false, groups: [], selection: [], message: info.message };
+  try {
+    const groups = createSplitPdfGroups(settings.mode, info.pageCount, settings.customBreaks, settings.pages);
+    if (groups.length > limits.maxGeneratedItems) {
+      return {
+        valid: false,
+        groups,
+        selection: groups.flat(),
+        message: `This would create ${groups.length.toLocaleString()} files. Choose up to ${limits.maxGeneratedItems.toLocaleString()} output PDFs per job.`,
+      };
+    }
+    return { valid: true, groups, selection: groups.flat(), message: "" };
+  } catch (error) {
+    return { valid: false, groups: [], selection: [], message: error?.message || "Choose valid split points to continue." };
+  }
+}
+
+function PdfSplitThumbnail({ document, pageIndex }) {
+  const canvasRef = useRef(null);
+  const [state, setState] = useState("loading");
+
+  useEffect(() => {
+    if (!document || !canvasRef.current) return undefined;
+    let cancelled = false;
+    let page;
+    let renderTask;
+    setState("loading");
+    (async () => {
+      page = await document.getPage(pageIndex + 1);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(92 / base.width, 112 / base.height);
+      const viewport = page.getViewport({ scale });
+      const canvas = canvasRef.current;
+      if (!canvas || cancelled) return;
+      canvas.width = Math.max(1, Math.ceil(viewport.width));
+      canvas.height = Math.max(1, Math.ceil(viewport.height));
+      const context = canvas.getContext("2d", { alpha: false });
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      renderTask = page.render({ canvasContext: context, viewport });
+      await renderTask.promise;
+      if (!cancelled) setState("ready");
+    })().catch((error) => {
+      if (!cancelled && error?.name !== "RenderingCancelledException") setState("error");
+    });
+    return () => {
+      cancelled = true;
+      try { renderTask?.cancel(); } catch { /* Render already completed. */ }
+      page?.cleanup();
+    };
+  }, [document, pageIndex]);
+
+  return (
+    <span className={`split-page-thumbnail ${state}`} aria-hidden="true">
+      <canvas ref={canvasRef} />
+      {state === "loading" && <SpinnerGapIcon size={17} className="spin" />}
+      {state === "error" && <FilePdfIcon size={20} weight="duotone" />}
+    </span>
+  );
+}
+
+const splitMethodOptions = [
+  { value: "half", label: "Split in half", Icon: ColumnsIcon },
+  { value: "every2", label: "Every 2 pages", Icon: SelectionBackgroundIcon },
+  { value: "odd", label: "Odd pages", Icon: ListNumbersIcon },
+  { value: "even", label: "Even pages", Icon: ListIcon },
+  { value: "custom", label: "Custom", Icon: SlidersHorizontalIcon },
+];
+
+function SplitPdfControls({ settings, onChange, info, plan, limits }) {
+  const mode = splitMethodOptions.some((option) => option.value === settings.mode) ? settings.mode : "half";
+  const pageCount = info.pageCount || 0;
+  const [pageWindowStart, setPageWindowStart] = useState(0);
+  const pageRailRef = useRef(null);
+  const pendingRailAlignmentRef = useRef(null);
+  const lastWheelPageTurnRef = useRef(0);
+  const pagesPerWindow = 6;
+  const visiblePages = Array.from(
+    { length: Math.min(pagesPerWindow, Math.max(0, pageCount - pageWindowStart)) },
+    (_, index) => pageWindowStart + index,
+  );
+  const activeBreaks = new Set(plan.groups.slice(0, -1).map((group) => group[group.length - 1] + 1));
+  const groupsCoverInOrder = plan.groups.flat().every((page, index) => page === index);
+
+  useEffect(() => {
+    const maxWindowStart = Math.max(0, Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow);
+    setPageWindowStart((current) => Math.min(current, maxWindowStart));
+  }, [pageCount]);
+
+  useEffect(() => {
+    const alignment = pendingRailAlignmentRef.current;
+    const rail = pageRailRef.current;
+    if (!alignment || !rail) return;
+    rail.scrollLeft = alignment === "end" ? Math.max(0, rail.scrollWidth - rail.clientWidth) : 0;
+    pendingRailAlignmentRef.current = null;
+  }, [pageWindowStart]);
+
+  const showPageWindow = (nextStart, alignment = "start") => {
+    const boundedStart = Math.max(0, Math.min(Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow, nextStart));
+    pendingRailAlignmentRef.current = alignment;
+    setPageWindowStart(boundedStart);
+    if (boundedStart === pageWindowStart && pageRailRef.current) {
+      pageRailRef.current.scrollLeft = alignment === "end"
+        ? Math.max(0, pageRailRef.current.scrollWidth - pageRailRef.current.clientWidth)
+        : 0;
+      pendingRailAlignmentRef.current = null;
+    }
+  };
+
+  const selectMode = (nextMode) => {
+    if (nextMode === "custom" && !String(settings.customBreaks || "").trim() && groupsCoverInOrder) {
+      onChange("customBreaks", [...activeBreaks].join(","));
+    }
+    onChange("mode", nextMode);
+  };
+
+  const toggleBreak = (afterPage) => {
+    const nextBreaks = mode === "custom" ? new Set(activeBreaks) : groupsCoverInOrder ? new Set(activeBreaks) : new Set();
+    if (nextBreaks.has(afterPage)) nextBreaks.delete(afterPage);
+    else nextBreaks.add(afterPage);
+    onChange("customBreaks", [...nextBreaks].sort((a, b) => a - b).join(","));
+    onChange("mode", "custom");
+  };
+
+  const pageRangeLabel = pageCount
+    ? `Pages ${pageWindowStart + 1}–${Math.min(pageWindowStart + pagesPerWindow, pageCount)} of ${pageCount}`
+    : "Page preview";
+  const selectionIsDefault = mode === "half" && !String(settings.customBreaks || "").trim() && pageWindowStart === 0;
+
+  const resetSelection = () => {
+    onChange("customBreaks", "");
+    onChange("mode", "half");
+    showPageWindow(0);
+  };
+
+  const scrollPageRailHorizontally = (event) => {
+    const rail = event.currentTarget;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (!delta) return;
+    const maxScrollLeft = rail.scrollWidth - rail.clientWidth;
+    const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, rail.scrollLeft + delta));
+    if (nextScrollLeft !== rail.scrollLeft) {
+      event.preventDefault();
+      rail.scrollLeft = nextScrollLeft;
+      return;
+    }
+
+    const maxWindowStart = Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow;
+    const nextWindowStart = delta > 0
+      ? Math.min(maxWindowStart, pageWindowStart + pagesPerWindow)
+      : Math.max(0, pageWindowStart - pagesPerWindow);
+    if (nextWindowStart === pageWindowStart) return;
+
+    event.preventDefault();
+    const now = performance.now();
+    if (now - lastWheelPageTurnRef.current < 220) return;
+    lastWheelPageTurnRef.current = now;
+    showPageWindow(nextWindowStart, delta > 0 ? "start" : "end");
+  };
+
+  return (
+    <div className="split-controls">
+      <fieldset className="split-mode-picker">
+        <legend>Choose a split method</legend>
+        <div>
+          {splitMethodOptions.map(({ value, label, Icon }) => (
+            <label key={value} className={mode === value ? "selected" : ""}>
+              <input type="radio" name="split-mode" value={value} checked={mode === value} onChange={() => selectMode(value)} />
+              <Icon size={17} weight="duotone" aria-hidden="true" />
+              <strong>{label}</strong>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <PdfPageSourceStatus info={info} />
+
+      {info.state === "ready" && (
+        <section className="split-visual-planner" aria-labelledby="split-visual-title">
+          <div className="split-visual-heading">
+            <span><strong id="split-visual-title">Click between pages to add or remove a split.</strong><small>{mode === "odd" || mode === "even" ? "Odd and even presets group their selected pages into one PDF. Adding a split switches to Custom." : "Each highlighted divider starts a new output PDF."}</small></span>
+            <span className="split-planner-actions">
+              <button type="button" className="split-reset-button" onClick={resetSelection} disabled={selectionIsDefault}>
+                <ArrowClockwiseIcon size={14} aria-hidden="true" />Reset selection
+              </button>
+              {pageCount > pagesPerWindow && (
+                <span className="split-window-controls">
+                <button type="button" onClick={() => showPageWindow(pageWindowStart - pagesPerWindow)} disabled={pageWindowStart === 0} aria-label="Show previous PDF pages"><ArrowLeftIcon size={14} /></button>
+                <b aria-live="polite">{pageRangeLabel}</b>
+                <button type="button" onClick={() => showPageWindow(pageWindowStart + pagesPerWindow)} disabled={pageWindowStart + pagesPerWindow >= pageCount} aria-label="Show next PDF pages"><ArrowRightIcon size={14} /></button>
+                </span>
+              )}
+            </span>
+          </div>
+          <div
+            className="split-page-rail"
+            ref={pageRailRef}
+            role="group"
+            aria-label={`Split points for ${pageRangeLabel.toLowerCase()}`}
+            onWheel={scrollPageRailHorizontally}
+          >
+            {visiblePages.map((pageIndex) => {
+              const groupIndex = groupsCoverInOrder ? plan.groups.findIndex((group) => group.includes(pageIndex)) : -1;
+              const group = groupIndex >= 0 ? plan.groups[groupIndex] : [];
+              const zebraGroup = groupIndex >= 0 && groupIndex % 2 === 0;
+              const startsVisibleGroup = group[0] === pageIndex || visiblePages[0] === pageIndex;
+              const endsVisibleGroup = group.at(-1) === pageIndex || visiblePages.at(-1) === pageIndex;
+              return (
+              <div
+                className={`split-page-slot ${zebraGroup ? "zebra-section" : ""} ${zebraGroup && startsVisibleGroup ? "zebra-section-start" : ""} ${zebraGroup && endsVisibleGroup ? "zebra-section-end" : ""}`}
+                key={pageIndex}
+              >
+                <span className="split-page-card">
+                  <PdfSplitThumbnail document={info.document} pageIndex={pageIndex} />
+                  <b>Page {pageIndex + 1}</b>
+                </span>
+                {pageIndex + 1 < pageCount && (
+                  <button
+                    type="button"
+                    className={`split-divider ${activeBreaks.has(pageIndex + 1) ? "active" : ""}`}
+                    aria-pressed={activeBreaks.has(pageIndex + 1)}
+                    aria-label={`${activeBreaks.has(pageIndex + 1) ? "Remove" : "Add"} split after page ${pageIndex + 1}`}
+                    onClick={() => toggleBreak(pageIndex + 1)}
+                  >
+                    <span aria-hidden="true" />
+                    <ScissorsIcon size={16} weight="bold" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+              );
+            })}
+          </div>
+          {mode === "custom" && (
+            <details className="page-manual-entry split-manual-entry">
+              <summary><KeyboardIcon size={15} aria-hidden="true" /><span>Enter split points instead</span><CaretRightIcon size={13} aria-hidden="true" /></summary>
+              <div className="setting-field">
+                <label htmlFor="split-custom-breaks"><strong>Split after pages</strong></label>
+                <small id="split-custom-breaks-description" className="field-description">Example: 3, 6 creates pages 1–3, 4–6, and 7 onward.</small>
+                <input id="split-custom-breaks" type="text" maxLength={4096} value={settings.customBreaks} aria-describedby="split-custom-breaks-description" aria-invalid={!plan.valid} onChange={(event) => onChange("customBreaks", event.target.value)} />
+              </div>
+            </details>
+          )}
+        </section>
+      )}
+
+      {plan.valid ? (
+        <section className="split-output-groups" aria-labelledby="split-output-title">
+          <h4 id="split-output-title" className="visually-hidden">Planned output PDFs</h4>
+          {plan.groups.map((group, index) => {
+            const pages = formatPageSelection(group);
+            const displayPages = pages.replaceAll("-", "–");
+            return (
+              <div className={`split-output-group tone-${index % 3}`} key={`${pages}-${index}`}>
+                <span><FilePdfIcon size={19} weight="duotone" aria-hidden="true" /></span>
+                <span><strong>PDF {index + 1} · {group.length === 1 ? `Page ${displayPages}` : `Pages ${displayPages}`}</strong><small>{group.length.toLocaleString()} {group.length === 1 ? "page" : "pages"}</small></span>
+                <b title={`Pages ${displayPages}`}>{displayPages}</b>
+              </div>
+            );
+          })}
+          <div className="split-output-tip"><WarningCircleIcon size={15} weight="fill" aria-hidden="true" /><span><strong>Tip:</strong> Odd pages and Even pages create one PDF with all selected pages.</span></div>
+        </section>
+      ) : (
+        <div id="split-plan-message" className={`split-output-plan ${["idle", "loading"].includes(info.state) ? "pending" : "warning"}`} role={["idle", "loading"].includes(info.state) ? "status" : "alert"} aria-live="polite">
+          <WarningCircleIcon size={18} weight="fill" aria-hidden="true" />
+          <span><strong>Check your split</strong><small>{plan.message}</small></span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RemovePdfControls({ settings, onChange, info, plan }) {
+  const resultDescription = plan.valid
+    ? `Removes ${formatPageSelection(plan.selection)}. Keeps ${plan.keptCount.toLocaleString()} ${plan.keptCount === 1 ? "page" : "pages"} in one PDF.`
+    : plan.message;
+  const planIsWarning = !plan.valid && !["idle", "loading"].includes(info.state);
+
+  return (
+    <div className="page-tool-controls">
+      <PdfPageSourceStatus info={info} />
+      {info.state === "ready" && (
+        <PageSelectionPicker
+          value={settings.pages}
+          pageCount={info.pageCount}
+          selection={plan.selection}
+          onChange={(value) => onChange("pages", value)}
+          intent="remove"
+          valid={plan.valid}
+        />
+      )}
+      <div id="remove-plan-message" className={`split-output-plan ${plan.valid ? "ready" : planIsWarning ? "warning" : "pending"}`} role={planIsWarning ? "alert" : "status"} aria-live="polite">
+        {plan.valid ? <FilePdfIcon size={18} weight="duotone" aria-hidden="true" /> : <WarningCircleIcon size={18} weight="fill" aria-hidden="true" />}
+        <span><strong>{plan.valid ? "Result preview" : "Choose pages"}</strong><small>{resultDescription}</small></span>
+      </div>
+    </div>
+  );
+}
+
 function accessibleProgressMessage(phase = "") {
   if (/checking/i.test(phase)) return "Checking files against local safety limits.";
   if (/loading/i.test(phase)) return "Loading the local processing engine.";
@@ -496,6 +953,176 @@ function accessibleProgressMessage(phase = "") {
   return phase || "Local processing started.";
 }
 
+function PdfPreviewCanvas({ document, pageIndex, limits, onState, onError }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (!document || !canvasRef.current) return undefined;
+    let cancelled = false;
+    let renderTask;
+    let page;
+    onState("loading");
+    onError("");
+    (async () => {
+      page = await document.getPage(pageIndex + 1);
+      const base = page.getViewport({ scale: 1 });
+      const availableWidth = Math.max(320, canvasRef.current?.parentElement?.clientWidth - 32 || 760);
+      let scale = Math.min(limits.maxPreviewRasterEdge / base.width, availableWidth / base.width);
+      const projectedPixels = base.width * scale * base.height * scale;
+      if (projectedPixels > limits.maxPreviewRasterPixels) {
+        scale *= Math.sqrt(limits.maxPreviewRasterPixels / projectedPixels);
+      }
+      const viewport = page.getViewport({ scale });
+      const width = Math.max(1, Math.ceil(viewport.width));
+      const height = Math.max(1, Math.ceil(viewport.height));
+      assertRasterDimensions(width, height, {
+        maxRasterPixels: limits.maxPreviewRasterPixels,
+        maxRasterEdge: limits.maxPreviewRasterEdge,
+      }, `Merged PDF page ${pageIndex + 1} preview`);
+      const canvas = canvasRef.current;
+      if (!canvas || cancelled) return;
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d", { alpha: false });
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, width, height);
+      renderTask = page.render({ canvasContext: context, viewport });
+      await renderTask.promise;
+      if (!cancelled) onState("ready");
+    })().catch((error) => {
+      if (cancelled || error?.name === "RenderingCancelledException") return;
+      onState("error");
+      onError(error?.message || "This page could not be rendered in the browser preview.");
+    });
+    return () => {
+      cancelled = true;
+      try { renderTask?.cancel(); } catch { /* Render already completed. */ }
+      page?.cleanup();
+      if (canvasRef.current) {
+        canvasRef.current.width = 1;
+        canvasRef.current.height = 1;
+      }
+    };
+  }, [document, pageIndex, limits, onState, onError]);
+
+  return <canvas ref={canvasRef} className="pdf-preview-canvas" role="img" aria-label={`Preview of merged PDF page ${pageIndex + 1}`} />;
+}
+
+function PdfPreviewDialog({ result, limits, onClose }) {
+  const dialogRef = useRef(null);
+  const titleRef = useRef(null);
+  const [pdfDocument, setPdfDocument] = useState(null);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [previewState, setPreviewState] = useState("loading");
+  const [previewError, setPreviewError] = useState("");
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return undefined;
+    if (!dialog.open) dialog.showModal();
+    titleRef.current?.focus();
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loadingTask;
+    let loadedDocument;
+    setPdfDocument(null);
+    setPreviewState("loading");
+    setPreviewError("");
+    setPageIndex(0);
+    (async () => {
+      const blob = assertPdfPreviewResult(result, limits.maxOutputBytes);
+      const pdfjs = await getPdfJsEngine();
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      if (cancelled) return;
+      loadingTask = pdfjs.getDocument({ data: bytes });
+      loadedDocument = await loadingTask.promise;
+      if (!Number.isInteger(loadedDocument.numPages) || loadedDocument.numPages < 1 || loadedDocument.numPages > limits.maxPdfPagesTotal) {
+        throw new Error("The merged PDF reported an invalid page count for preview.");
+      }
+      if (cancelled) {
+        await destroyPdfJsDocument(loadedDocument);
+        loadedDocument = null;
+        loadingTask = null;
+        return;
+      }
+      setPdfDocument(loadedDocument);
+    })().catch((error) => {
+      if (cancelled || error?.name === "RenderingCancelledException") return;
+      void destroyPdfJsDocument(loadedDocument).catch(() => {});
+      loadedDocument = null;
+      loadingTask = null;
+      setPreviewState("error");
+      setPreviewError(error?.message || "The merged PDF could not be opened in the browser preview.");
+    });
+    return () => {
+      cancelled = true;
+      void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
+    };
+  }, [result, limits]);
+
+  const pageCount = pdfDocument?.numPages || 0;
+  const openPage = (nextPage) => {
+    setPreviewError("");
+    setPreviewState("loading");
+    setPageIndex(nextPage);
+  };
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="pdf-preview-dialog"
+      aria-labelledby="pdf-preview-title"
+      aria-describedby="pdf-preview-description"
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+    >
+      <div className="pdf-preview-shell">
+        <header className="pdf-preview-header">
+          <span className="pdf-preview-icon"><FilePdfIcon size={24} weight="duotone" aria-hidden="true" /></span>
+          <div>
+            <span className="pdf-preview-kicker">Local result preview</span>
+            <h2 ref={titleRef} id="pdf-preview-title" tabIndex="-1">{result.name}</h2>
+            <p id="pdf-preview-description">Review merged pages here without uploading them. Download remains available for your preferred PDF viewer.</p>
+          </div>
+          <button className="dialog-close" onClick={onClose} aria-label="Close PDF preview"><XIcon size={21} aria-hidden="true" /></button>
+        </header>
+
+        <nav className="pdf-preview-toolbar" aria-label="Merged PDF preview pages">
+          <button onClick={() => openPage(Math.max(0, pageIndex - 1))} disabled={!pageCount || pageIndex === 0} aria-label="Preview previous page"><ArrowLeftIcon size={16} aria-hidden="true" />Previous</button>
+          <span aria-live="polite">{pageCount ? `Page ${pageIndex + 1} of ${pageCount}` : "Opening PDF…"}</span>
+          <button onClick={() => openPage(Math.min(pageCount - 1, pageIndex + 1))} disabled={!pageCount || pageIndex === pageCount - 1} aria-label="Preview next page">Next<ArrowRightIcon size={16} aria-hidden="true" /></button>
+        </nav>
+
+        <div className="pdf-preview-frame">
+          {pdfDocument && !previewError && (
+            <PdfPreviewCanvas
+              document={pdfDocument}
+              pageIndex={pageIndex}
+              limits={limits}
+              onState={setPreviewState}
+              onError={setPreviewError}
+            />
+          )}
+          {previewState === "loading" && <div className="pdf-preview-state" role="status"><SpinnerGapIcon size={22} className="spin" aria-hidden="true" /><strong>Rendering page locally</strong><span>No file data leaves this device.</span></div>}
+          {previewError && <div className="pdf-preview-state error" role="alert"><WarningCircleIcon size={23} weight="fill" aria-hidden="true" /><strong>Preview unavailable</strong><span>{previewError} Your merged PDF is still ready to download.</span></div>}
+        </div>
+
+        <footer className="pdf-preview-footer">
+          <span><ShieldCheckIcon size={17} weight="fill" aria-hidden="true" />On-device preview · {formatBytes(result.size)} · {result.details}</span>
+          <div>
+            <button className="preview-back-button" onClick={onClose}>Back to result</button>
+            <button className="preview-download-button" onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}><DownloadSimpleIcon size={17} aria-hidden="true" />Download PDF</button>
+          </div>
+        </footer>
+      </div>
+    </dialog>
+  );
+}
+
 function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const dialogRef = useRef(null);
   const titleRef = useRef(null);
@@ -507,6 +1134,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const reorderButtonsRef = useRef(new Map());
   const removeButtonsRef = useRef(new Map());
   const resultHeadingRef = useRef(null);
+  const previewOpenerRef = useRef(null);
   const settingsList = useMemo(() => [...tool.settings, ...(contextualSettings[tool.slug] || [])].map((setting) => ({
     ...setting,
     maxLength: setting.maxLength ?? getTextSettingLimit(tool, setting.key),
@@ -522,13 +1150,40 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [progress, setProgress] = useState({ phase: "Ready", progress: 0 });
   const [progressAnnouncement, setProgressAnnouncement] = useState(null);
   const [results, setResults] = useState([]);
+  const [previewResult, setPreviewResult] = useState(null);
   const [processError, setProcessError] = useState("");
   const [fileIssue, setFileIssue] = useState(null);
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
+  const passwordGate = useProtectedPdfGate(tool, files, setFiles);
+  const usesPagePicker = ["split-pdf", "remove-pdf-pages"].includes(tool.slug);
+  const pageInfo = usePdfPageInfo(files[0], usesPagePicker && passwordGate.ready, limits, tool.name);
+  const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
+  const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
+  const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
 
   const getFileId = (file) => {
     if (!fileIdsRef.current.has(file)) fileIdsRef.current.set(file, crypto.randomUUID());
     return fileIdsRef.current.get(file);
+  };
+
+  const clearResults = () => {
+    setResults([]);
+    setPreviewResult(null);
+  };
+
+  const openResultPreview = (result, opener) => {
+    previewOpenerRef.current = opener;
+    if (dialogRef.current?.open) dialogRef.current.close();
+    setPreviewResult(result);
+  };
+
+  const closeResultPreview = () => {
+    const opener = previewOpenerRef.current;
+    setPreviewResult(null);
+    window.requestAnimationFrame(() => {
+      if (!dismissedRef.current && dialogRef.current && !dialogRef.current.open) dialogRef.current.showModal();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    });
   };
 
   const closeWorkbench = () => {
@@ -569,8 +1224,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     const validation = validateFileSelection(tool, baseFiles, incomingFiles);
 
     if (validation.accepted.length) {
+      passwordGate.resetForFileChange();
       setFiles(validation.nextFiles);
-      setResults([]);
+      clearResults();
+      setStatus("idle");
       setProcessError("");
     }
 
@@ -602,7 +1259,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     const movedFileId = getFileId(movedFile);
     const next = [...files];
     [next[index], next[target]] = [next[target], next[index]];
+    passwordGate.resetForFileChange();
     setFiles(next);
+    clearResults();
+    setStatus("idle");
+    setProcessError("");
     setQueueAnnouncement({ id: crypto.randomUUID(), message: `${movedFile.name} moved to position ${target + 1} of ${files.length}.` });
     const focusDirection = direction < 0
       ? (target === 0 ? "down" : "up")
@@ -615,8 +1276,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     const remaining = files.filter((_, fileIndex) => fileIndex !== index);
     const nextFocusFile = remaining[Math.min(index, remaining.length - 1)];
     const nextFocusId = nextFocusFile ? getFileId(nextFocusFile) : null;
+    passwordGate.resetForFileChange();
     setFiles(remaining);
-    setResults([]);
+    clearResults();
+    setStatus("idle");
+    setProcessError("");
     setFileIssue(null);
     setQueueAnnouncement({ id: crypto.randomUUID(), message: `${file.name} removed. ${remaining.length} ${remaining.length === 1 ? "file remains" : "files remain"}.` });
     window.requestAnimationFrame(() => {
@@ -630,12 +1294,21 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const hasRequiredInput = minFiles === 0
     ? files.length > 0 || Boolean(String(settings.html || "").trim())
     : files.length >= minFiles;
-  const canRun = hasRequiredInput && status !== "processing";
+  const pageSelectionReady = tool.slug === "split-pdf" ? Boolean(splitPlan?.valid) : tool.slug === "remove-pdf-pages" ? Boolean(removePlan?.valid) : true;
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
       ? "Paste HTML or add an HTML file to continue."
       : `Add ${remainingFiles} ${files.length ? "more " : ""}${remainingFiles === 1 ? "file" : "files"} to continue.`
+    : !passwordGate.ready
+      ? passwordGate.active?.status === "checking"
+        ? "Checking PDF protection locally."
+        : "Enter the PDF password above to continue."
+    : tool.slug === "split-pdf" && !splitPlan?.valid
+      ? splitPlan?.message
+    : tool.slug === "remove-pdf-pages" && !removePlan?.valid
+      ? removePlan?.message
     : "";
   const processHintId = `process-hint-${tool.slug}`;
   const showProcessHint = Boolean(processHint) && status !== "processing";
@@ -645,11 +1318,15 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     setStatus("processing");
     setProcessError("");
     setFileIssue(null);
-    setResults([]);
+    clearResults();
     setProgress({ phase: "Starting", progress: 0.02 });
     setProgressAnnouncement({ id: crypto.randomUUID(), message: "Local processing started." });
     try {
-      const response = await runTool(tool, files, settings, (nextProgress) => {
+      const response = await runTool(tool, files, {
+        ...settings,
+        inputPasswords: passwordGate.inputPasswords,
+        outputPassword: passwordGate.outputPassword,
+      }, (nextProgress) => {
         if (!dismissedRef.current) {
           setProgress(nextProgress);
           const message = accessibleProgressMessage(nextProgress.phase);
@@ -664,15 +1341,32 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       if (dismissedRef.current) return;
       setStatus("error");
       setProcessError(error?.message || "The local processor could not finish this file.");
+    } finally {
+      if (!dismissedRef.current) passwordGate.clearCredentials({ resetPreference: true });
     }
   };
 
   const dropzoneAction = files.length
     ? limits.maxFiles === 1 ? "Choose a different file" : "Add more files"
     : "Drop files here or choose files";
+  const processButtonLabel = tool.slug === "split-pdf" && splitPlan?.valid
+    ? splitPlan.groups.length === 1
+      ? "Create 1 PDF"
+      : `Create ${splitPlan.groups.length.toLocaleString()} PDFs`
+    : tool.slug === "remove-pdf-pages" && removePlan?.valid
+      ? `Remove ${removePlan.selection.length.toLocaleString()} ${removePlan.selection.length === 1 ? "page" : "pages"}`
+    : tool.name;
+
+  const updateSetting = (key, value) => {
+    setSettings((current) => ({ ...current, [key]: value }));
+    clearResults();
+    setStatus("idle");
+    setProcessError("");
+  };
 
   return (
-    <dialog ref={dialogRef} className="workbench-dialog" onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <>
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -686,7 +1380,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className="workbench-body">
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -713,10 +1407,14 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               capture={tool.slug === "scan-to-pdf" ? "environment" : undefined}
               onChange={(event) => { addFiles(event.target.files); event.target.value = ""; }}
             />
-            <div id={limitsId} className="limits-note" role="note">
-              <GaugeIcon size={17} aria-hidden="true" />
-              <span><strong>Limits</strong><span id={limitsPrimaryId}>{limitCopy.primary}</span><span className="limits-details">{limitCopy.secondary}</span></span>
-            </div>
+            <details id={limitsId} className="limits-note">
+              <summary>
+                <GaugeIcon size={17} aria-hidden="true" />
+                <span><strong>Local safeguards</strong><span id={limitsPrimaryId}>{limitCopy.primary}</span></span>
+                <span className="limits-disclosure" aria-hidden="true">Details <CaretRightIcon size={13} /></span>
+              </summary>
+              <div className="limits-details"><strong>Additional safeguards</strong><span>{limitCopy.secondary}</span></div>
+            </details>
             {fileIssue && <div key={fileIssue.id} className="error-card file-error"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><span role="alert" aria-atomic="true"><strong>{fileIssue.title}</strong>{fileIssue.summary}</span><details><summary>Review rejected files</summary><ul>{fileIssue.details.map((detail, index) => <li key={`${fileIssue.id}-${index}`}>{detail}</li>)}</ul></details></span></div>}
             {queueAnnouncement && <p key={queueAnnouncement.id} className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{queueAnnouncement.message}</p>}
 
@@ -736,6 +1434,21 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               </div>
             )}
 
+            {!results.length && (
+              <PdfPasswordGate
+                entry={passwordGate.active}
+                password={passwordGate.password}
+                onPasswordChange={passwordGate.setPassword}
+                onVerify={passwordGate.verify}
+                verifying={passwordGate.verifying}
+                outputProtection={passwordGate.outputProtection}
+              />
+            )}
+
+            {!results.length && !passwordGate.active && (
+              <PdfOutputProtectionControl control={passwordGate.outputProtection} compact />
+            )}
+
             {results.length > 0 && (
               <div className="results-card">
                 <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">Your result is ready</h3><p>Created locally. Download it before closing this tab.</p></div></div>
@@ -743,18 +1456,28 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
                     <span><strong>{result.name}</strong><small>{formatBytes(result.size)} · {result.details}</small></span>
-                    <button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}>Download</button>
+                    <span className="result-actions">
+                      {tool.slug === "merge-pdf" && result.type === "application/pdf" && (
+                        <button onClick={(event) => openResultPreview(result, event.currentTarget)} aria-label={`Preview ${result.name}`}><EyeIcon size={16} aria-hidden="true" />Preview</button>
+                      )}
+                      <button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}>Download</button>
+                    </span>
                   </div>
                 ))}
-                <button className="start-another" onClick={() => { setResults([]); setFiles([]); setStatus("idle"); setProcessError(""); setFileIssue(null); setQueueAnnouncement(null); }}>Start another</button>
+                <button className="start-another" onClick={() => { passwordGate.resetForFileChange(); clearResults(); setFiles([]); setStatus("idle"); setProcessError(""); setFileIssue(null); setQueueAnnouncement(null); }}>Start another</button>
               </div>
             )}
           </section>
 
-          <aside className="settings-panel" aria-label="Tool settings">
+          <aside className={`settings-panel ${usesPagePicker ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
+            <div className="settings-scroll">
             <div className="settings-heading"><span><SlidersHorizontalIcon size={19} /></span><div><h3>Settings</h3><p>Fine-tune the local output.</p></div></div>
-            {settingsList.length ? settingsList.map((setting) => (
-              <SettingControl key={setting.key} setting={setting} value={settings[setting.key]} onChange={(value) => { setSettings((current) => ({ ...current, [setting.key]: value })); setResults([]); setProcessError(""); }} />
+            {tool.slug === "split-pdf" ? (
+              <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
+            ) : tool.slug === "remove-pdf-pages" ? (
+              <RemovePdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={removePlan} />
+            ) : settingsList.length ? settingsList.map((setting) => (
+              <SettingControl key={setting.key} setting={setting} value={settings[setting.key]} onChange={(value) => updateSetting(setting.key, value)} />
             )) : <div className="no-settings"><CheckCircleIcon size={20} /><span><strong>Nothing to configure</strong>This tool uses sensible local defaults.</span></div>}
 
             {tool.maturity === "beta" && (
@@ -764,6 +1487,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             <div className="output-summary">
               <span>Output</span>
               <strong>{tool.output.join(" · ").toUpperCase()}</strong>
+            </div>
             </div>
             <div className="process-action-stack">
               {status === "processing" && (
@@ -775,8 +1499,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 </div>
               )}
               {processError && <div className="error-card" role="alert"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><strong>Couldn’t finish that job</strong>{processError}</span></div>}
+              {tool.slug === "split-pdf" && splitPlan?.valid && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{splitPlan.groups.length.toLocaleString()} {splitPlan.groups.length === 1 ? "PDF" : "PDFs"} ready</strong>
+              )}
               <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
-                {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{tool.name}</>}
+                {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
               </button>
               {showProcessHint && <small id={processHintId} className="button-hint">{processHint}</small>}
             </div>
@@ -784,6 +1511,14 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         </div>
       </div>
     </dialog>
+    {previewResult && (
+      <PdfPreviewDialog
+        result={previewResult}
+        limits={limits}
+        onClose={closeResultPreview}
+      />
+    )}
+    </>
   );
 }
 

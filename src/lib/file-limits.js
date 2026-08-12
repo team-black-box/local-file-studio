@@ -55,7 +55,7 @@ const SLUG_ALIASES = {
   "remove-background": "remove-image-background",
 };
 const TEXT_SETTING_LIMITS = {
-  "split-pdf": { pages: MAX_PAGE_SELECTION_CHARACTERS },
+  "split-pdf": { pages: MAX_PAGE_SELECTION_CHARACTERS, customBreaks: MAX_PAGE_SELECTION_CHARACTERS },
   "remove-pdf-pages": { pages: MAX_PAGE_SELECTION_CHARACTERS },
   "extract-pdf-pages": { pages: MAX_PAGE_SELECTION_CHARACTERS },
   "organize-pdf": { order: MAX_PAGE_SELECTION_CHARACTERS },
@@ -71,7 +71,7 @@ const TEXT_SETTING_LIMITS = {
 };
 
 const TEXT_SETTING_LABELS = {
-  "split-pdf": { pages: "page selection" },
+  "split-pdf": { pages: "page selection", customBreaks: "custom split points" },
   "remove-pdf-pages": { pages: "page selection" },
   "extract-pdf-pages": { pages: "page selection" },
   "organize-pdf": { order: "page order" },
@@ -126,6 +126,8 @@ export function getToolLimits(toolOrSlug) {
       maxTotalBytes: 120 * MIB,
       maxPdfPagesPerFile: 300,
       maxPdfPagesTotal: 500,
+      maxPreviewRasterPixels: 8 * MEGAPIXEL,
+      maxPreviewRasterEdge: 4096,
     });
   }
 
@@ -365,7 +367,9 @@ export function describeToolLimits(tool) {
         : `Up to ${limits.maxFiles} ${types} files`;
   const primary = limits.minFiles === 0
     ? `1 ${types} file up to ${formatLimitBytes(limits.maxFileBytes)}, or pasted markup in Settings`
-    : `${count} · ${formatLimitBytes(limits.maxFileBytes)} each · ${formatLimitBytes(limits.maxTotalBytes)} combined`;
+    : limits.maxFiles === 1
+      ? `${count} · ${formatLimitBytes(limits.maxFileBytes)}`
+      : `${count} · ${formatLimitBytes(limits.maxFileBytes)} each · ${formatLimitBytes(limits.maxTotalBytes)} combined`;
   const details = [];
 
   if (limits.maxPdfPagesPerFile) details.push(`${limits.maxPdfPagesPerFile.toLocaleString()} pages/file`);
@@ -380,6 +384,7 @@ export function describeToolLimits(tool) {
   if (limits.firstFrameImageFormats) details.push(`${limits.firstFrameImageFormats}: first frame only`);
   if (limits.maxRasterPixels) details.push(`${formatPixels(limits.maxRasterPixels)} / ${limits.maxRasterEdge.toLocaleString()} px per rendered page`);
   if (limits.maxRasterPixelsTotal) details.push(`${formatPixels(limits.maxRasterPixelsTotal)} rendered per job`);
+  if (limits.maxPreviewRasterPixels) details.push(`${formatPixels(limits.maxPreviewRasterPixels)} / ${limits.maxPreviewRasterEdge.toLocaleString()} px preview page`);
   if (limits.maxExtractedCharactersTotal) details.push(`${limits.maxExtractedCharactersTotal.toLocaleString()} extracted characters`);
   if (limits.maxExtractedLinesPerFile) details.push(`${limits.maxExtractedLinesPerFile.toLocaleString()} extracted lines/file`);
   if (limits.maxExtractedLinesTotal) details.push(`${limits.maxExtractedLinesTotal.toLocaleString()} extracted lines combined`);

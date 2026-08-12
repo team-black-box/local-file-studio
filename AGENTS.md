@@ -31,12 +31,15 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 
 - `src/App.jsx`, `src/styles.css`: application shell and workbench UI.
 - `src/PdfImageWorkbench.jsx`: visual local editor for placing reusable images and signatures on PDF pages.
+- `src/PdfPasswordGate.jsx`, `src/useProtectedPdfGate.js`: shared inline protected-PDF credential UX and memory-only lifecycle.
 - `src/tools.js`: tool catalog, accepted formats, settings, and user-facing metadata.
 - `src/lib/processors.js`: tool dispatch and shared processing paths.
 - `src/lib/pdf-processors.js`, `src/lib/image-processors.js`, `src/lib/libpdf.js`: format-specific engines.
 - `src/lib/docx-text.js`: bounded, local DOCX text extraction for Word-to-PDF.
 - `src/lib/pptx-writer.js`: dependency-light text reconstruction for PDF-to-PPTX output.
 - `src/lib/pdfjs-utils.js`: version-compatible PDF.js document cleanup.
+- `src/lib/pdf-passwords.js`: protected-PDF access modes, permission checks, and in-memory unlock adapter.
+- `src/lib/pdf-output-protection.js`: opt-in fresh protection for generated PDF results.
 - `src/lib/file-limits.js`: canonical resource policies and displayed limit descriptions.
 - `src/lib/file-preflight.js`: pre-allocation inspection and format-aware validation.
 - `src/lib/file-utils.js`: bounded result/download helpers and cleanup utilities.

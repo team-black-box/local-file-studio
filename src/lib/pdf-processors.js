@@ -3,8 +3,11 @@
 
 import {
   baseName,
+  createSplitPdfGroups,
   createResultBudget,
+  formatPageSelection,
   parsePageSelection,
+  parseRemovalPageSelection,
   resultFromBlob,
   retainResult,
   safeFileName,
@@ -33,25 +36,11 @@ import {
   validatePdfOverlayPlacements,
 } from "./file-limits.js";
 import { runBoundedLineDiff } from "./diff-worker-client.js";
-import { destroyPdfJsDocument } from "./pdfjs-utils.js";
-
-let pdfJsPromise;
-
-async function getPdfJs() {
-  if (!pdfJsPromise) {
-    pdfJsPromise = Promise.all([
-      import("pdfjs-dist"),
-      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-    ]).then(([pdfjs, worker]) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      return pdfjs;
-    });
-  }
-  return await pdfJsPromise;
-}
+import { destroyPdfJsDocument, getPdfJsEngine } from "./pdfjs-utils.js";
+import { protectGeneratedPdfResults } from "./pdf-output-protection.js";
 
 async function openRenderedPdf(file, password = "") {
-  const pdfjs = await getPdfJs();
+  const pdfjs = await getPdfJsEngine();
   const bytes = new Uint8Array(await file.arrayBuffer());
   return await pdfjs.getDocument({ data: bytes, password: password || undefined }).promise;
 }
@@ -214,26 +203,49 @@ async function mergePdfs(files, options, report) {
 async function splitPdf(file, options, report) {
   const source = await loadPdfLib(file);
   const pageCount = source.getPageCount();
-  const selection = parsePageSelection(options.pages || options.range || "all", pageCount);
-  if (!selection.length) throw new Error("Choose at least one valid page to split.");
-  assertGeneratedItemCount(selection.length, "split-pdf", "PDF files");
+  const splitMode = options.mode || (options.pages && options.pages !== "all" ? "selected" : "all");
+  const groups = createSplitPdfGroups(splitMode, pageCount, options.customBreaks, options.pages);
+  assertGeneratedItemCount(groups.length, "split-pdf", "PDF files");
   const results = [];
   const resultBudget = createResultBudget();
-  for (let index = 0; index < selection.length; index += 1) {
-    report?.({ phase: `Extracting page ${index + 1} of ${selection.length}`, progress: index / selection.length });
-    const output = await copyPagesToNewDocument(source, [selection[index]]);
+  for (let index = 0; index < groups.length; index += 1) {
+    const group = groups[index];
+    const firstPage = group[0] + 1;
+    const lastPage = group[group.length - 1] + 1;
+    const contiguous = group.every((page, pageIndex) => pageIndex === 0 || page === group[pageIndex - 1] + 1);
+    const pageLabel = formatPageSelection(group);
+    const fileLabel = splitMode === "odd" || splitMode === "even"
+      ? `${splitMode}-pages`
+      : group.length === 1
+        ? `page-${firstPage}`
+        : contiguous
+          ? `pages-${firstPage}-${lastPage}`
+          : `pages-${index + 1}`;
+    report?.({ phase: `Creating PDF ${index + 1} of ${groups.length}`, progress: index / groups.length });
+    const output = await copyPagesToNewDocument(source, group);
     results.push(retainResult(
       resultBudget,
-      pdfResult(`${safeFileName(baseName(file.name))}-page-${selection[index] + 1}.pdf`, await output.save(), "Single-page PDF"),
+      pdfResult(
+        `${safeFileName(baseName(file.name))}-${fileLabel}.pdf`,
+        await output.save(),
+        `${group.length.toLocaleString()} ${group.length === 1 ? "page" : "pages"} · ${pageLabel}`,
+      ),
     ));
   }
-  return await zipResults(results, `${safeFileName(baseName(file.name))}-split.zip`);
+  const protectedResults = await protectGeneratedPdfResults(results, options.outputPassword);
+  const output = await zipResults(protectedResults, `${safeFileName(baseName(file.name))}-split.zip`);
+  if (output.length === 1 && output[0].type === "application/zip") {
+    output[0].details = `${groups.length} PDFs in one ZIP${options.outputPassword ? " · contained PDFs are password-protected" : ""}`;
+  }
+  return output;
 }
 
 async function selectPdfPages(slug, file, options) {
   const source = await loadPdfLib(file);
   const pageCount = source.getPageCount();
-  const selected = parsePageSelection(options.pages || options.range || "1", pageCount, "none");
+  const selected = slug === "remove-pages"
+    ? parseRemovalPageSelection(options.pages || options.range || "", pageCount)
+    : parsePageSelection(options.pages || options.range || "1", pageCount, "none");
   let order;
   if (slug === "remove-pages") {
     const removed = new Set(selected);
@@ -256,7 +268,12 @@ async function selectPdfPages(slug, file, options) {
         pdfResult(`${safeFileName(baseName(file.name))}-page-${index + 1}.pdf`, await single.save(), "Extracted page"),
       ));
     }
-    return await zipResults(results, `${safeFileName(baseName(file.name))}-extracted-pages.zip`);
+    const protectedResults = await protectGeneratedPdfResults(results, options.outputPassword);
+    const output = await zipResults(protectedResults, `${safeFileName(baseName(file.name))}-extracted-pages.zip`);
+    if (options.outputPassword && output[0]?.type === "application/zip") {
+      output[0].details = `${output[0].details} · contained PDFs are password-protected`;
+    }
+    return output;
   }
   const output = await copyPagesToNewDocument(source, order);
   return [pdfResult(`${safeFileName(baseName(file.name))}-${safeFileName(slug)}.pdf`, await output.save(), `${order.length} pages`)];
@@ -457,7 +474,7 @@ async function imageFilesToPdf(slug, files, options, report) {
 async function rasterizePdf(file, options, report, mode = "compress") {
   const { PDFDocument } = await import("pdf-lib");
   const limits = getToolLimits(mode === "redact" ? "redact-pdf" : "compress-pdf");
-  const rendered = await openRenderedPdf(file, options.password);
+  const rendered = await openRenderedPdf(file, options.inputPassword);
   const output = await PDFDocument.create();
   const quality = Math.max(0.25, Math.min(0.95, Number(options.quality || (mode === "redact" ? 90 : 68)) / 100));
   const scale = mode === "compress" ? Number(options.scale || 1.2) : 1.6;
@@ -494,7 +511,7 @@ async function rasterizePdf(file, options, report, mode = "compress") {
 
 async function pdfToImages(file, options, report) {
   const limits = getToolLimits("pdf-to-jpg");
-  const rendered = await openRenderedPdf(file, options.password);
+  const rendered = await openRenderedPdf(file, options.inputPassword);
   const format = options.format === "png" ? { type: "image/png", ext: "png", quality: 1 } : { type: "image/jpeg", ext: "jpg", quality: Number(options.quality || 88) / 100 };
   const results = [];
   const resultBudget = createResultBudget();
@@ -521,7 +538,7 @@ async function pdfToImages(file, options, report) {
 async function ocrPdf(file, options, report) {
   const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const limits = getToolLimits("ocr-pdf");
-  const rendered = await openRenderedPdf(file, options.password);
+  const rendered = await openRenderedPdf(file, options.inputPassword);
   if (rendered.numPages > limits.maxPdfPagesPerFile) {
     await destroyPdfJsDocument(rendered);
     throw new FileLimitError("too-many-pages", `${file.name} has ${rendered.numPages} pages; OCR PDF supports ${limits.maxPdfPagesPerFile}. Split it first.`);
@@ -687,7 +704,7 @@ async function officeToPdf(slug, file, options, report) {
 
 async function pdfToOffice(slug, file, options, report) {
   const limits = getToolLimits(slug);
-  const pages = await extractPdfPagesText(file, options.password, report, limits.maxExtractedCharactersTotal);
+  const pages = await extractPdfPagesText(file, options.inputPassword, report, limits.maxExtractedCharactersTotal);
   const cleanName = safeFileName(baseName(file.name));
 
   if (slug === "pdf-to-word") {
@@ -776,7 +793,7 @@ async function translateLocally(text, targetLanguage, report) {
 
 async function intelligenceTool(slug, file, options, report) {
   const limits = getToolLimits(slug);
-  const pages = await extractPdfPagesText(file, options.password, report, limits.maxExtractedCharactersTotal);
+  const pages = await extractPdfPagesText(file, options.inputPassword, report, limits.maxExtractedCharactersTotal);
   const text = pages.join("\n\n");
   if (!text.trim()) throw new Error("No selectable text was found. Run OCR PDF first, then try again.");
   const name = safeFileName(baseName(file.name));
@@ -809,8 +826,8 @@ async function comparePdfs(files, options, report) {
     code: "comparison-text-limit",
     message: (_file, maxCharacters) => `These PDFs contain more than ${maxCharacters.toLocaleString()} selectable characters combined; Compare PDF cannot process them safely. Compare smaller page ranges or split the files first.`,
   };
-  const leftPages = await extractPdfPagesText(files[0], options.password, report, characterBudget);
-  const rightPages = await extractPdfPagesText(files[1], options.password2, report, characterBudget);
+  const leftPages = await extractPdfPagesText(files[0], options.inputPassword, report, characterBudget);
+  const rightPages = await extractPdfPagesText(files[1], options.inputPassword2, report, characterBudget);
   const leftText = leftPages.join("\n");
   const rightText = rightPages.join("\n");
   report?.({ phase: "Comparing extracted lines", progress: 0.78 });
@@ -870,7 +887,8 @@ export async function processPdfTool(slug, files, options = {}, report) {
   if (slug === "redact-pdf") return await rasterizePdf(files[0], options, report, "redact");
   if (slug === "ocr-pdf") return await ocrPdf(files[0], options, report);
   if (slug === "repair-pdf") {
-    const bytes = await repairPdf(new Uint8Array(await files[0].arrayBuffer()), options.password);
+    const repaired = await repairPdf(new Uint8Array(await files[0].arrayBuffer()), options.inputPassword);
+    const bytes = options.inputPassword === undefined ? repaired : await unlockPdf(repaired, options.inputPassword);
     return [pdfResult(`${safeFileName(baseName(files[0].name))}-repaired.pdf`, bytes, "Lenient local rewrite")];
   }
   if (["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(slug)) return await officeToPdf(slug, files[0], options, report);
