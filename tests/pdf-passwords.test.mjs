@@ -131,3 +131,26 @@ test("Repair PDF removes input protection by default and can apply fresh output 
   const [unchanged] = await protectGeneratedPdfResults([textResult], "owner");
   assert.strictEqual(unchanged, textResult);
 });
+
+test("output protection turns a kept Compress PDF original into an explicit protected copy", async () => {
+  const plainPdf = await PDFDocument.create();
+  plainPdf.addPage([300, 400]);
+  const original = new Blob([await plainPdf.save()], { type: "application/pdf" });
+  const [protectedResult] = await protectGeneratedPdfResults([{
+    id: "kept-original",
+    name: "already-small.pdf",
+    blob: original,
+    size: original.size,
+    type: "application/pdf",
+    details: "Original kept because the trial output was larger",
+    compressionOutcome: "original-kept",
+    originalSize: original.size,
+    attemptedSize: original.size + 500,
+    noNewFile: true,
+  }], "owner");
+  assert.equal(protectedResult.name, "already-small-protected.pdf");
+  assert.equal(protectedResult.compressionOutcome, "protected-original");
+  assert.equal(protectedResult.passwordProtected, true);
+  assert.equal(protectedResult.noNewFile, undefined);
+  assert.equal(protectedResult.attemptedSize, original.size + 500);
+});

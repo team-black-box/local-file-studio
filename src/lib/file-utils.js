@@ -21,6 +21,57 @@ export function formatBytes(bytes = 0) {
   return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
 }
 
+export function getCompressionSizeChange(inputBytes, outputBytes) {
+  const input = Number(inputBytes);
+  const output = Number(outputBytes);
+  if (!Number.isFinite(input) || input <= 0 || !Number.isFinite(output) || output < 0) return null;
+  const bytesSaved = input - output;
+  const percent = (bytesSaved / input) * 100;
+  return {
+    inputBytes: input,
+    outputBytes: output,
+    bytesSaved,
+    percent,
+    status: bytesSaved > 0 ? "reduced" : bytesSaved < 0 ? "increased" : "unchanged",
+  };
+}
+
+const PDF_COMPRESSION_PRESETS = Object.freeze({
+  gentle: Object.freeze({ quality: 82, scale: 1.45 }),
+  balanced: Object.freeze({ quality: 68, scale: 1.2 }),
+  strong: Object.freeze({ quality: 48, scale: 0.95 }),
+});
+
+export function getPdfCompressionPreset(mode) {
+  return PDF_COMPRESSION_PRESETS[mode] || PDF_COMPRESSION_PRESETS.balanced;
+}
+
+export function projectPdfCompressionSize(inputBytes, pageCount, sampleSizes) {
+  const input = Number(inputBytes);
+  const pages = Number(pageCount);
+  const samples = Array.isArray(sampleSizes) ? sampleSizes.map(Number).filter((size) => Number.isFinite(size) && size >= 0) : [];
+  if (!Number.isFinite(input) || input <= 0 || !Number.isInteger(pages) || pages < 1 || !samples.length) return null;
+  const average = samples.reduce((sum, size) => sum + size, 0) / samples.length;
+  const overhead = 4096 + pages * 1200;
+  const projectedBytes = Math.ceil(average * pages + overhead);
+  const minSample = Math.min(...samples);
+  const maxSample = Math.max(...samples);
+  const sampleSpread = average ? (maxSample - minSample) / average : 0;
+  const uncertainty = samples.length >= pages ? 0.08 : Math.min(0.4, Math.max(0.15, sampleSpread * 0.5));
+  return {
+    projectedBytes,
+    lowerBytes: Math.max(1, Math.floor(projectedBytes * (1 - uncertainty))),
+    upperBytes: Math.ceil(projectedBytes * (1 + uncertainty)),
+    sampledPages: samples.length,
+    ...getCompressionSizeChange(input, projectedBytes),
+  };
+}
+
+export function compressionEstimateAllowsProcessing(estimate) {
+  if (estimate?.state === "error") return true;
+  return estimate?.state === "ready" && estimate.status === "reduced";
+}
+
 export function baseName(name = "file") {
   return name.replace(/\.[^/.]+$/, "");
 }

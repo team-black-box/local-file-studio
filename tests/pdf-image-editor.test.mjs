@@ -17,7 +17,7 @@ import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
 import { processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
-import { assertPdfPreviewResult, parseRemovalPageSelection } from "../src/lib/file-utils.js";
+import { assertPdfPreviewResult, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 
 const MiB = 1024 * 1024;
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -38,6 +38,33 @@ function editorTool() {
     settings: [],
   };
 }
+
+test("compression size summaries report reductions without hiding larger outputs", () => {
+  assert.deepEqual(getCompressionSizeChange(1000, 600), {
+    inputBytes: 1000,
+    outputBytes: 600,
+    bytesSaved: 400,
+    percent: 40,
+    status: "reduced",
+  });
+  assert.equal(getCompressionSizeChange(1000, 1000).status, "unchanged");
+  assert.equal(getCompressionSizeChange(1000, 1200).status, "increased");
+  assert.equal(getCompressionSizeChange(0, 0), null);
+  assert.deepEqual(getPdfCompressionPreset("strong"), { quality: 48, scale: 0.95 });
+  assert.deepEqual(getPdfCompressionPreset("unknown"), { quality: 68, scale: 1.2 });
+  const estimate = projectPdfCompressionSize(1_000_000, 10, [40_000, 50_000, 60_000]);
+  assert.equal(estimate.projectedBytes, 516_096);
+  assert.equal(estimate.status, "reduced");
+  assert.equal(estimate.sampledPages, 3);
+  assert.ok(estimate.lowerBytes < estimate.projectedBytes);
+  assert.ok(estimate.upperBytes > estimate.projectedBytes);
+  assert.equal(projectPdfCompressionSize(0, 10, [50_000]), null);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "reduced" }), true);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "increased" }), false);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "unchanged" }), false);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "loading" }), false);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "error" }), true);
+});
 
 test("Merge PDF preserves selected order in a previewable PDF result", async () => {
   const first = await PDFDocument.create();

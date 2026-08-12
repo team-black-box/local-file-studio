@@ -218,9 +218,9 @@ export const tools = withPhosphorExports([
         label: "Compression",
         default: "balanced",
         options: [
-          { value: "gentle", label: "Gentle" },
-          { value: "balanced", label: "Balanced" },
-          { value: "strong", label: "Strong" },
+          { value: "gentle", label: "Gentle", badge: "Best clarity", hint: "Light reduction", description: "Keeps page images sharper and produces a larger result." },
+          { value: "balanced", label: "Balanced", badge: "Recommended", hint: "Medium reduction", description: "A practical clarity and file-size trade-off for sharing." },
+          { value: "strong", label: "Strong", badge: "Smallest target", hint: "Most reduction", description: "Uses lower image resolution; fine text may look softer." },
         ],
       },
     ],

@@ -502,8 +502,18 @@ async function rasterizePdf(file, options, report, mode = "compress") {
       const page = output.addPage([viewport.width, viewport.height]);
       page.drawImage(image, { x: 0, y: 0, width: viewport.width, height: viewport.height });
     }
+    const outputBytes = await output.save({ useObjectStreams: true });
+    if (mode === "compress" && outputBytes.byteLength >= file.size) {
+      return [{
+        ...resultFromBlob(file.name, file.slice(0, file.size, "application/pdf"), "Original kept because the trial output was larger"),
+        compressionOutcome: "original-kept",
+        originalSize: file.size,
+        attemptedSize: outputBytes.byteLength,
+        noNewFile: true,
+      }];
+    }
     const suffix = mode === "redact" ? "secure-redacted" : "compressed";
-    return [pdfResult(`${safeFileName(baseName(file.name))}-${suffix}.pdf`, await output.save({ useObjectStreams: true }), mode === "redact" ? "Pages flattened so hidden text is removed" : "Pages re-encoded locally")];
+    return [pdfResult(`${safeFileName(baseName(file.name))}-${suffix}.pdf`, outputBytes, mode === "redact" ? "Pages flattened so hidden text is removed" : "Pages re-encoded locally")];
   } finally {
     await destroyPdfJsDocument(rendered);
   }

@@ -3,6 +3,7 @@
 
 import { FileLimitError, assertMinimumFileCount, assertTextSettingLengths, summarizeRejections, validateFileSelection } from "./file-limits.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./file-preflight.js";
+import { getPdfCompressionPreset } from "./file-utils.js";
 
 const ALIASES = {
   "remove-pdf-pages": "remove-pages",
@@ -49,8 +50,9 @@ export async function runTool(tool, files, options = {}, report) {
   }
 
   if (slug === "compress-pdf" && typeof normalizedOptions.quality === "string") {
-    normalizedOptions.quality = { gentle: 82, balanced: 68, strong: 48 }[normalizedOptions.quality] || 68;
-    normalizedOptions.scale = { gentle: 1.45, balanced: 1.2, strong: 0.95 }[options.quality] || 1.2;
+    const preset = getPdfCompressionPreset(normalizedOptions.quality);
+    normalizedOptions.quality = preset.quality;
+    normalizedOptions.scale = preset.scale;
   }
 
   if (["jpg-to-pdf", "scan-to-pdf"].includes(slug) && typeof normalizedOptions.margin === "string") {

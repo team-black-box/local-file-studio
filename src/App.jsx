@@ -10,6 +10,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   ArrowsLeftRightIcon,
+  ArrowsInIcon,
   ArrowsOutIcon,
   BrainIcon,
   BrowserIcon,
@@ -22,6 +23,7 @@ import {
   DownloadSimpleIcon,
   EyeIcon,
   EyeSlashIcon,
+  FeatherIcon,
   FileArrowUpIcon,
   FileArrowDownIcon,
   FileDocIcon,
@@ -52,6 +54,7 @@ import {
   PlusIcon,
   ResizeIcon,
   ScanIcon,
+  ScalesIcon,
   ScissorsIcon,
   SelectionBackgroundIcon,
   ShieldCheckIcon,
@@ -76,7 +79,7 @@ import {
 import { categories, categoryById, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { assertPdfPreviewResult, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, parseSplitPageSelection } from "./lib/file-utils.js";
+import { assertPdfPreviewResult, compressionEstimateAllowsProcessing, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { runTool } from "./lib/processors.js";
@@ -1019,6 +1022,192 @@ function RemovePdfControls({ settings, onChange, info, plan }) {
   );
 }
 
+const compressionModeIcons = {
+  gentle: FeatherIcon,
+  balanced: ScalesIcon,
+  strong: ArrowsInIcon,
+};
+
+function usePdfCompressionEstimate(file, mode, password, enabled, limits) {
+  const [estimate, setEstimate] = useState({ state: "idle" });
+
+  useEffect(() => {
+    if (!file || !enabled) {
+      setEstimate({ state: "idle" });
+      return undefined;
+    }
+    let cancelled = false;
+    let loadingTask;
+    let loadedDocument;
+    let activeRenderTask;
+    setEstimate({ state: "loading", file, mode });
+    (async () => {
+      const pdfjs = await getPdfJsEngine();
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (cancelled) return;
+      loadingTask = pdfjs.getDocument({ data: bytes, password: password || undefined });
+      loadedDocument = await loadingTask.promise;
+      const pageCount = loadedDocument.numPages;
+      if (!Number.isInteger(pageCount) || pageCount < 1 || pageCount > limits.maxPdfPagesPerFile) throw new Error("This PDF cannot be sampled safely.");
+      const sampleIndexes = [...new Set([0, Math.floor((pageCount - 1) / 2), pageCount - 1])];
+      const preset = getPdfCompressionPreset(mode);
+      const sampleSizes = [];
+      for (const index of sampleIndexes) {
+        if (cancelled) return;
+        const page = await loadedDocument.getPage(index + 1);
+        let canvas;
+        try {
+          const viewport = page.getViewport({ scale: preset.scale });
+          assertRasterDimensions(viewport.width, viewport.height, limits, `Compression estimate page ${index + 1}`);
+          canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const context = canvas.getContext("2d", { alpha: false });
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          activeRenderTask = page.render({ canvasContext: context, viewport });
+          await activeRenderTask.promise;
+          activeRenderTask = null;
+          const blob = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("This page could not be sampled.")), "image/jpeg", preset.quality / 100));
+          sampleSizes.push(blob.size);
+        } finally {
+          page.cleanup();
+          if (canvas) {
+            canvas.width = 1;
+            canvas.height = 1;
+          }
+        }
+      }
+      const projection = projectPdfCompressionSize(file.size, pageCount, sampleSizes);
+      if (!cancelled && projection) setEstimate({ state: "ready", file, mode, ...projection });
+    })().catch((error) => {
+      if (cancelled || error?.name === "RenderingCancelledException") return;
+      setEstimate({ state: "error", file, mode, message: "Estimate unavailable. The exact result will still be checked before a download is offered." });
+    }).finally(() => {
+      void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
+      loadedDocument = null;
+      loadingTask = null;
+    });
+    return () => {
+      cancelled = true;
+      try { activeRenderTask?.cancel(); } catch { /* Rendering already finished. */ }
+      void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
+    };
+  }, [enabled, file, limits, mode, password]);
+
+  return estimate;
+}
+
+function CompressionEstimate({ estimate }) {
+  if (estimate.state === "idle") return null;
+  if (estimate.state === "loading") {
+    return <div className="compression-estimate loading" role="status"><SpinnerGapIcon size={16} className="spin" aria-hidden="true" /><span><strong>Estimating output locally…</strong><small>Sampling up to three pages; nothing is uploaded.</small></span></div>;
+  }
+  if (estimate.state === "error") {
+    return <div className="compression-estimate error" role="status"><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Estimate unavailable</strong><small>{estimate.message}</small></span></div>;
+  }
+  const magnitude = Math.abs(estimate.percent);
+  const percentage = magnitude > 0 && magnitude < 1 ? "<1%" : `${Math.round(magnitude)}%`;
+  const comparison = estimate.status === "reduced" ? `about ${percentage} smaller` : estimate.status === "increased" ? `may be ${percentage} larger; compression is disabled` : "no reduction projected; compression is disabled";
+  return (
+    <div className={`compression-estimate ${estimate.status}`} role="status" aria-live="polite">
+      <FileArrowDownIcon size={18} weight="duotone" aria-hidden="true" />
+      <span><strong>Estimated around {formatBytes(estimate.projectedBytes)}</strong><small>{formatBytes(estimate.lowerBytes)}–{formatBytes(estimate.upperBytes)} · {comparison} · based on {estimate.sampledPages} sampled {estimate.sampledPages === 1 ? "page" : "pages"}</small></span>
+      <b>APPROX.</b>
+    </div>
+  );
+}
+
+function CompressionControls({ setting, value, onChange, inputSize, estimate }) {
+  return (
+    <section className="compression-controls" aria-labelledby="compression-strength-title">
+      <fieldset>
+        <legend id="compression-strength-title">Choose compression strength</legend>
+        <p>More compression makes a smaller target, but fine text and images can look softer.</p>
+        <div className="compression-mode-grid">
+          {setting.options.map((option) => {
+            const ModeIcon = compressionModeIcons[option.value] || FileArrowDownIcon;
+            const selected = value === option.value;
+            return (
+              <label className={`compression-mode-card ${selected ? "selected" : ""}`} key={option.value}>
+                <input type="radio" name="compression-quality" value={option.value} checked={selected} onChange={() => onChange(option.value)} />
+                <span className="compression-mode-icon"><ModeIcon size={20} weight="duotone" aria-hidden="true" /></span>
+                <span className="compression-mode-copy">
+                  <span className="compression-mode-title"><strong>{option.label}</strong><b>{option.badge}</b></span>
+                  <small>{option.hint}</small>
+                  <span>{option.description}</span>
+                </span>
+                <CheckCircleIcon className="compression-selected-mark" size={19} weight="fill" aria-hidden="true" />
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      <div className="compression-size-preview" aria-live="polite">
+        <span className="compression-file source"><FilePdfIcon size={24} weight="duotone" aria-hidden="true" /><small>{inputSize ? formatBytes(inputSize) : "Original"}</small></span>
+        <span className="compression-flow"><span /><ArrowRightIcon size={15} aria-hidden="true" /></span>
+        <span className={`compression-file output mode-${value}`}><FileArrowDownIcon size={24} weight="duotone" aria-hidden="true" /><small>{setting.options.find((option) => option.value === value)?.hint}</small></span>
+      </div>
+      <CompressionEstimate estimate={estimate} />
+      <div className="compression-method-note">
+        <WarningCircleIcon size={17} weight="fill" aria-hidden="true" />
+        <span><strong>Pages become compressed images.</strong> Searchable text, links, forms, and annotations are flattened.</span>
+      </div>
+    </section>
+  );
+}
+
+function CompressionResultSummary({ inputSize, result }) {
+  const keptOriginal = result.compressionOutcome === "original-kept";
+  const protectedOriginal = result.compressionOutcome === "protected-original";
+  if (keptOriginal || protectedOriginal) {
+    const attemptedChange = getCompressionSizeChange(inputSize, result.attemptedSize);
+    const magnitude = Math.abs(attemptedChange?.percent || 0);
+    const percentage = magnitude > 0 && magnitude < 1 ? "<1%" : `${Math.round(magnitude)}%`;
+    return (
+      <div className="compression-result-summary unchanged" role="status" aria-live="polite">
+        <div className="compression-result-highlight">
+          <ShieldCheckIcon size={23} weight="duotone" aria-hidden="true" />
+          <span><strong>Original kept unchanged</strong><small>The trial output was {formatBytes(result.attemptedSize)} ({percentage} larger), so its lossy bytes were discarded.</small></span>
+        </div>
+        <div className="compression-result-sizes" aria-label={`Original ${formatBytes(inputSize)}. Discarded trial ${formatBytes(result.attemptedSize)}.`}>
+          <span><small>Original</small><strong>{formatBytes(inputSize)}</strong></span>
+          <ArrowRightIcon size={17} aria-hidden="true" />
+          <span><small>Trial discarded</small><strong>{formatBytes(result.attemptedSize)}</strong></span>
+        </div>
+      </div>
+    );
+  }
+  const change = getCompressionSizeChange(inputSize, result.size);
+  if (!change) return null;
+  const magnitude = Math.abs(change.percent);
+  const percentLabel = magnitude > 0 && magnitude < 1 ? "<1%" : `${Math.round(magnitude)}%`;
+  const headline = change.status === "reduced"
+    ? `${percentLabel} smaller`
+    : change.status === "increased"
+      ? `${percentLabel} larger`
+      : "Same size";
+  const detail = change.status === "reduced"
+    ? `${formatBytes(change.bytesSaved)} saved`
+    : change.status === "increased"
+      ? `Output is ${formatBytes(Math.abs(change.bytesSaved))} larger. Try Strong or keep the original.`
+      : "This PDF could not be made smaller with this setting.";
+
+  return (
+    <div className={`compression-result-summary ${change.status}`} role="status" aria-live="polite">
+      <div className="compression-result-highlight">
+        <FileArrowDownIcon size={23} weight="duotone" aria-hidden="true" />
+        <span><strong>{headline}</strong><small>{detail}</small></span>
+      </div>
+      <div className="compression-result-sizes" aria-label={`Original ${formatBytes(change.inputBytes)}. Compressed ${formatBytes(change.outputBytes)}.`}>
+        <span><small>Original</small><strong>{formatBytes(change.inputBytes)}</strong></span>
+        <ArrowRightIcon size={17} aria-hidden="true" />
+        <span><small>Compressed</small><strong>{formatBytes(change.outputBytes)}</strong></span>
+      </div>
+    </div>
+  );
+}
+
 function accessibleProgressMessage(phase = "") {
   if (/checking/i.test(phase)) return "Checking files against local safety limits.";
   if (/loading/i.test(phase)) return "Loading the local processing engine.";
@@ -1239,6 +1428,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
+  const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
+  const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
+    ? { state: "loading", file: files[0], mode: settings.quality }
+    : compressionEstimate;
 
   const getFileId = (file) => {
     if (!fileIdsRef.current.has(file)) fileIdsRef.current.set(file, crypto.randomUUID());
@@ -1374,7 +1567,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     ? files.length > 0 || Boolean(String(settings.html || "").trim())
     : files.length >= minFiles;
   const pageSelectionReady = tool.slug === "split-pdf" ? Boolean(splitPlan?.valid) : tool.slug === "remove-pdf-pages" ? Boolean(removePlan?.valid) : true;
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && status !== "processing";
+  const compressionReady = tool.slug !== "compress-pdf" || !hasRequiredInput || compressionEstimateAllowsProcessing(activeCompressionEstimate);
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -1388,6 +1582,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? splitPlan?.message
     : tool.slug === "remove-pdf-pages" && !removePlan?.valid
       ? removePlan?.message
+    : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
+      ? "Checking whether this strength will reduce the file size locally."
+    : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
+      ? "No size reduction is projected at this strength. Choose another strength or keep the original."
     : "";
   const processHintId = `process-hint-${tool.slug}`;
   const showProcessHint = Boolean(processHint) && status !== "processing";
@@ -1428,7 +1626,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const dropzoneAction = files.length
     ? limits.maxFiles === 1 ? "Choose a different file" : "Add more files"
     : "Drop files here or choose files";
-  const processButtonLabel = tool.slug === "split-pdf" && splitPlan?.valid
+  const processButtonLabel = tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
+    ? "Checking estimated size"
+    : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
+      ? "No size reduction"
+    : tool.slug === "split-pdf" && splitPlan?.valid
     ? splitPlan.groups.length === 1
       ? "Create 1 PDF"
       : `Create ${splitPlan.groups.length.toLocaleString()} PDFs`
@@ -1530,8 +1732,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
             {results.length > 0 && (
               <div className="results-card">
-                <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">Your result is ready</h3><p>Created locally. Download it before closing this tab.</p></div></div>
-                {results.map((result) => (
+                <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : "Created locally. Download it before closing this tab."}</p></div></div>
+                {tool.slug === "compress-pdf" && files[0] && results[0] && (
+                  <CompressionResultSummary inputSize={files[0].size} result={results[0]} />
+                )}
+                {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
                     <span><strong>{result.name}</strong><small>{formatBytes(result.size)} · {result.details}</small></span>
@@ -1555,6 +1760,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
               <RemovePdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={removePlan} />
+            ) : tool.slug === "compress-pdf" ? (
+              <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
             ) : settingsList.length ? settingsList.map((setting) => (
               <SettingControl key={setting.key} setting={setting} value={settings[setting.key]} onChange={(value) => updateSetting(setting.key, value)} />
             )) : <div className="no-settings"><CheckCircleIcon size={20} /><span><strong>Nothing to configure</strong>This tool uses sensible local defaults.</span></div>}

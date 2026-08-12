@@ -23,6 +23,8 @@ The catalog provides 47 common PDF and image workflows in one independent, offli
 - Protect: Unlock, AES-256 Protect, Sign, permanent raster Redact, and text Compare.
 - Smart local helpers: extractive Summarizer and glossary-assisted Translate.
 
+Compress PDF rebuilds pages as compressed images. This can substantially reduce image-heavy documents, but searchable text, links, forms, and annotations are flattened, fine detail may soften, and an already-optimized PDF can become larger.
+
 ### Images — 13 actions
 
 - Compress, Resize, Crop, Convert to JPG, Convert from JPG, Photo Editor, Upscale, Remove Background, Watermark, Meme Generator, Rotate, sanitized HTML to Image, and Blur Face.
