@@ -559,10 +559,68 @@ function PdfPageSourceStatus({ info }) {
   );
 }
 
-function PageSelectionPicker({ value, pageCount, selection, onChange, intent, maxSelection, valid }) {
+function PageSelectionPicker({ value, pageCount, selection, onChange, intent, maxSelection, valid, document }) {
   const selected = new Set(selection);
   const isRemove = intent === "remove";
   const selectedCount = selected.size;
+  const pagesPerWindow = 6;
+  const [pageWindowStart, setPageWindowStart] = useState(0);
+  const pageRailRef = useRef(null);
+  const pendingRailAlignmentRef = useRef(null);
+  const lastWheelPageTurnRef = useRef(0);
+  const visiblePages = Array.from(
+    { length: Math.min(pagesPerWindow, Math.max(0, pageCount - pageWindowStart)) },
+    (_, index) => pageWindowStart + index,
+  );
+
+  useEffect(() => {
+    const maxWindowStart = Math.max(0, Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow);
+    setPageWindowStart((current) => Math.min(current, maxWindowStart));
+  }, [pageCount]);
+
+  useEffect(() => {
+    const alignment = pendingRailAlignmentRef.current;
+    const rail = pageRailRef.current;
+    if (!alignment || !rail) return;
+    rail.scrollLeft = alignment === "end" ? Math.max(0, rail.scrollWidth - rail.clientWidth) : 0;
+    pendingRailAlignmentRef.current = null;
+  }, [pageWindowStart]);
+
+  const showPageWindow = (nextStart, alignment = "start") => {
+    const boundedStart = Math.max(0, Math.min(Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow, nextStart));
+    pendingRailAlignmentRef.current = alignment;
+    setPageWindowStart(boundedStart);
+    if (boundedStart === pageWindowStart && pageRailRef.current) {
+      pageRailRef.current.scrollLeft = alignment === "end"
+        ? Math.max(0, pageRailRef.current.scrollWidth - pageRailRef.current.clientWidth)
+        : 0;
+      pendingRailAlignmentRef.current = null;
+    }
+  };
+
+  const scrollPageRailHorizontally = (event) => {
+    const rail = event.currentTarget;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (!delta) return;
+    const maxScrollLeft = rail.scrollWidth - rail.clientWidth;
+    const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, rail.scrollLeft + delta));
+    if (nextScrollLeft !== rail.scrollLeft) {
+      event.preventDefault();
+      rail.scrollLeft = nextScrollLeft;
+      return;
+    }
+
+    const maxWindowStart = Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow;
+    const nextWindowStart = delta > 0
+      ? Math.min(maxWindowStart, pageWindowStart + pagesPerWindow)
+      : Math.max(0, pageWindowStart - pagesPerWindow);
+    if (nextWindowStart === pageWindowStart) return;
+    event.preventDefault();
+    const now = performance.now();
+    if (now - lastWheelPageTurnRef.current < 220) return;
+    lastWheelPageTurnRef.current = now;
+    showPageWindow(nextWindowStart, delta > 0 ? "start" : "end");
+  };
 
   const setRule = (rule) => {
     let pages = [];
@@ -588,11 +646,12 @@ function PageSelectionPicker({ value, pageCount, selection, onChange, intent, ma
   const selectionLabel = selectedCount
     ? `${selectedCount.toLocaleString()} ${isRemove ? "marked for removal" : "selected"}`
     : isRemove ? "No pages marked" : "No pages selected";
+  const pageRangeLabel = `Pages ${pageWindowStart + 1}–${Math.min(pageWindowStart + pagesPerWindow, pageCount)} of ${pageCount}`;
 
   return (
     <section className={`page-selection-picker ${isRemove ? "remove" : "include"}`} aria-labelledby={`${intent}-page-picker-title`}>
       <div className="page-selection-heading">
-        <span><strong id={`${intent}-page-picker-title`}>{isRemove ? "Choose pages to delete" : "Choose pages to split"}</strong><small>{isRemove ? "Tap page numbers to mark them. Every unmarked page stays in the PDF." : "Tap page numbers to include them. Each selected page becomes its own PDF."}</small></span>
+        <span><strong id={`${intent}-page-picker-title`}>{isRemove ? "Choose pages to delete" : "Choose pages to split"}</strong><small>{isRemove ? "Tap page previews to mark them. Every unmarked page stays in the PDF." : "Tap page previews to include them. Each selected page becomes its own PDF."}</small></span>
         <b aria-live="polite">{selectionLabel}</b>
       </div>
       <div className="page-selection-actions" aria-label={isRemove ? "Quick removal selections" : "Quick page selections"}>
@@ -601,20 +660,39 @@ function PageSelectionPicker({ value, pageCount, selection, onChange, intent, ma
         <button type="button" onClick={() => setRule("even")}>Even pages</button>
         <button type="button" onClick={() => setRule("clear")} disabled={!selectedCount}>Clear</button>
       </div>
-      <div className="page-selection-grid" role="group" aria-label={`${isRemove ? "Mark pages to remove" : "Select pages to split"} from this ${pageCount}-page PDF`}>
-        {Array.from({ length: pageCount }, (_, pageIndex) => {
+      <div className="page-selection-strip-heading">
+        <small>Click a page preview to {isRemove ? "remove or keep it" : "select or clear it"}.</small>
+        {pageCount > pagesPerWindow && (
+          <span className="split-window-controls">
+            <button type="button" onClick={() => showPageWindow(pageWindowStart - pagesPerWindow)} disabled={pageWindowStart === 0} aria-label="Show previous PDF pages"><ArrowLeftIcon size={14} /></button>
+            <b aria-live="polite">{pageRangeLabel}</b>
+            <button type="button" onClick={() => showPageWindow(pageWindowStart + pagesPerWindow)} disabled={pageWindowStart + pagesPerWindow >= pageCount} aria-label="Show next PDF pages"><ArrowRightIcon size={14} /></button>
+          </span>
+        )}
+      </div>
+      <div
+        className="page-selection-strip"
+        ref={pageRailRef}
+        role="group"
+        aria-label={`${isRemove ? "Mark pages to remove" : "Select pages to split"} from ${pageRangeLabel.toLowerCase()}`}
+        onWheel={scrollPageRailHorizontally}
+      >
+        {visiblePages.map((pageIndex) => {
           const isSelected = selected.has(pageIndex);
           return (
             <button
               type="button"
               key={pageIndex}
-              className={isSelected ? "selected" : ""}
+              className={`page-selection-card ${isSelected ? "selected" : ""}`}
               aria-pressed={isSelected}
               aria-label={`Page ${pageIndex + 1}, ${isRemove ? isSelected ? "marked for removal" : "will be kept" : isSelected ? "selected for splitting" : "not selected"}`}
               onClick={() => togglePage(pageIndex)}
             >
-              <span>{pageIndex + 1}</span>
-              {isSelected && (isRemove ? <TrashIcon size={13} weight="fill" aria-hidden="true" /> : <CheckCircleIcon size={14} weight="fill" aria-hidden="true" />)}
+              <span className="page-selection-preview">
+                <PdfPageThumbnail document={document} pageIndex={pageIndex} />
+                {isSelected && <span className="page-selection-state" aria-hidden="true">{isRemove ? <TrashIcon size={16} weight="fill" /> : <CheckCircleIcon size={17} weight="fill" />}</span>}
+              </span>
+              <span className="page-selection-card-label"><b>Page {pageIndex + 1}</b><small>{isRemove ? isSelected ? "Remove" : "Keep" : isSelected ? "Selected" : "Not selected"}</small></span>
             </button>
           );
         })}
@@ -659,7 +737,7 @@ function getSplitPlan(settings, info, limits) {
   }
 }
 
-function PdfSplitThumbnail({ document, pageIndex }) {
+function PdfPageThumbnail({ document, pageIndex }) {
   const canvasRef = useRef(null);
   const [state, setState] = useState("loading");
 
@@ -855,7 +933,7 @@ function SplitPdfControls({ settings, onChange, info, plan, limits }) {
                 key={pageIndex}
               >
                 <span className="split-page-card">
-                  <PdfSplitThumbnail document={info.document} pageIndex={pageIndex} />
+                  <PdfPageThumbnail document={info.document} pageIndex={pageIndex} />
                   <b>Page {pageIndex + 1}</b>
                 </span>
                 {pageIndex + 1 < pageCount && (
@@ -930,6 +1008,7 @@ function RemovePdfControls({ settings, onChange, info, plan }) {
           onChange={(value) => onChange("pages", value)}
           intent="remove"
           valid={plan.valid}
+          document={info.document}
         />
       )}
       <div id="remove-plan-message" className={`split-output-plan ${plan.valid ? "ready" : planIsWarning ? "warning" : "pending"}`} role={planIsWarning ? "alert" : "status"} aria-live="polite">
@@ -1366,7 +1445,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : tool.slug === "remove-pdf-pages" ? "remove-pages-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -1380,7 +1459,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
