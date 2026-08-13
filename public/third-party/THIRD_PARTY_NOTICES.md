@@ -131,16 +131,24 @@ SPDX ownership metadata to the binary files.
 
 | Asset | Provenance | SHA-256 |
 | --- | --- | --- |
-| `assets/local-file-studio-icon-source.png` | Project icon source visual | `3e4eb6743d793110828cf69981fe6cd131329e8a5427e2fb7f174f5199d864d0` |
+| `assets/local-file-studio-icon-source.png` | AI-edited project icon source visual using the site forest-green, warm-paper, and coral palette; the front paper includes four generated coral document lines | `1db1a41864a13e01526f411e434baafa3853b28fd5edaa8331925bc4e79adc42` |
 | `public/assets/local-file-studio-social.svg` | First-party social-card source authored for this repository | `8e9838d4df613f00070dfe06e4f9e982bee271cd4e8f9baafb54c629f59bdaea` |
 | `public/assets/local-file-studio-social.png` | 1200×630 PNG rasterization of the preceding first-party SVG source | `5b0647891c783132b1c1373eda61e71b9ff3ce9d1b724dd856e4881b2595c04d` |
-| `public/icons/apple-touch-icon.png` | Generated project icon rendition | `b05a643a3dfd065f87fcd8ed6ee88393f2bfc1ad5c2df27e8f83f72c1d4d42db` |
-| `public/icons/icon-192.png` | Generated project icon rendition | `041ea5a73c2a6c07a355b0d4d4140059422eb9ccdd0004440ffee59976ac4cf7` |
-| `public/icons/icon-512.png` | Generated project icon rendition | `102a481f5f6ba4dea909b39e4483b380509a5ca2b19788cd77beed0b2cf87527` |
-| `public/icons/icon-maskable-512.png` | Generated project icon rendition; byte-identical to `icon-512.png` | `102a481f5f6ba4dea909b39e4483b380509a5ca2b19788cd77beed0b2cf87527` |
+| `public/icons/apple-touch-icon.png` | 180×180 generated project icon rendition | `66286f3fae1e9aeb82d6fd2e0359312c8d25e59b542b6d0c11ce20c934c13ba4` |
+| `public/icons/icon-192.png` | 192×192 generated project icon rendition | `0f27c12419cadca9420f1f7ee0d9550bd7653c11a8547dc94edccac14098122e` |
+| `public/icons/icon-512.png` | 512×512 generated project icon rendition | `9fb786335f4104bca885c753e72aa7f90b6a165048a8e649f5261b2de974e74c` |
+| `public/icons/icon-maskable-512.png` | Generated project icon rendition; byte-identical to `icon-512.png` | `9fb786335f4104bca885c753e72aa7f90b6a165048a8e649f5261b2de974e74c` |
 | `public/assets/paper-terminal-dots-short.png` | Crop/derivative of the selected AI-generated Paper Terminal design reference | `0da98c7c16d8be0469fc2f6252e3f1a4f3703e913d84ff21406b7aebd481207b` |
 | `public/assets/paper-terminal-dots.png` | Crop/derivative of the selected AI-generated Paper Terminal design reference | `1e3105b1f386ea2a8964bc7bde2a5928aff250bf275e1e0e354accbe8d32b602` |
 | `public/assets/paper-terminal-ruler.png` | Crop/derivative of the selected AI-generated Paper Terminal design reference | `6343a30759edf1b876f0dd21d5e4395b2f5719529d54318b99df5b688fe832ea` |
+
+The current icon source was edited with the built-in OpenAI image-generation
+tool on 2026-08-13 from the preceding project icon composition. The edit kept
+the overlapping paper/photo geometry, changed the visual palette to the site's
+forest green (`#2F7357`), warm canvas (`#FAF8F2`), and coral (`#F05A24`), and
+added four coral non-text document lines to the front paper. The checked-in 180, 192,
+and 512 pixel renditions were resized from that 1254×1254 source with macOS
+`sips`; the maskable rendition is an exact copy of the 512 pixel rendition.
 
 The selected AI-generated Paper Terminal source reference has SHA-256
 `c0ec3ab10faee8c49eb7bfcca6e5601cd3534ac080f1ca6f9b5159265f9014ea`
