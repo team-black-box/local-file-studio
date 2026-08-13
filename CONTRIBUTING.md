@@ -75,7 +75,7 @@ Signed-off-by: Your Name <you@example.com>
 
 Unless a separate written agreement applies, contributions intentionally submitted for inclusion in this project are provided under Apache-2.0 without additional terms, consistent with section 5 of the license. The DCO does not transfer your copyright.
 
-A maintainer may ask you to amend or re-sign commits that lack a valid `Signed-off-by` trailer. When committing in GitHub's web interface, select its DCO sign-off option; when committing locally, use `git commit -s`. The current repository setting adds or requires sign-off for web commits only, so command-line contributors remain responsible for their own trailers. DCO sign-off is distinct from cryptographic Git commit signing; repository rules can require both independently.
+The pull-request workflow checks every non-merge commit for a valid `Signed-off-by` trailer. When committing in GitHub's web interface, select its DCO sign-off option; when committing locally, use `git commit -s`. A missing trailer must be corrected before merge. DCO sign-off is distinct from cryptographic Git commit signing; repository rules can require both independently.
 
 ## Review and release
 

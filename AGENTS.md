@@ -47,6 +47,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `public/`: PWA shell, icons, service worker, and vendored local engines.
 - `scripts/generate-seo-assets.mjs`: static tool pages, sitemap, robots, and AI-readable discovery files.
 - `scripts/prepare-production-build.mjs`: deterministic offline precache manifest and service-worker revision injection.
+- `scripts/audit-git-history.mjs`: reachable-history path, size, and high-confidence secret checks before public distribution.
 - `scripts/audit-repository.mjs`: intended-file, secret-pattern, removed-runtime, and hosting-configuration checks.
 - `scripts/verify-ocr-assets.mjs`: vendored OCR integrity checks.
 - `scripts/verify-third-party-assets.mjs`: package, native-code, license, and visual-asset provenance checks.

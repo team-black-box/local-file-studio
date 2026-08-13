@@ -14,7 +14,7 @@ This document separates the GitHub controls already applied to the private repos
 - Runtime: a static Vite application built with the pinned Bun toolchain and frozen `bun.lock`.
 - Vercel output: `dist/client`, as declared in `vercel.json`.
 - Application backend: none. No upload endpoint, database, or runtime secret is required.
-- Canonical production hostname: `localfilestudio.app`. It is attached to Vercel; Namecheap DNS and final TLS/hostname verification remain pending. `www.localfilestudio.app` permanently redirects to the apex.
+- Canonical production hostname: `localfilestudio.app`. It serves the production beta over TLS; `www.localfilestudio.app` permanently redirects to the apex.
 
 The open-source build also generates the crawlable homepage, all canonical `/tools/{slug}` pages, structured metadata, social-card assets, `sitemap.xml`, `robots.txt`, `llms.txt`, and `sitemap.md`. These are derived from committed catalog and metadata sources; no proprietary SEO service, runtime API, analytics key, or hidden production repository is required. Search-console accounts, domain verification, DNS values, and crawler observations remain operational state and must not be committed when they contain secrets.
 
@@ -24,7 +24,7 @@ Apache-2.0 and Vercel address different layers. Apache-2.0 permits use, modifica
 
 ## Current GitHub posture: private repository
 
-Last verified 2026-08-11:
+Last verified live 2026-08-13:
 
 - Repository visibility is private.
 - Actions must use full-length commit SHA references. The repository allows selected actions only: GitHub-owned actions are allowed, actions from other verified creators are disallowed, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
@@ -32,7 +32,7 @@ Last verified 2026-08-11:
 - `main` requires pull requests, one independent approval, dismissal of stale approvals, approval of the most recent push by someone other than its pusher, resolution of review conversations, linear history, and the strict required `verify` status check. Branches must be up to date before merge.
 - The `main` rule applies to administrators. Force pushes and branch deletion are disabled.
 - Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically, and updating pull-request branches is enabled.
-- GitHub web commits require a DCO sign-off. Contributors committing outside the web interface must use `git commit -s` as documented in `CONTRIBUTING.md`.
+- GitHub web commits require a DCO sign-off. The pull-request workflow verifies the `Signed-off-by` trailer on every non-merge commit, including commits created outside the web interface.
 - Dependency alerts and Dependabot security updates are enabled. Automated security updates must pass the same strict CI and review rules as other changes.
 - CI was rerun successfully after these settings were applied.
 
@@ -88,7 +88,7 @@ Current owner-authorized project configuration:
 - Use the production branch `main`.
 - Keep the install, build, and output settings sourced from `vercel.json`: frozen Bun install, `bun run build`, and `dist/client`.
 - Do not add a server function, upload route, rewrite to a backend, or document-processing secret.
-- Pull-request previews are intended for non-production branches. A preview is test infrastructure, not a release; the first Git-trigger proof remains pending an authorized cofounder commit.
+- Pull-request previews are intended for non-production branches. A preview is test infrastructure, not a release. The production Git trigger was proven by an authorized cofounder commit: deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact `main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2`.
 - Keep production deployment restricted to `main` or explicit promotion by an authorized maintainer.
 - Apply deployment access controls to private-repository previews if available, without making runtime document processing depend on authentication.
 
@@ -107,7 +107,7 @@ The static application requires no environment variables. If a future operationa
 
 ## Domain launch
 
-The owner authorized the custom-domain transition on 2026-08-13 while explicitly carrying the unchecked noncritical matrix rows into ongoing beta QA. The apex and `www` names are attached to Vercel, but Namecheap DNS remains unchanged until the exact Vercel-provided records are applied by an authorized registrar operator.
+The owner authorized and completed the custom-domain transition on 2026-08-13 while explicitly carrying the unchecked noncritical matrix rows into ongoing beta QA. The apex serves the Vercel production deployment over TLS, and `www` redirects permanently to the apex. Final-hostname offline/update and exercised rollback checks remain ongoing beta QA.
 
 1. Add `localfilestudio.app` to the approved Vercel production project.
 2. Copy the exact DNS records Vercel presents into the authoritative DNS provider; do not infer them from this document.
