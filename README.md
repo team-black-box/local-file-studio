@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Local File Studio
 
-Private PDF and image tools that run on your device. The production build is a static Vite SPA suitable for Vercel and includes an offline app shell.
+Private PDF and image tools that run on your device. The production build is a static Vite SPA suitable for Vercel and includes an offline app shell
 
 **Status:** Pre-release alpha. Interfaces, supported formats, and safety limits may change. At the 2026-08-11 readiness checkpoint, the GitHub repository remained private and neither public-source nor production launch had been authorized.
 
