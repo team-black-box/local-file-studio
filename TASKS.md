@@ -73,6 +73,29 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Validate representative pages with search-engine rich-result/schema tools and social-card debuggers, then monitor coverage and crawl errors without adding document-data telemetry.
 - Obtain explicit owner approval for the final AI-crawler policy, distinguishing search/discovery crawlers from model-training crawlers. Revisit `robots.txt` in a reviewed source change when policy changes.
 
+## CLI, local MCP, and agent skill
+
+### Research checkpoint — 2026-08-13
+
+The architecture, privacy model, initial capability grouping, command and MCP contracts, agent-skill shape, packaging options, verification strategy, and open decisions are recorded in [CLI_MCP_AGENT_SKILL_PLAN.md](docs/CLI_MCP_AGENT_SKILL_PLAN.md).
+
+Current state:
+
+- The static web application is the only shipped interface. No CLI, MCP server, installable agent skill, public package, or release binary exists yet.
+- `AGENTS.md` already requires future interfaces to reuse the catalog, centralized policies, preflight, processors, errors, cleanup, and local-only guarantees rather than creating a second behavior path.
+- Browser `File`/`Blob`, DOM, canvas, PDF.js rendering, image decoding, workers, object URLs, and downloads are not yet isolated behind a complete non-browser runtime contract.
+- An MCP process running locally does not make model-visible arguments or responses private. Document bytes, extracted/OCR text, passwords, and other content-bearing results must stay out of agent transcripts by default.
+
+Implementation tasks, in order:
+
+1. Open an issue for the shared runner contract and runtime-capability inventory. Add versioned requests, results, stable errors, cancellation, browser/Bun adapters, and UI parity tests without changing tool semantics.
+2. Open a separate issue for a structural PDF CLI MVP derived from the live catalog. Require safe paths, central preflight, atomic outputs, overwrite refusal, stable JSON/exit codes, no-echo password handling, and cross-platform clean-clone tests.
+3. Open a separate issue for a local `stdio` MCP wrapper after the CLI contract stabilizes. Require configured roots, traversal/symlink protection, progress/cancellation, minimal metadata responses, no remote transport, and no document content or secrets in model-visible fields.
+4. Create the repository-hosted `skills/local-file-studio` package only after MCP and CLI discovery work. Initialize it with the standard skill tooling, keep it thin, derive capabilities through `list`/`describe`, validate it, and forward-test MCP preference plus CLI fallback with synthetic files.
+5. Evaluate password/WASM, placement, rendering/OCR, Office, image, and interactive capability groups separately. Do not advertise runtime support until the complete path passes security, resource, licensing, privacy, parity, and clean-install verification.
+
+Before implementation, resolve the operating-system support matrix, package layout/versioning, distribution channels, MCP SDK/protocol version, host root configuration, secret-entry approach, and whether any content-returning agent operation can meet the product privacy contract. Package publication, binary releases, MCP/skill directory submission, global installation, and hosted services remain separately authorized external actions.
+
 ## Restore local HEIC/HEIF input
 
 HEIC/HEIF decoding may return to Convert to JPG only after a replacement path is demonstrably suitable for a public, local-only browser application processing untrusted files.
