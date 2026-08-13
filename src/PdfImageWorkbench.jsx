@@ -1,20 +1,22 @@
 // SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  ArrowsOutSimpleIcon,
+  CaretRightIcon,
   CheckCircleIcon,
   CopyIcon,
   DownloadSimpleIcon,
+  EyeIcon,
   GaugeIcon,
   ImageSquareIcon,
   MinusIcon,
   PlusIcon,
-  ResizeIcon,
   ShieldCheckIcon,
   SpinnerGapIcon,
   TrashIcon,
@@ -23,6 +25,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { categoryById } from "./tools.js";
+import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
 import {
   describePdfOverlayImageLimits,
   describeToolLimits,
@@ -35,23 +38,9 @@ import {
 } from "./lib/file-limits.js";
 import { preflightPdfOverlayImages, preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { downloadResult, formatBytes } from "./lib/file-utils.js";
-import { destroyPdfJsDocument } from "./lib/pdfjs-utils.js";
+import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { runTool } from "./lib/processors.js";
-
-let pdfJsPromise;
-
-async function getPdfJs() {
-  if (!pdfJsPromise) {
-    pdfJsPromise = Promise.all([
-      import("pdfjs-dist"),
-      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-    ]).then(([pdfjs, worker]) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      return pdfjs;
-    });
-  }
-  return await pdfJsPromise;
-}
+import { useProtectedPdfGate } from "./useProtectedPdfGate.js";
 
 function canvasToBlob(canvas, type = "image/png") {
   return new Promise((resolve, reject) => {
@@ -166,7 +155,7 @@ function MainPageCanvas({ document, pageIndex, limits, onPageSize }) {
   return <canvas ref={canvasRef} className="pdf-editor-page-canvas" aria-label={`Preview of PDF page ${pageIndex + 1}`} />;
 }
 
-export function PdfImageWorkbench({ tool, onClose, onComplete }) {
+export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, previewLimits }) {
   const dialogRef = useRef(null);
   const titleRef = useRef(null);
   const openerRef = useRef(null);
@@ -176,6 +165,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
   const documentRef = useRef(null);
   const urlsRef = useRef(new Set());
   const interactionCleanupRef = useRef(null);
+  const previewOpenerRef = useRef(null);
   const dismissedRef = useRef(false);
   const placementsRef = useRef([]);
   const limits = useMemo(() => getToolLimits(tool), [tool]);
@@ -183,6 +173,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
   const imagePolicy = useMemo(() => getPdfOverlayImagePolicy(tool), [tool]);
   const imageLimitCopy = useMemo(() => describePdfOverlayImageLimits(tool), [tool]);
   const [pdfFile, setPdfFile] = useState(null);
+  const [pendingPdf, setPendingPdf] = useState(null);
   const [pdfDocument, setPdfDocument] = useState(null);
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
@@ -202,6 +193,16 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
   const [error, setError] = useState("");
   const [fileIssue, setFileIssue] = useState(null);
   const [results, setResults] = useState([]);
+  const [previewResult, setPreviewResult] = useState(null);
+  const gateFiles = useMemo(() => pendingPdf ? [pendingPdf] : [], [pendingPdf]);
+  const setGateFiles = useCallback((update) => {
+    setPendingPdf((current) => {
+      const currentFiles = current ? [current] : [];
+      const next = typeof update === "function" ? update(currentFiles) : update;
+      return next[0] || null;
+    });
+  }, []);
+  const passwordGate = useProtectedPdfGate(tool, gateFiles, setGateFiles);
 
   placementsRef.current = placements;
   const selectedPlacement = placements.find((placement) => placement.id === selectedPlacementId) || null;
@@ -247,6 +248,21 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
       const opener = openerRef.current;
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
       else window.document.querySelector(".hero-search input")?.focus();
+    });
+  };
+
+  const openResultPreview = (result, opener) => {
+    previewOpenerRef.current = opener;
+    if (dialogRef.current?.open) dialogRef.current.close();
+    setPreviewResult(result);
+  };
+
+  const closeResultPreview = () => {
+    const opener = previewOpenerRef.current;
+    setPreviewResult(null);
+    window.requestAnimationFrame(() => {
+      if (!dismissedRef.current && dialogRef.current && !dialogRef.current.open) dialogRef.current.showModal();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     });
   };
 
@@ -316,33 +332,52 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
       setFileIssue({ title: "PDF wasn’t added", details: validation.rejected.map((item) => item.message) });
       return;
     }
-    setLoadingPdf(true);
     setError("");
     setFileIssue(null);
     setResults([]);
-    try {
-      await preflightToolFiles(tool, [file], {}, (next) => setProgress(next));
-      const pdfjs = await getPdfJs();
-      const nextDocument = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-      if (dismissedRef.current) {
+    passwordGate.resetForFileChange();
+    await destroyPdfJsDocument(documentRef.current).catch(() => {});
+    documentRef.current = null;
+    setPdfDocument(null);
+    setPdfFile(null);
+    setPageCount(0);
+    clearAssets();
+    setPendingPdf(file);
+  };
+
+  useEffect(() => {
+    if (!pendingPdf || !passwordGate.ready) return undefined;
+    let cancelled = false;
+    setLoadingPdf(true);
+    (async () => {
+      await preflightToolFiles(tool, [pendingPdf], {}, (next) => setProgress(next));
+      const pdfjs = await getPdfJsEngine();
+      const nextDocument = await pdfjs.getDocument({ data: new Uint8Array(await pendingPdf.arrayBuffer()) }).promise;
+      if (cancelled || dismissedRef.current) {
         await destroyPdfJsDocument(nextDocument);
         return;
       }
-      await destroyPdfJsDocument(documentRef.current).catch(() => {});
-      clearAssets();
       documentRef.current = nextDocument;
       setPdfDocument(nextDocument);
-      setPdfFile(file);
+      setPdfFile(pendingPdf);
       setPageCount(nextDocument.numPages);
       setCurrentPage(0);
       setPageSize(null);
       setProgress({ phase: "Ready", progress: 0 });
-    } catch (caught) {
-      setError(toFriendlyResourceError(caught, tool.name)?.message || "This PDF could not be opened locally.");
-    } finally {
-      setLoadingPdf(false);
-    }
-  };
+      setPendingPdf(null);
+    })().catch((caught) => {
+      if (!cancelled) {
+        setError(toFriendlyResourceError(caught, tool.name)?.message || "This PDF could not be opened locally.");
+        passwordGate.clearCredentials({ resetPreference: true });
+        setPendingPdf(null);
+      }
+    }).finally(() => {
+      if (!cancelled) {
+        setLoadingPdf(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [passwordGate.ready, pendingPdf, tool]);
 
   const addImages = async (incoming) => {
     const incomingFiles = [...incoming];
@@ -621,6 +656,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
       const response = await runTool(tool, [pdfFile], {
         overlayAssets: assets.map(({ id, sourceFile, preparedBlob }) => ({ id, sourceFile, preparedBlob })),
         placements,
+        outputPassword: passwordGate.outputPassword,
       }, (next) => {
         if (!dismissedRef.current) setProgress(next);
       });
@@ -632,6 +668,8 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
       if (dismissedRef.current) return;
       setStatus("error");
       setError(caught?.message || "The PDF could not be exported locally.");
+    } finally {
+      if (!dismissedRef.current) passwordGate.clearCredentials({ resetPreference: true });
     }
   };
 
@@ -641,6 +679,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
   };
 
   return (
+    <>
     <dialog ref={dialogRef} className="workbench-dialog pdf-image-workbench" onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
@@ -671,7 +710,15 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
               <span className="choose-files">{loadingPdf ? "Opening locally" : "Choose PDF"}</span>
             </button>
             <input ref={pdfInputRef} hidden type="file" accept=".pdf" onChange={(event) => { choosePdf(event.target.files); event.target.value = ""; }} />
-            <div className="limits-note" role="note"><GaugeIcon size={17} /><span><strong>PDF limits</strong><span>{pdfLimitCopy.primary}</span><span className="limits-details">{pdfLimitCopy.secondary}</span></span></div>
+            <details className="limits-note">
+              <summary>
+                <GaugeIcon size={17} aria-hidden="true" />
+                <span><strong>PDF limits</strong><span>{pdfLimitCopy.primary}</span></span>
+                <span className="limits-disclosure" aria-hidden="true">Details <CaretRightIcon size={13} /></span>
+              </summary>
+              <div className="limits-details"><strong>Additional safeguards</strong><span>{pdfLimitCopy.secondary}</span></div>
+            </details>
+            <PdfPasswordGate entry={passwordGate.active} password={passwordGate.password} onPasswordChange={passwordGate.setPassword} onVerify={passwordGate.verify} verifying={passwordGate.verifying} outputProtection={passwordGate.outputProtection} />
             {fileIssue && <div className="error-card file-error"><WarningCircleIcon size={20} weight="fill" /><span><strong>{fileIssue.title}</strong>{fileIssue.summary && <span>{fileIssue.summary}</span>}<ul>{fileIssue.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></span></div>}
             {error && <div className="error-card" role="alert"><WarningCircleIcon size={20} weight="fill" /><span><strong>Couldn’t open this PDF</strong>{error}</span></div>}
           </section>
@@ -725,7 +772,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
                           <img src={asset.previewUrl} alt="" draggable="false" style={{ opacity: placement.opacity }} />
                           {selected && <>
                             <span className="placement-rotate-handle" onPointerDown={(event) => beginInteraction(event, placement, "rotate")} aria-hidden="true"><ArrowClockwiseIcon size={13} weight="bold" /></span>
-                            <span className="placement-resize-handle" onPointerDown={(event) => beginInteraction(event, placement, "resize")} aria-hidden="true"><ResizeIcon size={13} weight="bold" /></span>
+                            <span className="placement-resize-handle" onPointerDown={(event) => beginInteraction(event, placement, "resize")} aria-hidden="true"><ArrowsOutSimpleIcon size={14} weight="bold" mirrored /></span>
                           </>}
                         </div>
                       );
@@ -777,6 +824,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
               )}
 
               <div className="pdf-export-panel">
+                {!results.length && <PdfOutputProtectionControl control={passwordGate.outputProtection} compact />}
                 <div><span>Ready to export</span><strong>{placements.length} placement{placements.length === 1 ? "" : "s"}</strong></div>
                 {status === "processing" && <div className="pdf-export-progress"><span><SpinnerGapIcon size={15} className="spin" />{progress.phase}</span><div><span style={{ width: `${Math.max(3, (progress.progress || 0) * 100)}%` }} /></div></div>}
                 {error && <div className="error-card" role="alert"><WarningCircleIcon size={18} weight="fill" /><span><strong>Couldn’t finish</strong>{error}</span></div>}
@@ -785,12 +833,16 @@ export function PdfImageWorkbench({ tool, onClose, onComplete }) {
               </div>
 
               {results.map((result) => (
-                <div className="pdf-editor-result" key={result.id}><span><CheckCircleIcon size={20} weight="fill" /></span><span><strong>Your PDF is ready</strong><small>{result.name} · {formatBytes(result.size)}</small></span><button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}><DownloadSimpleIcon size={17} /> Download</button></div>
+                <div className="pdf-editor-result" key={result.id}><span><CheckCircleIcon size={20} weight="fill" /></span><span><strong>Your PDF is ready</strong><small>{result.name} · {formatBytes(result.size)}</small></span><span className="result-actions"><button onClick={(event) => openResultPreview(result, event.currentTarget)} aria-label={`Preview ${result.name}`}><EyeIcon size={16} /> Preview</button><button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}><DownloadSimpleIcon size={17} /> Download</button></span></div>
               ))}
             </aside>
           </div>
         )}
       </div>
     </dialog>
+    {previewResult && PreviewDialog && (
+      <PreviewDialog result={previewResult} limits={previewLimits} onClose={closeResultPreview} />
+    )}
+    </>
   );
 }

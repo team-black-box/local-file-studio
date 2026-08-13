@@ -96,6 +96,26 @@ async function loadPdf(bytes, password, purpose) {
   return pdf;
 }
 
+/** Inspect password protection without changing the source document. */
+export async function inspectPdfProtection(bytes, password) {
+  return runPdfOperation("Checking PDF protection", async () => {
+    const data = toPdfBytes(bytes);
+    const credential = normalizePassword(password);
+    const options = { lenient: true };
+    if (credential !== undefined) options.credentials = credential;
+    const pdf = await PDF.load(data, options);
+    const encrypted = pdf.isEncrypted;
+
+    return {
+      encrypted,
+      authenticated: !encrypted || pdf.isAuthenticated,
+      ownerAccess: !encrypted || pdf.hasOwnerAccess(),
+      permissions: pdf.getPermissions(),
+      security: encrypted && pdf.isAuthenticated ? pdf.getSecurity() : null,
+    };
+  });
+}
+
 function assertRuntimePageLimit(pdf, toolSlug, toolName) {
   const maxPages = getToolLimits(toolSlug).maxPdfPagesPerFile;
   const pageCount = pdf.getPageCount();

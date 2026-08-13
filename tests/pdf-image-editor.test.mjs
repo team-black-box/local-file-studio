@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 import {
   FileLimitError,
@@ -14,9 +15,10 @@ import {
   validatePdfOverlayPlacements,
 } from "../src/lib/file-limits.js";
 import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
-import { processPdfTool } from "../src/lib/pdf-processors.js";
+import { createOcrReaderResult, createTextReaderResult, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 
 const MiB = 1024 * 1024;
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -37,6 +39,224 @@ function editorTool() {
     settings: [],
   };
 }
+
+test("compression size summaries report reductions without hiding larger outputs", () => {
+  assert.deepEqual(getCompressionSizeChange(1000, 600), {
+    inputBytes: 1000,
+    outputBytes: 600,
+    bytesSaved: 400,
+    percent: 40,
+    status: "reduced",
+  });
+  assert.equal(getCompressionSizeChange(1000, 1000).status, "unchanged");
+  assert.equal(getCompressionSizeChange(1000, 1200).status, "increased");
+  assert.equal(getCompressionSizeChange(0, 0), null);
+  assert.deepEqual(getPdfCompressionPreset("strong"), { quality: 48, scale: 0.95 });
+  assert.deepEqual(getPdfCompressionPreset("unknown"), { quality: 68, scale: 1.2 });
+  const estimate = projectPdfCompressionSize(1_000_000, 10, [40_000, 50_000, 60_000]);
+  assert.equal(estimate.projectedBytes, 516_096);
+  assert.equal(estimate.status, "reduced");
+  assert.equal(estimate.sampledPages, 3);
+  assert.ok(estimate.lowerBytes < estimate.projectedBytes);
+  assert.ok(estimate.upperBytes > estimate.projectedBytes);
+  assert.equal(projectPdfCompressionSize(0, 10, [50_000]), null);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "reduced" }), true);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "increased" }), false);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "unchanged" }), false);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "loading" }), false);
+  assert.equal(compressionEstimateAllowsProcessing({ state: "error" }), true);
+});
+
+test("OCR reader results keep bounded page text in memory without a download blob", () => {
+  const result = createOcrReaderResult("scan.pdf", [
+    { pageNumber: 1, text: "First page", confidence: 97.6 },
+    { pageNumber: 2, text: "", confidence: -5 },
+  ]);
+  assert.equal(result.type, "application/x-local-ocr-pages");
+  assert.equal(result.name, "scan text reader");
+  assert.equal(result.blob, undefined);
+  assert.deepEqual(result.ocrPages, [
+    { pageNumber: 1, text: "First page", confidence: 98 },
+    { pageNumber: 2, text: "", confidence: 0 },
+  ]);
+  assert.equal(buildOcrCopyText(result.ocrPages), "PAGE 1\nFirst page\n\nPAGE 2\n[No text recognized]");
+});
+
+test("Translate and Markdown results expose complete copyable text beside optional downloads", async () => {
+  const translation = createTextReaderResult("local-notes.pdf", "[Limited glossary]\n\ndocumento privado", "translation");
+  assert.equal(translation.viewer, "translation");
+  assert.equal(translation.type, "text/plain");
+  assert.match(translation.textContent, /glossary/i);
+  assert.match(translation.textContent, /documento/i);
+  assert.equal(await translation.blob.text(), translation.textContent);
+
+  const markdown = createTextReaderResult("local-notes.pdf", "# Page 1\n\n## PRIVATE DOCUMENT", "markdown");
+  assert.equal(markdown.viewer, "markdown");
+  assert.equal(markdown.type, "text/markdown");
+  assert.match(markdown.textContent, /^# Page 1/m);
+  assert.match(markdown.textContent, /^## PRIVATE DOCUMENT/m);
+  assert.equal(await markdown.blob.text(), markdown.textContent);
+});
+
+test("Markdown preview parsing stays structural and caps only the visual preview", () => {
+  const preview = parseMarkdownPreview("# Title\n\n- One\n- Two\n\n<script>alert('no')</script>\n\n---\n\nEnd", { maxCharacters: 1_000, maxBlocks: 20 });
+  assert.deepEqual(preview.blocks, [
+    { type: "heading", level: 1, text: "Title" },
+    { type: "list", items: ["One", "Two"] },
+    { type: "paragraph", text: "<script>alert('no')</script>" },
+    { type: "divider" },
+    { type: "paragraph", text: "End" },
+  ]);
+  assert.equal(preview.truncated, false);
+  const capped = parseMarkdownPreview("# One\n\n# Two\n\n# Three", { maxCharacters: 1_000, maxBlocks: 2 });
+  assert.equal(capped.blocks.length, 2);
+  assert.equal(capped.truncated, true);
+});
+
+test("Merge PDF preserves selected order in a previewable PDF result", async () => {
+  const first = await PDFDocument.create();
+  first.addPage([300, 400]);
+  first.addPage([310, 410]);
+  const second = await PDFDocument.create();
+  second.addPage([500, 600]);
+  const files = [
+    namedBlob(await first.save(), "first.pdf", "application/pdf"),
+    namedBlob(await second.save(), "second.pdf", "application/pdf"),
+  ];
+
+  const [result] = await processPdfTool("merge-pdf", files, {});
+
+  assert.equal(result.name, "merged-local.pdf");
+  assert.equal(result.type, "application/pdf");
+  assert.equal(result.details, "3 pages merged");
+  assert.equal(result.size, result.blob.size);
+  assert.ok(result.size > 0);
+
+  const merged = await PDFDocument.load(await result.blob.arrayBuffer());
+  assert.equal(merged.getPageCount(), 3);
+  assert.deepEqual(
+    merged.getPages().map((page) => [page.getWidth(), page.getHeight()]),
+    [[300, 400], [310, 410], [500, 600]],
+  );
+});
+
+test("JPG to PDF creates a PDF result that is eligible for the shared preview", async () => {
+  const image = namedBlob(onePixelPng, "page.png", "image/png");
+  const [result] = await processPdfTool("jpg-to-pdf", [image], { pageSize: "fit", margin: 0 });
+  assert.equal(isPdfPreviewResult(result), true);
+  assert.equal(assertPdfPreviewResult(result, result.size), result.blob);
+  const document = await PDFDocument.load(await result.blob.arrayBuffer());
+  assert.equal(document.getPageCount(), 1);
+});
+
+test("Split PDF creates the exact visually selected one-page file", async () => {
+  const source = await PDFDocument.create();
+  source.addPage([200, 300]);
+  source.addPage([210, 310]);
+  source.addPage([220, 320]);
+  source.addPage([230, 330]);
+  const file = namedBlob(await source.save(), "four-pages.pdf", "application/pdf");
+
+  const [result] = await processPdfTool("split-pdf", [file], { mode: "selected", pages: "4" });
+  assert.equal(result.name, "four-pages-page-4.pdf");
+  assert.equal(result.type, "application/pdf");
+  assert.equal(result.details, "1 page · 4");
+
+  const pageFour = await PDFDocument.load(await result.blob.arrayBuffer());
+  assert.deepEqual([pageFour.getPage(0).getWidth(), pageFour.getPage(0).getHeight()], [230, 330]);
+
+  await assert.rejects(
+    () => processPdfTool("split-pdf", [file], { mode: "selected", pages: "2,,3" }),
+    /empty entry.*not a valid page or range/s,
+  );
+});
+
+test("Split PDF creates the visual half, pair, odd, and custom output groups", async () => {
+  const source = await PDFDocument.create();
+  for (let page = 1; page <= 6; page += 1) source.addPage([200 + page, 300 + page]);
+  const file = namedBlob(await source.save(), "six-pages.pdf", "application/pdf");
+
+  const [halfArchive] = await processPdfTool("split-pdf", [file], { mode: "half" });
+  assert.equal(halfArchive.type, "application/zip");
+  assert.equal(halfArchive.details, "2 PDFs in one ZIP");
+
+  const [odd] = await processPdfTool("split-pdf", [file], { mode: "odd" });
+  assert.equal(odd.name, "six-pages-odd-pages.pdf");
+  assert.equal(odd.details, "3 pages · 1,3,5");
+  const oddPdf = await PDFDocument.load(await odd.blob.arrayBuffer());
+  assert.deepEqual(oddPdf.getPages().map((page) => page.getWidth()), [201, 203, 205]);
+
+  const [customArchive] = await processPdfTool("split-pdf", [file], { mode: "custom", customBreaks: "2,5" });
+  assert.equal(customArchive.type, "application/zip");
+  assert.equal(customArchive.details, "3 PDFs in one ZIP");
+
+  const [pairedArchive] = await processPdfTool("split-pdf", [file], { mode: "every2" });
+  assert.equal(pairedArchive.details, "3 PDFs in one ZIP");
+});
+
+test("Remove Pages keeps the unmarked pages and rejects unsafe selections", async () => {
+  const source = await PDFDocument.create();
+  source.addPage([200, 300]);
+  source.addPage([210, 310]);
+  source.addPage([220, 320]);
+  source.addPage([230, 330]);
+  const file = namedBlob(await source.save(), "four-pages.pdf", "application/pdf");
+
+  const [result] = await processPdfTool("remove-pages", [file], { pages: "2,4" });
+  const retained = await PDFDocument.load(await result.blob.arrayBuffer());
+  assert.equal(retained.getPageCount(), 2);
+  assert.deepEqual(
+    retained.getPages().map((page) => [page.getWidth(), page.getHeight()]),
+    [[200, 300], [220, 320]],
+  );
+
+  assert.throws(() => parseRemovalPageSelection("", 4), /Choose at least one page to remove/);
+  assert.throws(() => parseRemovalPageSelection("1-4", 4), /Removing every page would create an empty PDF/);
+  assert.throws(() => parseRemovalPageSelection("5", 4), /outside this 4-page PDF/);
+  await assert.rejects(
+    () => processPdfTool("remove-pages", [file], { pages: "1-4" }),
+    /Removing every page would create an empty PDF/,
+  );
+});
+
+test("Extract Pages preserves selected order in one PDF or separate ZIP entries", async () => {
+  const source = await PDFDocument.create();
+  source.addPage([200, 300]);
+  source.addPage([210, 310]);
+  source.addPage([220, 320]);
+  source.addPage([230, 330]);
+  const file = namedBlob(await source.save(), "four-pages.pdf", "application/pdf");
+
+  const [combined] = await processPdfTool("extract-pages", [file], { pages: "4,2", combine: true });
+  const combinedPdf = await PDFDocument.load(await combined.blob.arrayBuffer());
+  assert.deepEqual(combinedPdf.getPages().map((page) => page.getWidth()), [230, 210]);
+
+  const [archive] = await processPdfTool("extract-pages", [file], { pages: "4,2", combine: false });
+  assert.equal(archive.type, "application/zip");
+  const zip = await JSZip.loadAsync(await archive.blob.arrayBuffer());
+  assert.deepEqual(Object.keys(zip.files).sort(), ["four-pages-page-2.pdf", "four-pages-page-4.pdf"]);
+  const pageFour = await PDFDocument.load(await zip.file("four-pages-page-4.pdf").async("uint8array"));
+  const pageTwo = await PDFDocument.load(await zip.file("four-pages-page-2.pdf").async("uint8array"));
+  assert.equal(pageFour.getPage(0).getWidth(), 230);
+  assert.equal(pageTwo.getPage(0).getWidth(), 210);
+});
+
+test("PDF previews validate type and size before reading the result", () => {
+  const pdf = new Blob(["%PDF"], { type: "application/pdf" });
+  const result = { name: "merged-local.pdf", type: "application/pdf", blob: pdf };
+  assert.equal(assertPdfPreviewResult(result, pdf.size), pdf);
+  assert.equal(isPdfPreviewResult(result), true);
+  assert.equal(isPdfPreviewResult({ ...result, type: "application/zip" }), false);
+
+  assert.throws(
+    () => assertPdfPreviewResult({ ...result, type: "text/plain" }, pdf.size),
+    /not a valid PDF result/s,
+  );
+  assert.throws(
+    () => assertPdfPreviewResult(result, pdf.size - 1),
+    /merged-local\.pdf.*above the 1 KB in-memory result limit/s,
+  );
+});
 
 test("SVG URL guards preserve local fragments and remove remote resource variants", () => {
   for (const local of [

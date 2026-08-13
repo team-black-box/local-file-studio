@@ -16,12 +16,14 @@ The catalog provides 47 common PDF and image workflows in one independent, offli
 ### PDF — 34 actions
 
 - Organize: Merge, Split, Remove Pages, Extract Pages, Organize PDF, Scan to PDF.
-- Optimize: Compress, Repair, and English OCR.
+- Optimize: Compress, Repair, and a page-by-page English OCR reader with copyable text.
 - Convert to PDF: JPG, DOCX, PPTX, XLS/XLSX, and sanitized local HTML.
 - Convert from PDF: JPG, DOCX, PPTX, XLSX, archival rewrite, and Markdown.
 - Edit: Rotate, Page Numbers, Watermark, Crop, text annotation, visual image/signature placement, and Forms.
 - Protect: Unlock, AES-256 Protect, Sign, permanent raster Redact, and text Compare.
 - Smart local helpers: extractive Summarizer and glossary-assisted Translate.
+
+Compress PDF rebuilds pages as compressed images. This can substantially reduce image-heavy documents, but searchable text, links, forms, and annotations are flattened, fine detail may soften, and an already-optimized PDF can become larger.
 
 ### Images — 13 actions
 
@@ -30,6 +32,8 @@ The catalog provides 47 common PDF and image workflows in one independent, offli
 Tools whose output depends heavily on source layout, browser codecs, heuristics, or on-device recognition are labelled **Local beta** in the interface. Catalog copy and file pickers intentionally list only formats that the bundled browser processors can decode.
 
 Word to PDF extracts readable DOCX text without preserving Word layout. Legacy symbol-font characters are kept visible as `[symbol …]` placeholders rather than being guessed incorrectly; a verified broader mapping is deferred in [TASKS.md](TASKS.md).
+
+Password-protected PDFs can be opened in place in every applicable PDF workbench. The password is held only in tab memory for the current operation and is cleared after completion, reset, or failure. Reader passwords work when the PDF grants the permission the selected tool needs; structural changes require modification permission or the owner password, rendering requires print permission, and text conversion requires copy permission. Generated PDFs are unlocked by default. An explicit **Keep output files password-protected** checkbox can instead apply fresh AES-256 protection using the first non-empty password verified for that job, including every PDF inside Split/Extract ZIP results. This does not promise to clone the source PDF's original permission flags or every security detail. Non-PDF outputs cannot receive PDF password protection. The dedicated Unlock and Protect PDF tools retain their explicit purposes. Standard password security is supported; certificate/public-key encrypted PDFs and unsupported security handlers fail locally with an actionable message.
 
 ## Visible local safety limits
 
@@ -63,6 +67,14 @@ bun run preview
 
 Vercel uses the frozen-lockfile install and Bun build commands in `vercel.json`. It serves the static `dist/client` directory with SPA fallback routing, explicit cache behavior, and browser security headers; Local File Studio has no application backend or upload path.
 
+## Search and AI discovery
+
+The production build generates an indexable homepage and one static HTML entry point for every catalog tool at `/tools/{slug}`. All 47 tool pages have unique titles, descriptions, canonical URLs, social metadata, visible input/output and safeguard summaries, and `WebApplication` plus breadcrumb structured data. Legacy `#tool/{slug}` links are upgraded in the browser to the canonical path.
+
+The same build writes `sitemap.xml`, `robots.txt`, `llms.txt`, and `sitemap.md` from the checked-in catalog. Search discovery is allowed by default, including `OAI-SearchBot`; the initial policy blocks `GPTBot` because search visibility is not blanket permission for model-training crawling. Maintainers must review that policy explicitly before launch rather than changing it through a hosting-only override.
+
+This work remains open source in the same repository: metadata definitions, generation, verification, and social artwork are committed source; `dist/client` is reproducible build output and is not committed. No analytics, crawler SDK, runtime secret, server rendering service, or document-data telemetry is required. Search Console verification, sitemap submission, production-domain redirects, and crawler observations are external operational steps performed only after deployment is separately authorized.
+
 ## Offline behavior
 
 Offline mode becomes available after one successful production visit. The build emits a strict precache manifest for the HTML app shell, Vite-generated chunks, fonts, PDF worker, and bundled English OCR engine. Arbitrary requests, uploads, and generated documents are never added to Cache Storage. Local documents selected in the browser are not uploaded by the service worker.
@@ -77,7 +89,7 @@ Clearing site data, using private browsing, or browser storage eviction removes 
 bun run verify
 ```
 
-`bun run verify` checks repository hygiene and production-QA catalog coverage, validates vendored runtime assets, runs resource-limit and processor tests, creates the static production build, and verifies its offline/PWA artifacts. Responsive interaction, conversion, and offline-processing checks are also exercised manually where applicable.
+`bun run verify` checks repository hygiene and production-QA catalog coverage, validates vendored runtime assets, runs resource-limit, protected-PDF, and processor tests, creates the static production build, verifies all homepage/tool SEO and AI-discovery artifacts, and verifies offline/PWA output. Responsive interaction, conversion, crawler-source, and offline-processing checks are also exercised manually where applicable.
 
 The hardened private-repository CI rerun passed at the 2026-08-11 checkpoint. GitHub permissions, branch rules, security features, and workflow policy can change independently of this source tree, so that result is evidence for the audited revision rather than a product guarantee. The dated control snapshot and remaining public-launch gates are in [TASKS.md](TASKS.md).
 

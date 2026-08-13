@@ -12,6 +12,12 @@ export const MAX_GENERATED_RESULTS = 100;
 export const MAX_PAGE_SELECTION_CHARACTERS = 4_096;
 export const MAX_PAGE_SELECTION_ENTRIES = 2_000;
 export const MAX_PDF_PASSWORD_CHARACTERS = 1_024;
+export const PDF_PREVIEW_LIMITS = Object.freeze({
+  maxOutputBytes: GLOBAL_OUTPUT_LIMIT_BYTES,
+  maxPages: 500,
+  maxRasterPixels: 8 * MEGAPIXEL,
+  maxRasterEdge: 4096,
+});
 
 const DEFAULTS = Object.freeze({
   minFiles: 1,
@@ -55,7 +61,7 @@ const SLUG_ALIASES = {
   "remove-background": "remove-image-background",
 };
 const TEXT_SETTING_LIMITS = {
-  "split-pdf": { pages: MAX_PAGE_SELECTION_CHARACTERS },
+  "split-pdf": { pages: MAX_PAGE_SELECTION_CHARACTERS, customBreaks: MAX_PAGE_SELECTION_CHARACTERS },
   "remove-pdf-pages": { pages: MAX_PAGE_SELECTION_CHARACTERS },
   "extract-pdf-pages": { pages: MAX_PAGE_SELECTION_CHARACTERS },
   "organize-pdf": { order: MAX_PAGE_SELECTION_CHARACTERS },
@@ -71,7 +77,7 @@ const TEXT_SETTING_LIMITS = {
 };
 
 const TEXT_SETTING_LABELS = {
-  "split-pdf": { pages: "page selection" },
+  "split-pdf": { pages: "page selection", customBreaks: "custom split points" },
   "remove-pdf-pages": { pages: "page selection" },
   "extract-pdf-pages": { pages: "page selection" },
   "organize-pdf": { order: "page order" },
@@ -197,6 +203,10 @@ export function getToolLimits(toolOrSlug) {
       maxTotalBytes: slug === "translate-pdf" ? 30 * MIB : 50 * MIB,
       maxPdfPagesPerFile: slug === "translate-pdf" ? 150 : slug === "pdf-to-powerpoint" ? 100 : 300,
       maxExtractedCharactersTotal: textLimits[slug],
+      ...(slug === "pdf-to-markdown" ? {
+        maxTextPreviewCharacters: 250_000,
+        maxTextPreviewBlocks: 1_000,
+      } : {}),
     });
   }
 
@@ -365,7 +375,9 @@ export function describeToolLimits(tool) {
         : `Up to ${limits.maxFiles} ${types} files`;
   const primary = limits.minFiles === 0
     ? `1 ${types} file up to ${formatLimitBytes(limits.maxFileBytes)}, or pasted markup in Settings`
-    : `${count} · ${formatLimitBytes(limits.maxFileBytes)} each · ${formatLimitBytes(limits.maxTotalBytes)} combined`;
+    : limits.maxFiles === 1
+      ? `${count} · ${formatLimitBytes(limits.maxFileBytes)}`
+      : `${count} · ${formatLimitBytes(limits.maxFileBytes)} each · ${formatLimitBytes(limits.maxTotalBytes)} combined`;
   const details = [];
 
   if (limits.maxPdfPagesPerFile) details.push(`${limits.maxPdfPagesPerFile.toLocaleString()} pages/file`);

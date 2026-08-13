@@ -86,7 +86,7 @@ export const tools = withPhosphorExports([
   {
     slug: "split-pdf",
     name: "Split PDF",
-    description: "Save selected PDF pages as separate one-page files.",
+    description: "Divide one PDF into the page groups you need.",
     kind: "pdf",
     category: "organize",
     accepts: [".pdf"],
@@ -96,7 +96,28 @@ export const tools = withPhosphorExports([
     icon: "Scissors",
     featured: true,
     maturity: "ready",
-    settings: [],
+    settings: [
+      {
+        key: "mode",
+        type: "choice",
+        label: "Split method",
+        default: "half",
+        options: [
+          { value: "half", label: "Split in half", hint: "Create two balanced PDFs." },
+          { value: "every2", label: "Every 2 pages", hint: "Create consecutive two-page PDFs." },
+          { value: "odd", label: "Odd pages", hint: "Group all odd pages in one PDF." },
+          { value: "even", label: "Even pages", hint: "Group all even pages in one PDF." },
+          { value: "custom", label: "Custom", hint: "Choose exactly where each PDF ends." },
+        ],
+      },
+      {
+        key: "customBreaks",
+        type: "text",
+        label: "Split after pages",
+        default: "",
+        hint: "Example: 3, 6 creates pages 1–3, 4–6, and 7 onward.",
+      },
+    ],
   },
   {
     slug: "remove-pdf-pages",
@@ -197,9 +218,9 @@ export const tools = withPhosphorExports([
         label: "Compression",
         default: "balanced",
         options: [
-          { value: "gentle", label: "Gentle" },
-          { value: "balanced", label: "Balanced" },
-          { value: "strong", label: "Strong" },
+          { value: "gentle", label: "Gentle", badge: "Best clarity", hint: "Light reduction", description: "Keeps page images sharper and produces a larger result." },
+          { value: "balanced", label: "Balanced", badge: "Recommended", hint: "Medium reduction", description: "A practical clarity and file-size trade-off for sharing." },
+          { value: "strong", label: "Strong", badge: "Smallest target", hint: "Most reduction", description: "Uses lower image resolution; fine text may look softer." },
         ],
       },
     ],
@@ -221,14 +242,14 @@ export const tools = withPhosphorExports([
   },
   {
     slug: "ocr-pdf",
-    name: "OCR PDF",
-    description: "Make scanned English pages searchable with on-device text recognition.",
+    name: "OCR Reader",
+    description: "Read and copy text from scanned English PDFs with on-device recognition.",
     kind: "pdf",
     category: "optimize",
     accepts: [".pdf"],
-    output: [".pdf"],
+    output: ["text reader"],
     batch: false,
-    tags: ["searchable", "scan", "recognize", "text"],
+    tags: ["reader", "copy", "scan", "recognize", "text"],
     icon: "TextT",
     featured: true,
     maturity: "beta",
@@ -757,7 +778,7 @@ export const tools = withPhosphorExports([
     kind: "pdf",
     category: "intelligence",
     accepts: [".pdf"],
-    output: [".txt"],
+    output: ["text reader", ".txt"],
     batch: false,
     tags: ["language", "translate", "localize", "offline"],
     icon: "Translate",
@@ -785,7 +806,7 @@ export const tools = withPhosphorExports([
     kind: "pdf",
     category: "intelligence",
     accepts: [".pdf"],
-    output: [".md"],
+    output: ["Markdown reader", ".md"],
     batch: false,
     tags: ["markdown", "md", "text", "llm"],
     icon: "MarkdownLogo",
@@ -1182,5 +1203,31 @@ export const pdfTools = Object.freeze(tools.filter((tool) => tool.kind === "pdf"
 export const imageTools = Object.freeze(
   tools.filter((tool) => tool.kind === "image"),
 );
+
+export function rankToolSearchResults(candidates, query, limit = 4) {
+  const needle = String(query || "").trim().toLowerCase();
+  if (!needle || !Array.isArray(candidates) || !Number.isInteger(limit) || limit < 1) return [];
+  return candidates
+    .map((tool, index) => {
+      const name = tool.name.toLowerCase();
+      const tags = tool.tags.map((tag) => tag.toLowerCase());
+      const searchable = `${name} ${tool.description} ${tags.join(" ")} ${categoryById[tool.category]?.label || ""}`.toLowerCase();
+      if (!searchable.includes(needle)) return null;
+      const score = name === needle
+        ? 0
+        : name.startsWith(needle)
+          ? 1
+          : name.includes(needle)
+            ? 2
+            : tags.some((tag) => tag === needle || tag.startsWith(needle))
+              ? 3
+              : 4;
+      return { tool, index, score };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .slice(0, limit)
+    .map(({ tool }) => tool);
+}
 
 export default tools;

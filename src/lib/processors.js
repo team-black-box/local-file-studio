@@ -3,6 +3,7 @@
 
 import { FileLimitError, assertMinimumFileCount, assertTextSettingLengths, summarizeRejections, validateFileSelection } from "./file-limits.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./file-preflight.js";
+import { getPdfCompressionPreset } from "./file-utils.js";
 
 const ALIASES = {
   "remove-pdf-pages": "remove-pages",
@@ -32,6 +33,10 @@ export async function runTool(tool, files, options = {}, report) {
   const slug = ALIASES[tool.slug] || tool.slug;
   const startedAt = performance.now();
   const normalizedOptions = { ...options };
+  if (Array.isArray(options.inputPasswords)) {
+    normalizedOptions.inputPassword = options.inputPasswords[0];
+    normalizedOptions.inputPassword2 = options.inputPasswords[1];
+  }
   const selection = validateFileSelection(tool, [], files);
   validateNumericOptions(tool, normalizedOptions);
   assertTextSettingLengths(tool, normalizedOptions);
@@ -45,8 +50,9 @@ export async function runTool(tool, files, options = {}, report) {
   }
 
   if (slug === "compress-pdf" && typeof normalizedOptions.quality === "string") {
-    normalizedOptions.quality = { gentle: 82, balanced: 68, strong: 48 }[normalizedOptions.quality] || 68;
-    normalizedOptions.scale = { gentle: 1.45, balanced: 1.2, strong: 0.95 }[options.quality] || 1.2;
+    const preset = getPdfCompressionPreset(normalizedOptions.quality);
+    normalizedOptions.quality = preset.quality;
+    normalizedOptions.scale = preset.scale;
   }
 
   if (["jpg-to-pdf", "scan-to-pdf"].includes(slug) && typeof normalizedOptions.margin === "string") {
@@ -71,6 +77,10 @@ export async function runTool(tool, files, options = {}, report) {
     results = tool.kind === "image"
       ? await import("./image-processors.js").then(({ processImageTool }) => processImageTool(slug, files, normalizedOptions, report))
       : await import("./pdf-processors.js").then(({ processPdfTool }) => processPdfTool(slug, files, normalizedOptions, report));
+    if (normalizedOptions.outputPassword) {
+      results = await import("./pdf-output-protection.js")
+        .then(({ protectGeneratedPdfResults }) => protectGeneratedPdfResults(results, normalizedOptions.outputPassword));
+    }
   } catch (error) {
     throw toFriendlyResourceError(error, tool.name);
   }

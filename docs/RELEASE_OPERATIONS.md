@@ -16,6 +16,8 @@ This document separates the GitHub controls already applied to the private repos
 - Application backend: none. No upload endpoint, database, or runtime secret is required.
 - Intended production hostname: `localfilestudio.app`, after an owner explicitly approves Vercel project linking, domain verification, and DNS changes.
 
+The open-source build also generates the crawlable homepage, all canonical `/tools/{slug}` pages, structured metadata, social-card assets, `sitemap.xml`, `robots.txt`, `llms.txt`, and `sitemap.md`. These are derived from committed catalog and metadata sources; no proprietary SEO service, runtime API, analytics key, or hidden production repository is required. Search-console accounts, domain verification, DNS values, and crawler observations remain operational state and must not be committed when they contain secrets.
+
 `"private": true` in `package.json` prevents accidental publication to the npm registry. It has no effect on GitHub repository visibility, source licensing, Vercel access, or the visibility of a deployed website.
 
 Apache-2.0 and Vercel address different layers. Apache-2.0 permits use, modification, and redistribution of covered source and built first-party code subject to its terms; Vercel serves a compiled copy of the application. Hosting the app does not change the source license, grant trademark rights, or replace the separate licenses and notices for third-party components. Keep `LICENSE`, `NOTICE`, `TRADEMARKS.md`, `THIRD_PARTY_NOTICES.md`, and component-local notices with every applicable source or binary distribution.
@@ -100,7 +102,9 @@ Do not change DNS until the repository's public-release gates, the full producti
 2. Copy the exact DNS records Vercel presents into the authoritative DNS provider; do not infer them from this document.
 3. Verify ownership, TLS issuance, canonical redirects, security headers, manifest scope, service-worker scope, and offline reload on the final hostname.
 4. Decide explicitly whether `www.localfilestudio.app` redirects to the apex or is unsupported, then test that behavior.
-5. Record the deployed Git commit, Vercel deployment identifier, DNS change, approver, and rollback target in the release record.
+5. Confirm all canonical tool paths return their static tool-specific source, preview deployments are non-indexable, and the Vercel hostname does not compete as an unintended duplicate host.
+6. Validate the sitemap, representative JSON-LD, link previews, and crawler policies. After owner approval, verify Search Console/Bing properties and submit the sitemap without committing verification secrets.
+7. Record the deployed Git commit, Vercel deployment identifier, DNS change, approver, and rollback target in the release record.
 
 ## Rollback
 
