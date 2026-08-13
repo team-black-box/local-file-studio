@@ -39,6 +39,13 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - A discovered privacy leak, document-integrity/corruption defect, security failure, crash, unbounded resource problem, broken offline update, or failed rollback path remains a release blocker even when its catalog row is outside the focused suite.
 - This checkpoint changes QA sequencing only. It does not authorize Vercel linking, a preview or production deployment, a domain/DNS change, or public GitHub visibility; each still requires separate owner approval.
 
+### Local candidate checkpoint — 2026-08-13
+
+- Private `main` commit `1ee9f2f2e84912be89a72f12d3e551c4e165680f` passed a frozen install, clean dependency audit, full repository verification, and a focused local production-browser smoke using synthetic fixtures.
+- The local smoke exercised Merge, Split, Compress, OCR Reader, JPG to PDF, Add Image to PDF, Protect/Unlock PDF, and Convert to JPG. It also proved one direct Split PDF route could reload and process successfully from the installed service worker while the local server was stopped.
+- Detailed evidence and limitations are recorded in `docs/PRODUCTION_QA.md`. No deployment-dependent smoke checkbox was closed: Vercel headers/non-indexing, preserved network and Cache Storage evidence, broader browser/device coverage, independent browser-download inspection, the two-build update path, and a real rollback target remain open.
+- The production preview is available locally at `http://127.0.0.1:4200/` for review. This remains local evidence and does not authorize or imply a Vercel deployment.
+
 ## SEO and AI-discovery launch gate
 
 ### Local foundation checkpoint — 2026-08-12
