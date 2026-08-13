@@ -13,13 +13,13 @@ Do not test with customer, production, personal, confidential, regulated, or irr
 
 ## Current status
 
-The GitHub repository remains private. Its hardened Actions/branch settings and latest successful CI rerun are recorded in [RELEASE_OPERATIONS.md](RELEASE_OPERATIONS.md), but automated CI does not complete any manual row below and is not public-launch or production evidence. Leave the row checkboxes open until the named candidate is exercised in the recorded browser, connection, privacy/network, and independent-result checks.
+The GitHub repository remains private. Its hardened Actions/branch settings and latest successful CI rerun are recorded in [RELEASE_OPERATIONS.md](RELEASE_OPERATIONS.md), but automated CI does not complete any manual row below and is not public-launch evidence. Leave the row checkboxes open until the named candidate is exercised in the recorded browser, connection, privacy/network, and independent-result checks.
 
-Vercel previews, a production deployment, and `localfilestudio.app` checks are future gates that require separate authorization. Until then, use a local production build/preview for iteration and do not describe it as deployed production QA.
+The owner authorized a Vercel preview and production-beta promotion on 2026-08-13. Deployment, header, SEO, offline-artifact, rollback-target, Git-link, and pending custom-domain evidence is recorded below. The initial promotion does not convert the remaining unchecked browser rows into passes or waivers; they continue against the deployed beta.
 
 ## Initial Vercel beta smoke gate
 
-Run this focused suite on the exact candidate before its first beta promotion. Record browser, deployment, service-worker revision, fixtures, and evidence below. A failure in privacy, document integrity, security, bounded resource use, offline update safety, or rollback safety blocks promotion regardless of whether the affected catalog row is listed here.
+Run this focused suite on the exact candidate before a normal beta promotion. The owner explicitly authorized the initial production beta with the still-open checks carried forward as ongoing deployed-candidate QA. Record browser, deployment, service-worker revision, fixtures, and evidence below. A failure in privacy, document integrity, security, bounded resource use, offline update safety, or rollback safety blocks any later promotion regardless of whether the affected catalog row is listed here.
 
 ### Representative tool flows
 
@@ -43,15 +43,15 @@ Run this focused suite on the exact candidate before its first beta promotion. R
 
 ## Test record
 
-- Candidate Git commit: merged private `main` commit `1ee9f2f2e84912be89a72f12d3e551c4e165680f`; this evidence update is a documentation-only working tree based on that commit
-- Environment (`local production preview`, authorized Vercel preview, or production): local production preview
-- Preview/deployment identifier and URL, if applicable: `http://127.0.0.1:4200/` and direct local production routes; this is not a Vercel deployment
-- Service-worker revision: `00d57810cbd189ca` for the verified local production build
-- Tester and date: Codex automated and browser-assisted local pre-deployment smoke, 2026-08-13; earlier focused Split PDF and Remove Pages interaction approvals by the repository owner remain recorded in their catalog rows
+- Candidate Git commit: merged private `main` commit `477e6dd1a90a31913de86388a3b97db817485ba4`; this evidence update is a documentation and deployment-boundary change based on that commit
+- Environment (`local production preview`, authorized Vercel preview, or production): authorized Vercel preview and production beta, supported by the earlier local production-browser smoke
+- Preview/deployment identifier and URL, if applicable: preview `dpl_J3ThWYmv3zcajRqsrfpSqgBdT6jZ` at `https://local-file-studio-24a5cy0nz-team-black-box.vercel.app`; production `dpl_L7xc47MHdLRjNscXF1k2RRM7wMnM` at `https://local-file-studio.vercel.app`; previous rollback target `dpl_8GftPWFsxYtpBBxWpNxgQKESH224`
+- Service-worker revision: `00d57810cbd189ca` for the verified local, preview, and promoted production artifact
+- Tester and date: Codex automated and browser-assisted local pre-deployment smoke plus Vercel CLI/HTTP deployment checks, 2026-08-13; earlier focused Split PDF and Remove Pages interaction approvals by the repository owner remain recorded in their catalog rows
 - Desktop browsers and operating systems: Codex in-app browser on macOS at its default 1280 × 720 viewport
 - Mobile browsers and devices: responsive viewport check at 390 × 844 only; no physical mobile device or separately identified mobile browser yet
 - Fixture-set version or hash: committed `sample-a.pdf` (`8930af29a9aa0ecff0440d92e5441bfeee4222118b5c6fb7d362d831808bb450`), `sample-b.pdf` (`a690e5b89ec09bbc36c340ac5bd79870c026dc4b34513d33efe61c3e008bd2de`), `sample-card.svg` (`84a01726b800ee17447a16054d70111116631db3cb03bf0b1ef957cdd1e014ca`), and social PNG (`5b0647891c783132b1c1373eda61e71b9ff3ce9d1b724dd856e4881b2595c04d`); temporary deterministic six-page, raster, and protected derivatives were generated locally and not committed
-- Issues and waived rows (a launch waiver requires explicit owner approval): no new waiver. Vercel preview headers/non-indexing, a preserved DevTools network-and-Cache-Storage inspection, separate desktop browsers and physical mobile devices, independent inspection of browser downloads, full TIFF/animated-format coverage, keyboard focus restoration, cancellation/repeated-run cleanup, the two-build open-tab service-worker update, and a real deployment rollback remain open. The browser harness reported successful OCR copy feedback but could not independently read its isolated clipboard, so copy integrity remains open for the authorized preview/manual pass.
+- Issues and waived rows (a launch waiver requires explicit owner approval): the owner explicitly authorized the initial production beta while the unchecked noncritical browser rows continue as ongoing QA; they are not marked passed. Preserved DevTools network-and-Cache-Storage inspection, separate desktop browsers and physical mobile devices, independent inspection of browser downloads, full TIFF/animated-format coverage, keyboard focus restoration, cancellation/repeated-run cleanup, the two-build open-tab service-worker update, exercised rollback, final custom-hostname/TLS behavior, and the authorized Git-trigger proof remain open. The browser harness reported successful OCR copy feedback but could not independently read its isolated clipboard, so copy integrity remains open.
 
 ### Local pre-deployment evidence — 2026-08-13
 
@@ -66,6 +66,15 @@ Run this focused suite on the exact candidate before its first beta promotion. R
 - The rendered asset inventory contained only same-origin, blob, or data resources and no fixture name or synthetic credential in an asset URL. This is supporting local evidence, not a substitute for the preserved-network and Cache Storage inspection required on the authorized Vercel preview.
 - With the local server stopped, the installed production service worker reloaded the direct Split PDF route and completed a six-page split into the expected two-PDF ZIP without an overlay or console error. The server was then restarted for review at `http://127.0.0.1:4200/`.
 - The 390 × 844 Split PDF layout retained its picker, safeguards, split methods, and primary action without document-level horizontal overflow. Keyboard traversal and focus restoration remain open because the automation surface did not provide independent focus movement evidence.
+
+### Vercel preview and production evidence — 2026-08-13
+
+- A dry run initially exposed 112 MB of unnecessary ignored local output and QA artifacts. The committed `.vercelignore` boundary now excludes `.git`, `.vercel`, environment files, dependencies, generated `dist`, QA evidence, reports, logs, and local package-manager state. The clean source export contained 106 build inputs totaling 50.7 MB, dominated by the audited local OCR runtime.
+- The CLI-only preview built with `bun install --frozen-lockfile` and `bun run build`, transformed 5,186 modules, emitted the 77-entry offline manifest, and reached `READY`. No Git-trigger claim is based on this deployment.
+- Preview HTML returned `200` with `X-Robots-Tag: noindex`, the committed security/cache headers, a tool-specific Split PDF title, 48 sitemap URLs, reachable `robots.txt`/`llms.txt`, and the expected service-worker scope and no-store policy.
+- The exact staged artifact was promoted to production without a source rebuild. Production deployment `dpl_L7xc47MHdLRjNscXF1k2RRM7wMnM` is `READY`, maps back to preview `dpl_J3ThWYmv3zcajRqsrfpSqgBdT6jZ`, serves direct tool metadata and the same offline revision, and defines no Vercel Functions.
+- `team-black-box/local-file-studio` is connected to Vercel with `main` as its production branch. A later commit by an authorized cofounder will be the separate Git-trigger proof; until observed, do not mark Git-trigger behavior as verified.
+- The apex and `www` custom domains are attached; `www` redirects permanently to the canonical apex. Namecheap DNS still points at its parking service. Final-hostname status, TLS, redirects, indexability, service-worker scope, offline reload, and sitemap behavior remain open until the exact recommended DNS records propagate.
 
 ## Shared protocol for every row
 

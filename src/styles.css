@@ -6932,6 +6932,29 @@ body {
   text-decoration: none;
 }
 
+/* The hero's right column is narrower than the full ledger between laptop and
+   half-window widths. Drop the decorative timestamp before any content can
+   overflow; mobile keeps its separate stacked treatment below. */
+@media (min-width: 681px) and (max-width: 1450px) {
+  .privacy-ledger-head,
+  .privacy-flow .flow-node,
+  .privacy-flow .flow-engine {
+    grid-template-columns: 52px minmax(145px, 1.1fr) minmax(95px, 0.72fr) minmax(155px, 1fr);
+  }
+
+  .privacy-ledger-head > span:last-child,
+  .flow-node time,
+  .flow-engine time {
+    display: none;
+  }
+
+  .flow-item,
+  .flow-status,
+  .flow-detail {
+    min-width: 0;
+  }
+}
+
 .trust-strip {
   height: 87px;
   background: transparent;

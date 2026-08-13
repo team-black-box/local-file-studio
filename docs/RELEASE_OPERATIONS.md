@@ -5,16 +5,16 @@ SPDX-License-Identifier: Apache-2.0
 
 # GitHub and Vercel operations
 
-This document separates the GitHub controls already applied to the private repository from the future public-source and production operating model. It does not authorize a commit, push, visibility change, Vercel link, deployment, environment change, or DNS change. A maintainer must approve each external action.
+This document separates the GitHub controls already applied to the private repository from the current production-beta and future public-source operating model. Recorded past approvals do not authorize a later commit, push, visibility change, Vercel deployment, environment change, or DNS change; a maintainer must approve each external action.
 
 ## Source, package, and deployment model
 
 - Canonical source repository: `https://github.com/team-black-box/local-file-studio`.
-- Default source branch and intended future Vercel production source branch: `main`.
+- Default source branch and connected Vercel production source branch: `main`.
 - Runtime: a static Vite application built with the pinned Bun toolchain and frozen `bun.lock`.
 - Vercel output: `dist/client`, as declared in `vercel.json`.
 - Application backend: none. No upload endpoint, database, or runtime secret is required.
-- Intended production hostname: `localfilestudio.app`, after an owner explicitly approves Vercel project linking, domain verification, and DNS changes.
+- Canonical production hostname: `localfilestudio.app`. It is attached to Vercel; Namecheap DNS and final TLS/hostname verification remain pending. `www.localfilestudio.app` permanently redirects to the apex.
 
 The open-source build also generates the crawlable homepage, all canonical `/tools/{slug}` pages, structured metadata, social-card assets, `sitemap.xml`, `robots.txt`, `llms.txt`, and `sitemap.md`. These are derived from committed catalog and metadata sources; no proprietary SEO service, runtime API, analytics key, or hidden production repository is required. Search-console accounts, domain verification, DNS values, and crawler observations remain operational state and must not be committed when they contain secrets.
 
@@ -62,7 +62,7 @@ issue -> topic branch -> pull request -> strict CI -> independent approval
       -> squash/rebase merge to main
 ```
 
-After an owner separately authorizes Vercel linking and deployment, extend it to:
+With the owner-authorized Vercel link active, extend it to:
 
 ```text
 issue -> topic branch -> pull request -> CI -> Vercel preview -> affected QA
@@ -74,7 +74,7 @@ issue -> topic branch -> pull request -> CI -> Vercel preview -> affected QA
 3. Develop with synthetic fixtures. Run `bun install --frozen-lockfile`, focused tests, and `bun run verify`.
 4. Open a pull request with signed-off commits. CI builds from checked-out repository files only and the strict `verify` check must pass on an up-to-date branch.
 5. Obtain the required independent approval after the latest reviewable push and resolve every conversation. Merge by squash or rebase only.
-6. After Vercel is authorized, let the Git integration create a preview for the pull request. Treat preview URLs as public enough that no secrets, customer documents, or confidential fixture data may be embedded in them.
+6. Let the Git integration create a preview for the pull request. Treat preview URLs as public enough that no secrets, customer documents, or confidential fixture data may be embedded in them.
 7. Complete affected rows in [PRODUCTION_QA.md](PRODUCTION_QA.md), including a no-upload network inspection and offline test against the production build. For the first beta promotion, also complete the document's focused launch-critical smoke gate; the rest of the 47-tool matrix remains an ongoing deployed-candidate ledger.
 8. Merge only after CI, DCO, review, applicable preview QA, and legal/provenance gates pass.
 9. Produce the public deployment only from `main`, or explicitly promote the exact preview deployment already approved for that commit. Do not deploy an unreviewed working tree or arbitrary topic branch to production.
@@ -82,13 +82,13 @@ issue -> topic branch -> pull request -> CI -> Vercel preview -> affected QA
 
 ## Vercel configuration
 
-When an owner authorizes project linking:
+Current owner-authorized project configuration:
 
-- Import the `team-black-box/local-file-studio` repository and keep the repository root as the project root.
+- The `team-black-box/local-file-studio` repository is connected with the repository root as the project root.
 - Use the production branch `main`.
 - Keep the install, build, and output settings sourced from `vercel.json`: frozen Bun install, `bun run build`, and `dist/client`.
 - Do not add a server function, upload route, rewrite to a backend, or document-processing secret.
-- Enable pull-request previews for non-production branches. A preview is test infrastructure, not a release.
+- Pull-request previews are intended for non-production branches. A preview is test infrastructure, not a release; the first Git-trigger proof remains pending an authorized cofounder commit.
 - Keep production deployment restricted to `main` or explicit promotion by an authorized maintainer.
 - Apply deployment access controls to private-repository previews if available, without making runtime document processing depend on authentication.
 
@@ -107,7 +107,7 @@ The static application requires no environment variables. If a future operationa
 
 ## Domain launch
 
-Do not change DNS until the repository's public-release gates, the focused launch-critical suite and Vercel-hostname smoke checks pass, every known launch-blocking defect is closed, and the owner explicitly accepts the recorded set of still-untested noncritical rows for ongoing QA.
+The owner authorized the custom-domain transition on 2026-08-13 while explicitly carrying the unchecked noncritical matrix rows into ongoing beta QA. The apex and `www` names are attached to Vercel, but Namecheap DNS remains unchanged until the exact Vercel-provided records are applied by an authorized registrar operator.
 
 1. Add `localfilestudio.app` to the approved Vercel production project.
 2. Copy the exact DNS records Vercel presents into the authoritative DNS provider; do not infer them from this document.

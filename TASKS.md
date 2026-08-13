@@ -27,7 +27,7 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Re-audit Actions pins and allowlist, workflow permissions, token access, branch protection, merge/DCO settings, dependency automation, security features, repository visibility, and the configured remote immediately before launch.
 - Decide and document the approved secret-scanning/code-security posture. Treat an unavailable or unapproved feature as an explicit residual risk, not as enabled protection.
 - Obtain explicit owner authorization before making the repository public. After visibility changes, verify public vulnerability reporting and every intended public security control before soliciting contributions.
-- Keep Vercel linking, deployment, domain changes, and production promotion behind their separate approval and production-QA gates.
+- Keep the already authorized Vercel beta operationally separate from the still-private source repository. Public visibility, later production promotions, DNS changes, and security-setting changes continue to require their own current approval and verification.
 
 ## Staged Vercel beta and ongoing QA checkpoint
 
@@ -46,6 +46,16 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Detailed evidence and limitations are recorded in `docs/PRODUCTION_QA.md`. No deployment-dependent smoke checkbox was closed: Vercel headers/non-indexing, preserved network and Cache Storage evidence, broader browser/device coverage, independent browser-download inspection, the two-build update path, and a real rollback target remain open.
 - The production preview is available locally at `http://127.0.0.1:4200/` for review. This remains local evidence and does not authorize or imply a Vercel deployment.
 
+### Vercel production-beta checkpoint — 2026-08-13
+
+- The owner subsequently authorized a CLI preview, production promotion, GitHub repository connection, and custom-domain attachment while keeping the GitHub repository private.
+- Private `main` commit `477e6dd1a90a31913de86388a3b97db817485ba4` was exported without Git metadata or ignored local state and built as preview deployment `dpl_J3ThWYmv3zcajRqsrfpSqgBdT6jZ`. Vercel reported `READY`; the static build has no Functions or application backend.
+- The exact preview artifact was promoted to production deployment `dpl_L7xc47MHdLRjNscXF1k2RRM7wMnM`. The prior known-good production deployment `dpl_8GftPWFsxYtpBBxWpNxgQKESH224` remains available as the rollback target.
+- Production responses on the Vercel hostname returned the committed CSP, Permissions Policy, referrer, framing, MIME, cache, service-worker, and HSTS headers. The generated sitemap contains 48 canonical URLs, the precache manifest contains 77 entries, and the deployed service-worker revision is `00d57810cbd189ca`.
+- Vercel is connected to `team-black-box/local-file-studio` with protected `main` as the production branch. The repository owner intentionally deferred the Git-trigger proof to a later authorized commit by a Vercel-authorized cofounder.
+- `localfilestudio.app` and `www.localfilestudio.app` are attached to the project. `www` is configured as a permanent `308` redirect to the canonical apex. Namecheap remains authoritative and still serves parking records, so the custom hostname and TLS are not live until the exact Vercel-provided DNS records are applied and verified.
+- The complete 47-tool matrix, preserved browser network/Cache Storage evidence, physical mobile/browser breadth, live custom-hostname checks, two-build update path, and exercised rollback remain ongoing beta QA. No unchecked item is relabeled as passed or waived.
+
 ## SEO and AI-discovery launch gate
 
 ### Local foundation checkpoint — 2026-08-12
@@ -57,7 +67,7 @@ The following is a dated audit snapshot, not a promise that external settings ca
 
 ### Remaining external gate
 
-- After deployment and domain changes are separately authorized, verify that the apex domain, `www` decision, and Vercel hostname do not create uncontrolled duplicate indexable hosts; confirm canonical and redirect behavior on live responses.
+- After the pending Namecheap DNS change, verify that the apex domain, explicit `www` redirect, and Vercel hostname do not create uncontrolled duplicate indexable hosts; confirm canonical and redirect behavior on live responses.
 - Confirm all 48 canonical paths return the intended status, static source content, metadata, JSON-LD, security headers, and mobile/desktop application behavior. Ensure preview deployments remain non-indexable.
 - Validate and submit the production sitemap through owner-controlled Google Search Console and Bing Webmaster Tools accounts. Record verification ownership outside source; do not commit tokens or DNS secrets.
 - Validate representative pages with search-engine rich-result/schema tools and social-card debuggers, then monitor coverage and crawl errors without adding document-data telemetry.
