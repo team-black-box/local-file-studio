@@ -38,7 +38,7 @@ Last verified 2026-08-11:
 
 Private Vulnerability Reporting is not available in the current private state. GitHub secret scanning and code-security features are also disabled because private-repository licensing has not been authorized. Do not describe any of those controls as active. Enabling paid or licensed private-repository security features requires explicit owner authorization.
 
-These repository controls reduce source-change risk; they are not evidence that the source is ready to become public or that the application has passed the production QA matrix.
+These repository controls reduce source-change risk; they are not evidence that the source is ready to become public or that the application has passed either the focused launch gate or the ongoing production QA matrix.
 
 ## Additional gates before public contributions
 
@@ -65,7 +65,7 @@ issue -> topic branch -> pull request -> strict CI -> independent approval
 After an owner separately authorizes Vercel linking and deployment, extend it to:
 
 ```text
-issue -> topic branch -> pull request -> CI -> Vercel preview -> production QA
+issue -> topic branch -> pull request -> CI -> Vercel preview -> affected QA
       -> approval -> merge to main -> production build -> smoke checks
 ```
 
@@ -75,7 +75,7 @@ issue -> topic branch -> pull request -> CI -> Vercel preview -> production QA
 4. Open a pull request with signed-off commits. CI builds from checked-out repository files only and the strict `verify` check must pass on an up-to-date branch.
 5. Obtain the required independent approval after the latest reviewable push and resolve every conversation. Merge by squash or rebase only.
 6. After Vercel is authorized, let the Git integration create a preview for the pull request. Treat preview URLs as public enough that no secrets, customer documents, or confidential fixture data may be embedded in them.
-7. Complete affected rows in [PRODUCTION_QA.md](PRODUCTION_QA.md), including a no-upload network inspection and offline test against the production build.
+7. Complete affected rows in [PRODUCTION_QA.md](PRODUCTION_QA.md), including a no-upload network inspection and offline test against the production build. For the first beta promotion, also complete the document's focused launch-critical smoke gate; the rest of the 47-tool matrix remains an ongoing deployed-candidate ledger.
 8. Merge only after CI, DCO, review, applicable preview QA, and legal/provenance gates pass.
 9. Produce the public deployment only from `main`, or explicitly promote the exact preview deployment already approved for that commit. Do not deploy an unreviewed working tree or arbitrary topic branch to production.
 10. Run production smoke checks on the Vercel hostname and `localfilestudio.app` when configured. Confirm the deployed commit and service-worker revision.
@@ -92,11 +92,22 @@ When an owner authorizes project linking:
 - Keep production deployment restricted to `main` or explicit promotion by an authorized maintainer.
 - Apply deployment access controls to private-repository previews if available, without making runtime document processing depend on authentication.
 
+## Staged beta QA model
+
+The first approved Vercel release is a staged beta, not a claim that all 47 tools have completed exhaustive production-browser QA.
+
+1. Create a preview only after the owner explicitly authorizes Vercel linking and preview deployment. Assume the URL can be reached externally unless access control is verified.
+2. Run the focused launch-critical smoke gate in [PRODUCTION_QA.md](PRODUCTION_QA.md) on the exact candidate. It samples the highest-risk processing families and verifies local-only networking, offline update safety, accessibility, generated-result preview, metadata/headers, and rollback readiness.
+3. Promote only the reviewed `main` commit, or the exact approved preview for that commit, after the owner separately authorizes production promotion.
+4. Continue the complete 47-tool matrix on deployed candidates. Leave untested boxes open and attach evidence only after the named browser/environment and independent result checks run.
+5. Stop promotion or roll back for any observed privacy leak, document corruption/integrity defect, security failure, crash, unbounded resource use, broken offline update, or failed rollback path. A deferred noncritical row is not a pass or a waiver.
+6. Keep GitHub public visibility and `localfilestudio.app` DNS as separate owner-approved transitions; neither follows automatically from a successful beta smoke run.
+
 The static application requires no environment variables. If a future operational integration needs one, document its purpose and scope separately; it must not receive selected document content by default.
 
 ## Domain launch
 
-Do not change DNS until the repository's public-release gates, the full production QA matrix, and a Vercel-hostname smoke test pass.
+Do not change DNS until the repository's public-release gates, the focused launch-critical suite and Vercel-hostname smoke checks pass, every known launch-blocking defect is closed, and the owner explicitly accepts the recorded set of still-untested noncritical rows for ongoing QA.
 
 1. Add `localfilestudio.app` to the approved Vercel production project.
 2. Copy the exact DNS records Vercel presents into the authoritative DNS provider; do not infer them from this document.

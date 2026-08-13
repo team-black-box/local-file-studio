@@ -5,7 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # Production tool QA matrix
 
-Complete this matrix against the exact production candidate before public launch and after processing-engine, limit, service-worker, or browser-support changes. The 47 rows are derived from `src/tools.js`; CI runs `.github/scripts/verify-production-qa.mjs` so a catalog change cannot silently omit a row.
+This is the living, tool-by-tool QA ledger for deployed candidates. The 47 rows are derived from `src/tools.js`; CI runs `.github/scripts/verify-production-qa.mjs` so a catalog change cannot silently omit a row.
+
+The complete matrix remains the quality target, but it is not a claim that every row has already passed and it is not a hard gate for the first explicitly authorized Vercel beta. The smaller launch-critical gate below is the minimum pre-promotion suite. Leave all other boxes unchecked until the named candidate is actually exercised; an unchecked box is neither a pass nor a waiver.
 
 Do not test with customer, production, personal, confidential, regulated, or irreplaceable documents. Use intentionally synthetic fixtures with known page counts, text, colors, dimensions, metadata, and passwords.
 
@@ -15,11 +17,35 @@ The GitHub repository remains private. Its hardened Actions/branch settings and 
 
 Vercel previews, a production deployment, and `localfilestudio.app` checks are future gates that require separate authorization. Until then, use a local production build/preview for iteration and do not describe it as deployed production QA.
 
+## Initial Vercel beta smoke gate
+
+Run this focused suite on the exact candidate before its first beta promotion. Record browser, deployment, service-worker revision, fixtures, and evidence below. A failure in privacy, document integrity, security, bounded resource use, offline update safety, or rollback safety blocks promotion regardless of whether the affected catalog row is listed here.
+
+### Representative tool flows
+
+- [ ] **Merge PDF (row 1):** ordered multi-file structural edit, generated-PDF preview/download parity, independent result inspection, and repeat/reset cleanup.
+- [ ] **Split PDF (row 2):** interactive split plan, ZIP/result integrity, malformed selection, and protected multi-output behavior.
+- [ ] **Compress PDF (row 7):** estimate and exact-size guard, no-larger-output behavior, visual inspection, and restricted-reader handling.
+- [ ] **OCR Reader (row 9):** page-by-page local OCR, copy behavior, offline engine/model availability, and no recognized-text network/storage leakage.
+- [ ] **JPG to PDF (row 10):** representative generated-PDF workflow with local preview/download parity.
+- [ ] **Add Image to PDF (row 25):** visual placement, resize/rotate, multi-page edit, cleanup, and inline protected-PDF continuation.
+- [ ] **Unlock and Protect PDF (rows 27–28):** wrong/correct passwords, independent viewer verification, memory-only credential lifecycle, and no credential leakage.
+- [ ] **Convert to JPG (row 38):** PNG/SVG/animated first-frame behavior plus single-page and rejected multi-page TIFF coverage.
+
+### Cross-cutting release checks
+
+- [ ] Preserve-network inspection proves selected bytes, names, passwords, signatures, OCR/derived text, and generated results never leave the browser; Cache Storage contains app/runtime assets only.
+- [ ] Clean production build, all 48 canonical paths, unique metadata/JSON-LD, sitemap/discovery files, preview non-indexing, and deployed security/cache headers match the committed candidate.
+- [ ] Online-first then offline reload works for the representative flows; an older open tab retains its matching lazy chunks until closed and a complete new service worker activates afterward.
+- [ ] Desktop and mobile layouts, keyboard navigation, focus restoration, visible safeguards/errors, cancellation/reset, repeated runs, and object-URL/worker cleanup pass for the focused flows.
+- [ ] The candidate deployment and immediately previous known-good rollback target are recorded, and the rollback plus subsequent online/offline reload procedure is exercised or otherwise explicitly verified before promotion.
+- [ ] Every remaining unchecked tool row and known limitation is recorded for ongoing beta QA without being relabeled as passed or waived.
+
 ## Test record
 
-- Candidate Git commit: working tree based on `c0520e7`; exact Remove Pages QA checkpoint recorded by the next commit
+- Candidate Git commit: historical local QA now included in merged private `main` commit `1aed857`; the staged-beta policy update is an uncommitted documentation working tree based on that commit
 - Environment (`local production preview`, authorized Vercel preview, or production): local production preview
-- Preview/deployment identifier and URL, if applicable: `http://127.0.0.1:4183//tools/remove-pdf-pages` for the focused local interaction check; production/offline owner QA remains open
+- Preview/deployment identifier and URL, if applicable: historical local route `http://127.0.0.1:4183/tools/remove-pdf-pages` for the focused interaction check; it is not a current deployment, and production/offline owner QA remains open
 - Service-worker revision: `9f183c701e14609b` for the current verified local production build
 - Tester and date: Codex focused local interaction and repository-owner Split PDF and Remove Pages approvals, 2026-08-12
 - Desktop browsers and operating systems:
@@ -108,4 +134,4 @@ For every tool that accepts PDF input, repeat the primary check with a synthetic
 - [ ] Desktop and mobile layouts have no unreachable controls or horizontal overflow; keyboard-only use and reduced-motion/contrast preferences remain usable.
 - [ ] Hero search shows ranked matching tools beside the field without requiring a page scroll; Arrow keys and Enter open the active match, Escape closes suggestions, no-match feedback is clear, and View full list moves to the complete filtered catalog.
 
-Any failed row is a launch blocker for that advertised tool unless the tool is removed from the shipped catalog or the owner explicitly accepts and documents a narrowly defined limitation.
+Any observed failure involving privacy, document integrity/corruption, security, a crash, unbounded resource use, offline-update safety, or rollback safety is a launch blocker. Other failed or untested rows remain visible in this ledger and require a fix, removal of the advertised capability, or an explicit narrowly defined owner acceptance; they must not be silently marked passed or waived.

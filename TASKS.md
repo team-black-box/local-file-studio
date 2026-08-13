@@ -29,6 +29,16 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Obtain explicit owner authorization before making the repository public. After visibility changes, verify public vulnerability reporting and every intended public security control before soliciting contributions.
 - Keep Vercel linking, deployment, domain changes, and production promotion behind their separate approval and production-QA gates.
 
+## Staged Vercel beta and ongoing QA checkpoint
+
+### Owner decision — 2026-08-13
+
+- The exhaustive 47-tool browser matrix remains the long-term QA target, but completing every row is not a hard gate for the first explicitly authorized Vercel beta.
+- The initial beta gate is the focused launch-critical smoke suite defined in `docs/PRODUCTION_QA.md` and referenced by `docs/RELEASE_CHECKLIST.md`. It covers representative structural PDF, rendering/OCR, protected-PDF, visual-editor, generated-PDF preview, image-codec, privacy/network, offline-update, accessibility, metadata/header, and rollback paths.
+- Every untested matrix box stays visibly unchecked. Deferring a noncritical row is neither a pass nor a waiver; it remains scheduled for ongoing testing against deployed candidates.
+- A discovered privacy leak, document-integrity/corruption defect, security failure, crash, unbounded resource problem, broken offline update, or failed rollback path remains a release blocker even when its catalog row is outside the focused suite.
+- This checkpoint changes QA sequencing only. It does not authorize Vercel linking, a preview or production deployment, a domain/DNS change, or public GitHub visibility; each still requires separate owner approval.
+
 ## SEO and AI-discovery launch gate
 
 ### Local foundation checkpoint — 2026-08-12
