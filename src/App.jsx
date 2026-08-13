@@ -28,7 +28,6 @@ import {
   FileArrowDownIcon,
   FileDocIcon,
   FileHtmlIcon,
-  FileImageIcon,
   FileJpgIcon,
   FileMinusIcon,
   FilePdfIcon,
@@ -289,6 +288,14 @@ function ToolIcon({ tool, size = 24 }) {
   return <Icon size={size} weight="duotone" aria-hidden="true" />;
 }
 
+function BrandMark() {
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      <img src="/icons/icon-192.png" alt="" width="39" height="39" />
+    </span>
+  );
+}
+
 function Header({ kind, onKind, onHome, onSearchFocus }) {
   const { online, offlineReady } = useConnectivity();
   const mobileNavRef = useRef(null);
@@ -310,7 +317,7 @@ function Header({ kind, onKind, onHome, onSearchFocus }) {
       <img className="terminal-dots terminal-dots-header" src="/assets/paper-terminal-dots.png" alt="" aria-hidden="true" />
       <div className="shell header-inner">
         <button className="brand" onClick={onHome} aria-label="Local File Studio home">
-          <span className="brand-mark"><FileImageIcon size={20} weight="duotone" /></span>
+          <BrandMark />
           <span>Local File <strong>Studio</strong></span>
         </button>
         <nav className="primary-nav" aria-label="Primary navigation">
@@ -2405,7 +2412,7 @@ export function App() {
       </main>
 
       <footer className="app-footer">
-        <div className="shell footer-inner"><div className="brand footer-brand"><span className="brand-mark"><FilesIcon size={20} weight="duotone" /></span><span>Local File <strong>Studio</strong></span></div><p>Private PDF and image tools, built to stay on your device.</p><span>Local-first · Bun · Vercel-ready</span></div>
+        <div className="shell footer-inner"><div className="brand footer-brand"><BrandMark /><span>Local File <strong>Studio</strong></span></div><p>Private PDF and image tools, built to stay on your device.</p><span>Local-first · Bun · Vercel-ready</span></div>
       </footer>
 
       {selectedTool && <ToolWorkbench key={selectedTool.slug} tool={selectedTool} onClose={closeTool} onComplete={recordComplete} />}
