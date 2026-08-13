@@ -104,6 +104,27 @@ if (vercel.buildCommand !== "bun run build") errors.push("vercel.json: buildComm
 if (vercel.outputDirectory !== "dist/client") errors.push("vercel.json: outputDirectory must remain dist/client");
 if (vercel.functions || vercel.crons) errors.push("vercel.json: the static application must not define Functions or Cron Jobs");
 
+const vercelIgnore = readFileSync(path.join(root, ".vercelignore"), "utf8");
+const requiredVercelIgnoreRules = [
+  ".git/",
+  ".vercel/",
+  ".env",
+  ".env.*",
+  "node_modules/",
+  "dist/",
+  "design-qa-*.png",
+  "design-qa.md",
+];
+const vercelIgnoreRules = new Set(
+  vercelIgnore
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#")),
+);
+for (const rule of requiredVercelIgnoreRules) {
+  if (!vercelIgnoreRules.has(rule)) errors.push(`.vercelignore: required local/private exclusion is missing: ${rule}`);
+}
+
 for (const warning of warnings) console.warn(`warning: ${warning}`);
 if (errors.length) throw new Error(`Repository hygiene audit failed:\n- ${errors.join("\n- ")}`);
 

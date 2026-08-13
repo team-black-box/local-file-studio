@@ -24,6 +24,21 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] CI was rerun successfully after the Actions and branch-rule hardening.
 - [x] Current limitations are recorded: Private Vulnerability Reporting is unavailable while the repository is private, and GitHub secret scanning/code-security features remain disabled because private-repository licensing has not been authorized.
 
+## Current Vercel production-beta checkpoint
+
+Last verified 2026-08-13. These boxes record owner-authorized external actions and observed deployment state; they do not mark the remaining production QA matrix complete.
+
+- [x] The existing Team Black Box Vercel project is linked locally without committing `.vercel/`, credentials, or environment state.
+- [x] Preview `dpl_J3ThWYmv3zcajRqsrfpSqgBdT6jZ` built the clean private-`main` source at `477e6dd1a90a31913de86388a3b97db817485ba4` and reached `READY`.
+- [x] The exact preview artifact was promoted to production deployment `dpl_L7xc47MHdLRjNscXF1k2RRM7wMnM`; previous production `dpl_8GftPWFsxYtpBBxWpNxgQKESH224` is retained as the rollback target.
+- [x] Production Vercel responses preserve the static Vite architecture, direct tool routes, security/cache headers, 48 canonical sitemap entries, 77 offline assets, and service-worker revision `00d57810cbd189ca`; no Functions or document-upload path exists.
+- [x] Vercel is connected to `team-black-box/local-file-studio` and reports `main` as the production branch.
+- [x] `localfilestudio.app` and `www.localfilestudio.app` are attached, with an explicit permanent redirect from `www` to the canonical apex.
+- [ ] Replace the Namecheap parking records with Vercel's exact recommended apex A records and `www` CNAME, then verify propagation and certificate issuance.
+- [ ] Verify the final apex and `www` responses, canonical redirects, indexability, all security/cache headers, service-worker scope, offline reload, and rollback behavior.
+- [ ] Observe an authorized cofounder commit create the intended Git deployment, verify CI/source/deployment mapping, and record the deployment result without weakening protected `main`.
+- [ ] Continue every unchecked launch-critical and catalog QA row against deployed candidates; do not present an untested row as passed.
+
 ## Before any approved source update
 
 - [ ] Review the exact intended commit file list and all ignored/untracked files.
@@ -62,10 +77,10 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 
 ## Before an initial Vercel preview
 
-- [ ] Link only the approved GitHub repository and Vercel team/project after explicit owner authorization.
-- [ ] Confirm `main` is the production branch; non-main branches create previews only.
-- [ ] Confirm the frozen Bun install, `bun run build`, and `dist/client` output are taken from `vercel.json` with no secret or backend requirement.
-- [ ] Confirm preview access and indexing policy. Treat every preview URL as externally reachable unless an access control has been verified, and never use private or customer documents as fixtures.
+- [x] Link only the approved GitHub repository and Vercel team/project after explicit owner authorization.
+- [x] Confirm `main` is the production branch; non-main branches create previews only.
+- [x] Confirm the frozen Bun install, `bun run build`, and `dist/client` output are taken from `vercel.json` with no secret or backend requirement.
+- [x] Confirm preview access and indexing policy. Treat every preview URL as externally reachable unless an access control has been verified, and never use private or customer documents as fixtures.
 
 ## Before an initial Vercel beta promotion
 
@@ -79,10 +94,10 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [ ] Confirm preview deployments are non-indexable; verify the Vercel hostname, apex domain, and explicit `www` decision cannot create unintended duplicate indexable hosts.
 - [ ] Review and approve the distinction between search/discovery and model-training crawler policy. Do not treat `llms.txt` or `robots.txt` as a guarantee that every crawler will comply.
 - [ ] Render the social image, validate representative structured data and link previews, and test canonical tool paths with JavaScript enabled and disabled.
-- [ ] Smoke-test the Vercel hostname before changing DNS.
-- [ ] Record the candidate commit/deployment and the previous known-good rollback deployment.
+- [x] Smoke-test the Vercel hostname before changing DNS.
+- [x] Record the candidate commit/deployment and the previous known-good rollback deployment.
 - [ ] Review unresolved rows and defects. A deferred noncritical row may continue into ongoing beta QA, but an observed privacy, integrity, security, crash, unbounded-resource, offline-update, or rollback failure blocks promotion.
-- [ ] Obtain explicit approval before promotion, adding `localfilestudio.app`, or changing DNS.
+- [x] Obtain explicit approval before promotion, adding `localfilestudio.app`, or changing DNS.
 
 ## Before custom-domain launch
 

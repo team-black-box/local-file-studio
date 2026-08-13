@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
+# SPDX-License-Identifier: Apache-2.0
+
+# Vercel builds these sources from a clean upload. Exclude local state,
+# generated output, QA evidence, and development-only material.
+.git/
+.vercel/
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+.vite/
+playwright-report/
+test-results/
+design-qa-*.png
+design-qa.md
+.DS_Store
+.npmrc
+*.log
