@@ -43,15 +43,29 @@ Run this focused suite on the exact candidate before its first beta promotion. R
 
 ## Test record
 
-- Candidate Git commit: historical local QA now included in merged private `main` commit `1aed857`; the staged-beta policy update is an uncommitted documentation working tree based on that commit
+- Candidate Git commit: merged private `main` commit `1ee9f2f2e84912be89a72f12d3e551c4e165680f`; this evidence update is a documentation-only working tree based on that commit
 - Environment (`local production preview`, authorized Vercel preview, or production): local production preview
-- Preview/deployment identifier and URL, if applicable: historical local route `http://127.0.0.1:4183/tools/remove-pdf-pages` for the focused interaction check; it is not a current deployment, and production/offline owner QA remains open
-- Service-worker revision: `9f183c701e14609b` for the current verified local production build
-- Tester and date: Codex focused local interaction and repository-owner Split PDF and Remove Pages approvals, 2026-08-12
-- Desktop browsers and operating systems:
-- Mobile browsers and devices:
-- Fixture-set version or hash:
-- Issues and waived rows (a launch waiver requires explicit owner approval): Merge PDF previously passed its pre-preview online/result check; row 1 was reopened because the new Preview flow requires owner retesting. The repository owner approved the focused Split PDF and Remove Pages local-browser flows, including visual page planning, synchronized manual controls, reset/quick rules, uniform page cards, and cross-window trackpad navigation. Their offline/PWA, recorded privacy inspection, independent downloaded-result inspection, repeated-run/resource checks, and full protected-PDF matrices remain open; no waiver is implied. The development check confirmed wrong-password clearing, restricted-reader owner guidance, and same-screen continuation with an owner password; render/text/Add Image, offline, privacy-panel, and unsupported-security checks remain open.
+- Preview/deployment identifier and URL, if applicable: `http://127.0.0.1:4200/` and direct local production routes; this is not a Vercel deployment
+- Service-worker revision: `00d57810cbd189ca` for the verified local production build
+- Tester and date: Codex automated and browser-assisted local pre-deployment smoke, 2026-08-13; earlier focused Split PDF and Remove Pages interaction approvals by the repository owner remain recorded in their catalog rows
+- Desktop browsers and operating systems: Codex in-app browser on macOS at its default 1280 × 720 viewport
+- Mobile browsers and devices: responsive viewport check at 390 × 844 only; no physical mobile device or separately identified mobile browser yet
+- Fixture-set version or hash: committed `sample-a.pdf` (`8930af29a9aa0ecff0440d92e5441bfeee4222118b5c6fb7d362d831808bb450`), `sample-b.pdf` (`a690e5b89ec09bbc36c340ac5bd79870c026dc4b34513d33efe61c3e008bd2de`), `sample-card.svg` (`84a01726b800ee17447a16054d70111116631db3cb03bf0b1ef957cdd1e014ca`), and social PNG (`5b0647891c783132b1c1373eda61e71b9ff3ce9d1b724dd856e4881b2595c04d`); temporary deterministic six-page, raster, and protected derivatives were generated locally and not committed
+- Issues and waived rows (a launch waiver requires explicit owner approval): no new waiver. Vercel preview headers/non-indexing, a preserved DevTools network-and-Cache-Storage inspection, separate desktop browsers and physical mobile devices, independent inspection of browser downloads, full TIFF/animated-format coverage, keyboard focus restoration, cancellation/repeated-run cleanup, the two-build open-tab service-worker update, and a real deployment rollback remain open. The browser harness reported successful OCR copy feedback but could not independently read its isolated clipboard, so copy integrity remains open for the authorized preview/manual pass.
+
+### Local pre-deployment evidence — 2026-08-13
+
+- Frozen install, `bun audit --json`, and `bun run verify` passed. The audit returned no known advisory, all 47 catalog rows were represented exactly once, the production build emitted 77 offline assets, and SEO/AIO verification covered 47 tool pages plus the homepage.
+- The production homepage loaded with meaningful content, the expected title/catalog, no Vite overlay, and no captured console warning or error.
+- Merge PDF accepted the two committed PDFs in selected order, created a two-page result, exposed Preview and Download, and the local preview rendered and navigated from page 1 to page 2 with the expected labeled fixture content.
+- Split PDF loaded a generated six-page fixture, kept the half/every-two/odd/reset visual plans synchronized, and created the expected two-PDF ZIP. With a protected six-page derivative, a wrong password was cleared with an actionable error, the correct credential resumed the same split plan, output protection was unchecked by default with the limitation copy visible, and the opted-in result reported a password-protected two-PDF ZIP. Automated password tests independently inspect every ZIP entry.
+- Compress PDF showed distinct Gentle/Balanced/Strong estimates with approximate and flattening disclosures. Strong reduced the 219 KB raster fixture to 36 KB and reported an exact 83% reduction; no larger-output behavior remains covered by the automated processor tests.
+- OCR Reader recognized three raster pages into the in-tab reader, exposed page navigation and Copy page/Copy all, navigated to page 2, and produced nonempty selectable text. The browser displayed successful copy feedback; independent clipboard comparison remains open as noted above.
+- JPG to PDF created a previewable/downloadable PDF from the committed PNG. Add Image to PDF loaded a PDF plus the same PNG, showed the visual resize/rotation controls, exported one placement, and exposed Preview and Download. Convert to JPG produced a 640 × 360, 13 KB JPG from the committed SVG.
+- Protect PDF created an AES-256 result without exposing the synthetic credential in result copy. Its preview rejected a wrong password, cleared the field, and rendered after the correct password. Unlock PDF rejected a wrong password without a partial result and created a previewable unlocked result after the correct password; automated tests independently verify encrypted and unlocked bytes.
+- The rendered asset inventory contained only same-origin, blob, or data resources and no fixture name or synthetic credential in an asset URL. This is supporting local evidence, not a substitute for the preserved-network and Cache Storage inspection required on the authorized Vercel preview.
+- With the local server stopped, the installed production service worker reloaded the direct Split PDF route and completed a six-page split into the expected two-PDF ZIP without an overlay or console error. The server was then restarted for review at `http://127.0.0.1:4200/`.
+- The 390 × 844 Split PDF layout retained its picker, safeguards, split methods, and primary action without document-level horizontal overflow. Keyboard traversal and focus restoration remain open because the automation surface did not provide independent focus movement evidence.
 
 ## Shared protocol for every row
 
