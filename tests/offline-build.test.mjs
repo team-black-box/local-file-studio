@@ -57,6 +57,8 @@ test("emits a complete revisioned offline manifest", async () => {
   );
 
   const webManifest = JSON.parse(await readFile(new URL("../dist/client/manifest.webmanifest", import.meta.url), "utf8"));
+  assert.equal(webManifest.background_color, "#FAF8F2");
+  assert.equal(webManifest.theme_color, "#2F7357");
   assert.ok(webManifest.icons.length >= 3);
   for (const icon of webManifest.icons) await access(new URL(`../dist/client${icon.src}`, import.meta.url));
 });

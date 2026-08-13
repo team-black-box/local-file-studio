@@ -1352,13 +1352,7 @@ kbd {
 }
 
 .footer-inner p {
-  margin: 0;
-}
-
-.footer-inner > span:last-child {
-  margin-left: auto;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  margin: 0 0 0 auto;
 }
 
 .workbench-dialog {
@@ -5553,10 +5547,6 @@ kbd {
   background: var(--canvas);
 }
 
-.footer-inner > span:last-child {
-  font-family: var(--mono);
-}
-
 .workbench-dialog {
   border-color: var(--border-strong);
   border-radius: 12px;
@@ -6198,7 +6188,7 @@ kbd {
     gap: 10px;
   }
 
-  .footer-inner > span:last-child {
+  .footer-inner p {
     margin-left: 0;
   }
 

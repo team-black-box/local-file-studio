@@ -11,23 +11,24 @@ This file records intentionally deferred repository work whose prerequisites are
 
 The following is a dated audit snapshot, not a promise that external settings cannot drift. Recheck GitHub live immediately before changing visibility, accepting public contributions, or connecting production hosting.
 
-### Private-repository checkpoint — 2026-08-11
+### Private-repository checkpoint — 2026-08-13
 
-- The repository is private. The inspected automation token is read-only.
+- The repository is private. The configured remote remains `https://github.com/team-black-box/local-file-studio.git` and the inspected workflow token defaults remain read-only.
 - GitHub Actions requires full commit SHAs and uses a selected-actions allowlist. The hardened `CI` workflow rerun passed.
 - `main` requires the `verify` check from the `CI` workflow, one independent approving review, approval of the most recent reviewable push by someone other than its pusher, stale-approval dismissal, resolved conversations, and administrator enforcement. Linear history is required; force pushes and branch deletion are blocked.
-- Merge commits are disabled. DCO sign-off is enabled for GitHub web commits.
+- Merge commits are disabled. DCO sign-off is enabled for GitHub web commits, and the pull-request workflow verifies every non-merge commit's `Signed-off-by` trailer.
 - Dependency alerts and Dependabot are enabled.
 - Private vulnerability reporting is unavailable while the repository remains private. Enable and verify it after public visibility is approved and before inviting public security reports; do not invent a contact address in the meantime.
 - GitHub Secret Protection and Code Security are not enabled because their licensing or purchase has not been approved. Re-evaluate the features available under the chosen public-repository plan and obtain explicit owner approval before enabling a paid or separately licensed capability.
 
-### Remaining gate
+### Remaining public-source gate
 
-- Re-run the clean-checkout CI and local verification on the exact public candidate.
+- Merge the reviewed public-readiness change, then re-run clean-checkout CI on the exact `main` revision proposed for public visibility.
 - Re-audit Actions pins and allowlist, workflow permissions, token access, branch protection, merge/DCO settings, dependency automation, security features, repository visibility, and the configured remote immediately before launch.
+- With separate owner approval, update the GitHub repository homepage from the legacy Vercel hostname to `https://localfilestudio.app/` and choose a small accurate public topic set; do not change visibility as a side effect.
 - Decide and document the approved secret-scanning/code-security posture. Treat an unavailable or unapproved feature as an explicit residual risk, not as enabled protection.
 - Obtain explicit owner authorization before making the repository public. After visibility changes, verify public vulnerability reporting and every intended public security control before soliciting contributions.
-- Keep the already authorized Vercel beta operationally separate from the still-private source repository. Public visibility, later production promotions, DNS changes, and security-setting changes continue to require their own current approval and verification.
+- Keep the live Vercel beta operationally separate from the still-private source repository. Public visibility, later production promotions, and security-setting changes continue to require their own current approval and verification.
 
 ## Staged Vercel beta and ongoing QA checkpoint
 
@@ -52,9 +53,9 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Private `main` commit `477e6dd1a90a31913de86388a3b97db817485ba4` was exported without Git metadata or ignored local state and built as preview deployment `dpl_J3ThWYmv3zcajRqsrfpSqgBdT6jZ`. Vercel reported `READY`; the static build has no Functions or application backend.
 - The exact preview artifact was promoted to production deployment `dpl_L7xc47MHdLRjNscXF1k2RRM7wMnM`. The prior known-good production deployment `dpl_8GftPWFsxYtpBBxWpNxgQKESH224` remains available as the rollback target.
 - Production responses on the Vercel hostname returned the committed CSP, Permissions Policy, referrer, framing, MIME, cache, service-worker, and HSTS headers. The generated sitemap contains 48 canonical URLs, the precache manifest contains 77 entries, and the deployed service-worker revision is `00d57810cbd189ca`.
-- Vercel is connected to `team-black-box/local-file-studio` with protected `main` as the production branch. The repository owner intentionally deferred the Git-trigger proof to a later authorized commit by a Vercel-authorized cofounder.
-- `localfilestudio.app` and `www.localfilestudio.app` are attached to the project. `www` is configured as a permanent `308` redirect to the canonical apex. Namecheap remains authoritative and still serves parking records, so the custom hostname and TLS are not live until the exact Vercel-provided DNS records are applied and verified.
-- The complete 47-tool matrix, preserved browser network/Cache Storage evidence, physical mobile/browser breadth, live custom-hostname checks, two-build update path, and exercised rollback remain ongoing beta QA. No unchecked item is relabeled as passed or waived.
+- Vercel is connected to `team-black-box/local-file-studio` with protected `main` as the production branch. An authorized cofounder commit proved the Git trigger: production deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact private-`main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2` without a CLI promotion.
+- `https://localfilestudio.app/` returns `200` with TLS and the committed security headers. `https://www.localfilestudio.app/` returns a permanent `308` redirect to the canonical apex. The live sitemap contains exactly 48 canonical URLs; every URL returned `200` with its matching canonical and security headers during the 2026-08-13 readiness check. The deployed service-worker revision was `54633880d5b7bdee`.
+- The complete 47-tool matrix, preserved browser network/Cache Storage evidence, physical mobile/browser breadth, two-build update path, and exercised rollback remain ongoing beta QA. No unchecked item is relabeled as passed or waived.
 
 ## SEO and AI-discovery launch gate
 
@@ -65,10 +66,10 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Search discovery is initially allowed, including `OAI-SearchBot`, while `GPTBot` is blocked. This is a deliberate source-controlled starting policy, not a permanent consent or governance promise.
 - The generated output has been verified locally only. It is not evidence that the site is deployed, indexed, ranking, or approved for production.
 
-### Remaining external gate
+### Remaining external discovery gate
 
-- After the pending Namecheap DNS change, verify that the apex domain, explicit `www` redirect, and Vercel hostname do not create uncontrolled duplicate indexable hosts; confirm canonical and redirect behavior on live responses.
-- Confirm all 48 canonical paths return the intended status, static source content, metadata, JSON-LD, security headers, and mobile/desktop application behavior. Ensure preview deployments remain non-indexable.
+- Continue checking that the apex domain, explicit `www` redirect, and Vercel hostname do not create uncontrolled duplicate indexable hosts. The apex and redirect are live; preview non-indexing and search-engine observations remain operational checks.
+- Validate representative structured data and social previews with external search-engine/debugger tools. The 2026-08-13 live-source check confirmed all 48 canonical paths return `200` with matching canonical and security headers, but it did not replace browser/device behavior QA.
 - Validate and submit the production sitemap through owner-controlled Google Search Console and Bing Webmaster Tools accounts. Record verification ownership outside source; do not commit tokens or DNS secrets.
 - Validate representative pages with search-engine rich-result/schema tools and social-card debuggers, then monitor coverage and crawl errors without adding document-data telemetry.
 - Obtain explicit owner approval for the final AI-crawler policy, distinguishing search/discovery crawlers from model-training crawlers. Revisit `robots.txt` in a reviewed source change when policy changes.
@@ -95,6 +96,34 @@ Implementation tasks, in order:
 5. Evaluate password/WASM, placement, rendering/OCR, Office, image, and interactive capability groups separately. Do not advertise runtime support until the complete path passes security, resource, licensing, privacy, parity, and clean-install verification.
 
 Before implementation, resolve the operating-system support matrix, package layout/versioning, distribution channels, MCP SDK/protocol version, host root configuration, secret-entry approach, and whether any content-returning agent operation can meet the product privacy contract. Package publication, binary releases, MCP/skill directory submission, global installation, and hosted services remain separately authorized external actions.
+
+### Owner scheduling decision — 2026-08-13
+
+CLI, MCP, and agent-skill implementation is parked while the repository completes its public-source transition. The research document remains available for later issue scoping, but none of these interfaces is on the active release path and no current product claim depends on them.
+
+## Add general image-format conversion
+
+Add one understandable local image converter for common static conversions such as PNG to WebP, rather than forcing users to infer the path through the existing JPG-specific tools.
+
+- Decide whether this replaces or complements **Convert to JPG** and **Convert from JPG**; avoid three overlapping tools with contradictory format or quality behavior.
+- Start from a deliberately tested output matrix such as PNG, JPG, and WebP. Detect encoder support at runtime and advertise only formats that the target browser can actually create; do not claim AVIF, animated output, or metadata preservation without evidence.
+- Make transparency, lossy quality, color profile, orientation, metadata stripping, animation/first-frame behavior, filename extension, and overwrite expectations explicit before conversion. Never silently flatten transparency without a chosen background.
+- Reuse the central image count, byte, decoded-pixel, batch-pixel, and result-retention safeguards. Preflight inputs before decode, bound concurrent encodes, release bitmaps/canvases/object URLs, and fail a batch clearly without presenting partial output as complete.
+- Add success, exact-boundary, malformed, unsupported-encoder, transparency, animated-input, repeated-run, browser-compatibility, offline, privacy/network, and output-signature tests before adding catalog claims.
+
+## Evaluate custom workflows
+
+Custom multi-tool workflows are valuable, but the first design must preserve the no-login, offline-only product model. Do not introduce an account, sync service, remote workflow runner, analytics dependency, or server-side document storage merely to save recipes.
+
+Recommended baseline to validate:
+
+- Store versioned workflow definitions in origin-scoped IndexedDB. Store tool identifiers, schema versions, and bounded settings only—never selected files, generated results, passwords, signatures, OCR text, filenames, object URLs, or document-derived content.
+- Explain that browser storage is local to one browser profile and origin and may be removed by private browsing, site-data clearing, storage eviction, or a domain change. An optional `navigator.storage.persist()` request may reduce eviction risk but cannot be presented as a backup guarantee.
+- Provide explicit Export workflow / Import workflow using a small versioned JSON format so users can back up or move recipes without an account. Treat imported JSON as untrusted: cap file size, node count, text/settings sizes, and graph depth; reject unknown tools, cycles, path/URL fields, executable expressions, scripts, and schema mismatches.
+- Consider the File System Access API only as a progressive enhancement for explicit save/open gestures where supported. It cannot be the cross-browser storage baseline.
+- Keep execution local and sequential by default. Validate input/output compatibility between steps, enforce cumulative resource and retained-result budgets, request passwords only at run time, support cancellation and cleanup, and stop on failure without describing partial downstream output as complete.
+
+Before implementation, prototype the workflow builder with synthetic definitions and decide: allowed tool combinations, intermediate-file naming, branch/fan-out limits, per-step previews, error recovery, schema migration, export-file privacy copy, and what happens when a saved tool or setting changes. Add a focused issue only after browser storage/eviction behavior and the workflow threat model are documented.
 
 ## Restore local HEIC/HEIF input
 

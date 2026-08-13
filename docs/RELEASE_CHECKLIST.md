@@ -9,7 +9,7 @@ Use this checklist for private-repository maintenance, the public-source transit
 
 ## Current private-repository hardening
 
-Last verified 2026-08-11. These items describe completed GitHub settings, not public-release or production-QA approval.
+Last verified live 2026-08-13. These items describe completed GitHub settings, not public-release or production-QA approval.
 
 Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254) and successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487).
 
@@ -19,10 +19,21 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] `main` requires the strict `verify` status check, including an up-to-date branch, one independent approval, stale-review dismissal, approval after the most recent push by someone other than the pusher, resolved conversations, and linear history. The rule applies to administrators.
 - [x] Force pushes and deletion of `main` are blocked.
 - [x] Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically and pull-request branches can be updated.
-- [x] GitHub web commits require a DCO sign-off. Command-line contributors remain responsible for `git commit -s` under `CONTRIBUTING.md`.
+- [x] GitHub web commits require a DCO sign-off. The pull-request workflow also verifies every non-merge commit's `Signed-off-by` trailer, covering command-line contributions before merge.
 - [x] Dependency alerts and Dependabot security updates are enabled.
 - [x] CI was rerun successfully after the Actions and branch-rule hardening.
 - [x] Current limitations are recorded: Private Vulnerability Reporting is unavailable while the repository is private, and GitHub secret scanning/code-security features remain disabled because private-repository licensing has not been authorized.
+
+## Public-source candidate audit — 2026-08-13
+
+- [x] Frozen Bun 1.2.20 install, `bun audit --json`, and `bun run verify` passed on the readiness branch. The repository audit covered 111 intended files totaling 48.71 MiB; the largest file was 4.48 MiB, below GitHub's warning and hard limits. A separate reachable-history audit found no forbidden private/generated paths, oversized blobs, private keys, or high-confidence credential patterns.
+- [x] Provenance verification covered 28 fixed hashes, 13 exact license copies, 92 installed runtime packages, the vendored OCR runtime/model, SheetJS anchors, and byte-identical production notice copies. The canonical root `LICENSE` is unchanged.
+- [x] The dependency audit reported no known advisory for registry packages. Bun does not audit the direct non-default-registry SheetJS tarball; its exact 0.20.3 URL, independently recorded tarball digest, installed anchor hashes, license, and production notice remain separately verified.
+- [x] Live GitHub review confirmed private visibility, the selected-action/SHA-pinning policy, read-only workflow token, strict `verify`, independent and last-push approval, stale-review dismissal, conversation resolution, administrator enforcement, linear history, merge restrictions, dependency alerts, and Dependabot.
+- [x] Public issue forms, the pull-request template, `CONTRIBUTING.md`, `SECURITY.md`, and the DCO workflow avoid invented contacts or response promises and provide a post-public Private Vulnerability Reporting path.
+- [x] The production beta is live on the canonical apex, the `www` redirect is correct, all 48 sitemap URLs return the matching canonical and security headers, and exact Git-to-production mapping is recorded. This evidence does not mark remaining browser/offline QA rows as passed.
+- [ ] Merge this readiness change and rerun the protected `verify` check on the exact `main` commit proposed for public visibility.
+- [ ] Obtain explicit owner approval for the visibility change. Immediately afterward, enable and test Private Vulnerability Reporting and re-audit every mutable repository control before inviting contributions.
 
 ## Current Vercel production-beta checkpoint
 
@@ -34,9 +45,9 @@ Last verified 2026-08-13. These boxes record owner-authorized external actions a
 - [x] Production Vercel responses preserve the static Vite architecture, direct tool routes, security/cache headers, 48 canonical sitemap entries, 77 offline assets, and service-worker revision `00d57810cbd189ca`; no Functions or document-upload path exists.
 - [x] Vercel is connected to `team-black-box/local-file-studio` and reports `main` as the production branch.
 - [x] `localfilestudio.app` and `www.localfilestudio.app` are attached, with an explicit permanent redirect from `www` to the canonical apex.
-- [ ] Replace the Namecheap parking records with Vercel's exact recommended apex A records and `www` CNAME, then verify propagation and certificate issuance.
-- [ ] Verify the final apex and `www` responses, canonical redirects, indexability, all security/cache headers, service-worker scope, offline reload, and rollback behavior.
-- [ ] Observe an authorized cofounder commit create the intended Git deployment, verify CI/source/deployment mapping, and record the deployment result without weakening protected `main`.
+- [x] The final apex serves over TLS with the committed security headers, while `www` returns a permanent `308` to the apex. The live sitemap exposes exactly 48 canonical URLs, all of which returned `200` with a matching canonical and security headers on 2026-08-13.
+- [x] An authorized cofounder commit proved the Git integration: deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact private-`main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2`.
+- [ ] Exercise the current custom-domain offline reload, two-build service-worker update, and rollback procedure; preserve the immediately previous ready production deployment `dpl_DHUjeNroogj9Xt5vFadSqSghMyzM` until that check is complete.
 - [ ] Continue every unchecked launch-critical and catalog QA row against deployed candidates; do not present an untested row as passed.
 
 ## Before any approved source update
@@ -54,17 +65,18 @@ Last verified 2026-08-13. These boxes record owner-authorized external actions a
 
 ## Before making the repository public
 
-- [ ] Close every unresolved redistribution blocker for bundled packages, OCR WASM/native libraries, English OCR data, SheetJS, fonts, images, and generated/vendored assets.
-- [ ] Ensure exact upstream licenses, notices, versions, source URLs, SHA-256 hashes, and reproducible acquisition/build notes are committed where applicable.
-- [ ] Separate verified copyright/license facts from unresolved legal or patent risk; obtain qualified counsel for unresolved questions rather than representing them as cleared.
-- [ ] Confirm the canonical Apache-2.0 `LICENSE` is unchanged and third-party/generated assets do not claim first-party ownership.
-- [ ] Re-audit the current Actions allowlist, read-only workflow token, strict `verify` requirement, independent-review rules, administrator enforcement, linear history, and merge restrictions; do not weaken them for publication.
-- [ ] Decide how DCO sign-off will be verified for non-web commits before accepting public contributions; the current GitHub setting covers web commits only.
-- [ ] Check public issue/PR forms and `SECURITY.md` without inventing a private-reporting address or response-time promise.
-- [ ] Complete the [launch-critical smoke gate](PRODUCTION_QA.md#initial-vercel-beta-smoke-gate) against the exact public candidate; leave every other untested matrix box open for ongoing deployed-candidate QA.
+- [x] Close every unresolved redistribution blocker for bundled packages, OCR WASM/native libraries, English OCR data, SheetJS, fonts, images, and generated/vendored assets.
+- [x] Ensure exact upstream licenses, notices, versions, source URLs, SHA-256 hashes, and reproducible acquisition/build notes are committed where applicable.
+- [x] Separate verified copyright/license facts from unresolved legal or patent risk; obtain qualified counsel for unresolved questions rather than representing them as cleared.
+- [x] Confirm the canonical Apache-2.0 `LICENSE` is unchanged and third-party/generated assets do not claim first-party ownership.
+- [x] Re-audit the current Actions allowlist, read-only workflow token, strict `verify` requirement, independent-review rules, administrator enforcement, linear history, and merge restrictions; do not weaken them for publication.
+- [x] Verify DCO sign-off for non-web commits: the pull-request workflow checks every non-merge commit, while the GitHub web setting covers web commits.
+- [x] Check public issue/PR forms and `SECURITY.md` without inventing a private-reporting address or response-time promise.
+- [ ] Review the [launch-critical smoke record](PRODUCTION_QA.md#initial-vercel-beta-smoke-gate) against the public-source candidate. Incomplete noncritical browser rows remain visible ongoing beta work; an observed privacy, integrity, security, crash, unbounded-resource, offline-update, or rollback defect remains a blocker.
 - [ ] Review all unchecked QA rows and known defects. Do not treat deferred rows as passed or waived, and do not proceed with an unresolved privacy, integrity, security, crash, resource-bound, offline-update, or rollback blocker.
-- [ ] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
-- [ ] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
+- [x] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
+- [x] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
+- [ ] With owner approval, update the GitHub repository homepage to `https://localfilestudio.app/` and choose accurate discovery topics without changing visibility.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
 
 ## Immediately after an approved public visibility change
@@ -72,7 +84,7 @@ Last verified 2026-08-13. These boxes record owner-authorized external actions a
 - [ ] Confirm the Actions policy, branch protection, dependency alerts, Dependabot security updates, merge settings, and administrator enforcement survived the visibility change.
 - [ ] Enable GitHub Private Vulnerability Reporting and verify that `SECURITY.md` and the issue-template security route point reporters to the working private channel.
 - [ ] Re-evaluate secret-scanning and code-security availability/licensing for the public repository. Obtain owner authorization and enable the approved controls, or document the approved alternative; do not claim these controls are enabled before verification.
-- [ ] Verify DCO enforcement for command-line as well as web-based contributions before inviting external pull requests.
+- [ ] Re-run the DCO check on a public pull request and confirm web sign-off remains enabled before inviting external contributions.
 - [ ] Rerun CI on the public repository and record the successful run and settings review.
 
 ## Before an initial Vercel preview
@@ -99,11 +111,12 @@ Last verified 2026-08-13. These boxes record owner-authorized external actions a
 - [ ] Review unresolved rows and defects. A deferred noncritical row may continue into ongoing beta QA, but an observed privacy, integrity, security, crash, unbounded-resource, offline-update, or rollback failure blocks promotion.
 - [x] Obtain explicit approval before promotion, adding `localfilestudio.app`, or changing DNS.
 
-## Before custom-domain launch
+## Custom-domain follow-up
 
 - [ ] Confirm the initial Vercel beta smoke gate and post-promotion checks passed on the exact candidate, and that every known launch-blocking defect is closed.
 - [ ] Confirm ongoing QA findings and still-untested rows are recorded without being presented as passes or hidden from the release record.
-- [ ] After DNS: verify TLS, redirects, headers, manifest/service-worker scope, online processing, offline reload, and downloads on the final hostname.
+- [x] After DNS: verify TLS, apex status, the `www` redirect, canonical URLs, and committed security headers on the final hostname.
+- [ ] Verify manifest/service-worker scope, online processing, offline reload, downloads, and the two-build update path on the final hostname.
 - [ ] After DNS: verify owner-controlled Search Console/Bing properties and submit the canonical sitemap without committing verification tokens or DNS secrets.
 
 ## After production promotion
