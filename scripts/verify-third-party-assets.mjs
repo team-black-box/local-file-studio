@@ -18,16 +18,16 @@ const updateNotices = process.argv.includes("--update-npm-notices");
 const verifyProduction = process.argv.includes("--production");
 
 const expectedFiles = new Map(Object.entries({
-  "assets/local-file-studio-icon-source.png": "3e4eb6743d793110828cf69981fe6cd131329e8a5427e2fb7f174f5199d864d0",
+  "assets/local-file-studio-icon-source.png": "1db1a41864a13e01526f411e434baafa3853b28fd5edaa8331925bc4e79adc42",
   "public/assets/local-file-studio-social.png": "5b0647891c783132b1c1373eda61e71b9ff3ce9d1b724dd856e4881b2595c04d",
   "public/assets/local-file-studio-social.svg": "8e9838d4df613f00070dfe06e4f9e982bee271cd4e8f9baafb54c629f59bdaea",
   "public/assets/paper-terminal-dots-short.png": "0da98c7c16d8be0469fc2f6252e3f1a4f3703e913d84ff21406b7aebd481207b",
   "public/assets/paper-terminal-dots.png": "1e3105b1f386ea2a8964bc7bde2a5928aff250bf275e1e0e354accbe8d32b602",
   "public/assets/paper-terminal-ruler.png": "6343a30759edf1b876f0dd21d5e4395b2f5719529d54318b99df5b688fe832ea",
-  "public/icons/apple-touch-icon.png": "b05a643a3dfd065f87fcd8ed6ee88393f2bfc1ad5c2df27e8f83f72c1d4d42db",
-  "public/icons/icon-192.png": "041ea5a73c2a6c07a355b0d4d4140059422eb9ccdd0004440ffee59976ac4cf7",
-  "public/icons/icon-512.png": "102a481f5f6ba4dea909b39e4483b380509a5ca2b19788cd77beed0b2cf87527",
-  "public/icons/icon-maskable-512.png": "102a481f5f6ba4dea909b39e4483b380509a5ca2b19788cd77beed0b2cf87527",
+  "public/icons/apple-touch-icon.png": "66286f3fae1e9aeb82d6fd2e0359312c8d25e59b542b6d0c11ce20c934c13ba4",
+  "public/icons/icon-192.png": "0f27c12419cadca9420f1f7ee0d9550bd7653c11a8547dc94edccac14098122e",
+  "public/icons/icon-512.png": "9fb786335f4104bca885c753e72aa7f90b6a165048a8e649f5261b2de974e74c",
+  "public/icons/icon-maskable-512.png": "9fb786335f4104bca885c753e72aa7f90b6a165048a8e649f5261b2de974e74c",
   "public/engines/tesseract/eng.traineddata.gz": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91",
   "public/third-party/licenses/Manrope-OFL-1.1.txt": "d826ab6583b12c26807d8716a545bdbbb672df04f48608a364ba9efdbe501c30",
   "public/third-party/licenses/SheetJS-Apache-2.0.txt": "4d2a38ac35cda06a555c84074a819d413339cd3691b822cae50f8f322fe01f64",
