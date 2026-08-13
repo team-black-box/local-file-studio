@@ -54,6 +54,7 @@ const SINGLE_IMAGE_TOOLS = new Set(["photo-editor", "meme-generator"]);
 const IMAGE_BATCH_TOOLS = new Set(["compress-image", "resize-image", "crop-image", "watermark-image", "rotate-image"]);
 const PAGE_SELECTION_TOOLS = new Set(["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"]);
 const SLUG_ALIASES = {
+  "convert-to-jpg": "convert-image",
   "remove-pages": "remove-pdf-pages",
   "extract-pages": "extract-pdf-pages",
   "add-page-numbers": "add-pdf-page-numbers",
@@ -278,7 +279,7 @@ export function getToolLimits(toolOrSlug) {
     });
   }
 
-  if (slug === "convert-to-jpg") {
+  if (slug === "convert-image") {
     return imageProfile({
       maxFiles: 10,
       maxFileBytes: 20 * MIB,

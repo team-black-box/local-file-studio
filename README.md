@@ -27,7 +27,7 @@ Compress PDF rebuilds pages as compressed images. This can substantially reduce 
 
 ### Images — 13 actions
 
-- Compress, Resize, Crop, Convert to JPG, Convert from JPG, Photo Editor, Upscale, Remove Background, Watermark, Meme Generator, Rotate, sanitized HTML to Image, and Blur Face.
+- Compress, Resize, Crop, Convert Image (PNG/JPG/WebP), JPG to GIF, Photo Editor, Upscale, Remove Background, Watermark, Meme Generator, Rotate, sanitized HTML to Image, and Blur Face.
 
 Tools whose output depends heavily on source layout, browser codecs, heuristics, or on-device recognition are labelled **Local beta** in the interface. Catalog copy and file pickers intentionally list only formats that the bundled browser processors can decode.
 

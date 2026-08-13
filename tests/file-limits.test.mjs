@@ -38,11 +38,21 @@ import {
 } from "../src/lib/file-limits.js";
 import { runBoundedLineDiff } from "../src/lib/diff-worker-client.js";
 import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
-import { createExtractPagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
+import { createExtractPagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, isToolSearchShortcut, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
+import { matchesImageSignature } from "../src/lib/image-processors.js";
 import { rankToolSearchResults, tools } from "../src/tools.js";
 
 const MiB = 1024 * 1024;
+
+test("tool search uses Command or Control K without taking browser tab shortcuts", () => {
+  assert.equal(isToolSearchShortcut({ metaKey: true, key: "k" }), true);
+  assert.equal(isToolSearchShortcut({ ctrlKey: true, key: "K" }), true);
+  assert.equal(isToolSearchShortcut({ metaKey: true, key: "1" }), false);
+  assert.equal(isToolSearchShortcut({ ctrlKey: true, key: "9" }), false);
+  assert.equal(isToolSearchShortcut({ metaKey: true, shiftKey: true, key: "k" }), false);
+  assert.equal(isToolSearchShortcut({ key: "k" }), false);
+});
 
 function tool(slug, { name = slug, kind = "pdf", accepts = [".pdf"], batch = false } = {}) {
   return { slug, name, kind, accepts, batch, settings: [] };
@@ -92,15 +102,40 @@ test("visible limit copy is generated from the same policy as validation", () =>
   assert.doesNotMatch(splitCopy.primary, /each|combined/);
 });
 
-test("Convert to JPG advertises and accepts only its supported browser-local formats", () => {
-  const convert = tools.find(({ slug }) => slug === "convert-to-jpg");
-  assert.deepEqual(convert.accepts, [".png", ".gif", ".tif", ".tiff", ".svg", ".webp"]);
+test("Convert Image exposes one static PNG/JPG/WebP matrix with central safeguards", () => {
+  const convert = tools.find(({ slug }) => slug === "convert-image");
+  assert.deepEqual(convert.accepts, [".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".svg", ".webp"]);
+  assert.deepEqual(convert.output, [".png", ".jpg", ".webp"]);
+  assert.deepEqual(convert.settings.find(({ key }) => key === "format")?.options.map(({ value }) => value), ["webp", "png", "jpg"]);
+  assert.equal(tools.some(({ slug }) => slug === "convert-to-jpg"), false);
+  assert.deepEqual(getToolLimits("convert-to-jpg"), getToolLimits("convert-image"));
   for (const name of ["camera.heic", "camera.heif", "camera.bmp"]) {
     const result = validateFileSelection(convert, [], [file(name, MiB)]);
     assert.equal(result.accepted.length, 0);
     assert.equal(result.rejected[0].code, "unsupported-type");
-    assert.match(result.rejected[0].message, /accepts PNG\/GIF\/TIFF\/SVG\/WEBP/s);
+    assert.match(result.rejected[0].message, /accepts JPG\/PNG\/GIF\/TIFF\/SVG\/WEBP/s);
   }
+  const limits = getToolLimits(convert);
+  assert.equal(limits.maxFiles, 10);
+  assert.equal(limits.maxImagePixelsPerFile, 12_000_000);
+  assert.match(describeToolLimits(convert).secondary, /animated GIF\/PNG\/WebP: first frame only/);
+});
+
+test("JPG to GIF remains a distinct animation tool instead of an overlapping static converter", () => {
+  const gif = tools.find(({ slug }) => slug === "convert-from-jpg");
+  assert.equal(gif.name, "JPG to GIF");
+  assert.deepEqual(gif.accepts, [".jpg", ".jpeg"]);
+  assert.deepEqual(gif.output, [".gif"]);
+  assert.equal(gif.settings.length, 0);
+  assert.equal(getToolLimits(gif).maxGifFrames, 20);
+});
+
+test("converted image signatures must match the requested output container", () => {
+  assert.equal(matchesImageSignature(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0]), "image/jpeg"), true);
+  assert.equal(matchesImageSignature(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), "image/png"), true);
+  assert.equal(matchesImageSignature(new TextEncoder().encode("RIFF1234WEBP"), "image/webp"), true);
+  assert.equal(matchesImageSignature(new TextEncoder().encode("RIFF1234WAVE"), "image/webp"), false);
+  assert.equal(matchesImageSignature(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]), "image/jpeg"), false);
 });
 
 test("selection accepts exact boundaries without mutating inputs", () => {

@@ -122,7 +122,7 @@ Last verified 2026-08-13. These boxes record owner-authorized external actions a
 ## After production promotion
 
 - [ ] Confirm the served build maps to the approved `main` commit.
-- [ ] Run high-value smoke tests: Merge PDF, Compress PDF, OCR Reader, Add Image to PDF, Protect/Unlock PDF, Convert to JPG with TIFF, and one standard image workflow.
+- [ ] Run high-value smoke tests: Merge PDF, Compress PDF, OCR Reader, Add Image to PDF, Protect/Unlock PDF, Convert Image with TIFF plus PNG-to-WebP, and one standard image workflow.
 - [ ] Reload once online, then offline, and confirm the current service-worker revision installed completely.
 - [ ] Monitor user reports and hosting/build health without adding document-data telemetry.
 - [ ] Record final evidence, known limitations, and rollback target.
