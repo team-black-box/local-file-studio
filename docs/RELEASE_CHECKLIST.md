@@ -46,7 +46,8 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [ ] Re-audit the current Actions allowlist, read-only workflow token, strict `verify` requirement, independent-review rules, administrator enforcement, linear history, and merge restrictions; do not weaken them for publication.
 - [ ] Decide how DCO sign-off will be verified for non-web commits before accepting public contributions; the current GitHub setting covers web commits only.
 - [ ] Check public issue/PR forms and `SECURITY.md` without inventing a private-reporting address or response-time promise.
-- [ ] Run the full [production QA matrix](PRODUCTION_QA.md) against the exact public candidate in supported browsers.
+- [ ] Complete the [launch-critical smoke gate](PRODUCTION_QA.md#initial-vercel-beta-smoke-gate) against the exact public candidate; leave every other untested matrix box open for ongoing deployed-candidate QA.
+- [ ] Review all unchecked QA rows and known defects. Do not treat deferred rows as passed or waived, and do not proceed with an unresolved privacy, integrity, security, crash, resource-bound, offline-update, or rollback blocker.
 - [ ] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
 - [ ] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
@@ -59,14 +60,18 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [ ] Verify DCO enforcement for command-line as well as web-based contributions before inviting external pull requests.
 - [ ] Rerun CI on the public repository and record the successful run and settings review.
 
-## Before Vercel production and domain launch
+## Before an initial Vercel preview
 
 - [ ] Link only the approved GitHub repository and Vercel team/project after explicit owner authorization.
 - [ ] Confirm `main` is the production branch; non-main branches create previews only.
 - [ ] Confirm the frozen Bun install, `bun run build`, and `dist/client` output are taken from `vercel.json` with no secret or backend requirement.
-- [ ] Complete all 47 catalog rows in [PRODUCTION_QA.md](PRODUCTION_QA.md) on the exact Vercel candidate and record exceptions as launch blockers.
+- [ ] Confirm preview access and indexing policy. Treat every preview URL as externally reachable unless an access control has been verified, and never use private or customer documents as fixtures.
+
+## Before an initial Vercel beta promotion
+
+- [ ] Complete the [launch-critical smoke gate](PRODUCTION_QA.md#initial-vercel-beta-smoke-gate) on the exact deployment candidate. Keep every remaining catalog row visible and unchecked until it is actually tested.
 - [ ] Verify selected file bytes stay local using the browser network panel; inspect Cache Storage and confirm it contains only the production app shell/runtime assets.
-- [ ] Verify desktop and mobile accessibility, limits/errors, cancellation, repeated runs, downloads, malformed input, offline reload, and storage-reset behavior. During an update, keep an old tab open and confirm a previously unopened lazy-loaded tool still works; close every old tab before checking that the new revision activates.
+- [ ] Verify the focused flows on desktop and mobile, including keyboard access, visible limits/errors, cancellation, repeated runs, downloads/previews, malformed input, offline reload, and storage-reset behavior. During an update, keep an old tab open and confirm a previously unopened lazy-loaded tool still works; close every old tab before checking that the new revision activates.
 - [ ] Verify the inline protected-PDF gate with wrong, reader, restricted-reader, owner, empty-reader, and unsupported-security fixtures across Split PDF, one structural edit, one raster/render tool, one text-conversion tool, Repair PDF, and Add Image to PDF. Confirm generated PDFs are unlocked by default; opted-in PDFs and every PDF inside Split/Extract ZIPs use the first verified non-empty password; non-PDF tools explain why protection is unavailable; no exact source-permission cloning is claimed. Confirm credentials never enter network/log/history/storage/cache/result data and are cleared after completion, reset, and error.
 - [ ] Confirm security and cache headers on HTML, hashed assets, engines, `sw.js`, `manifest.webmanifest`, and `precache-manifest.json`.
 - [ ] Confirm `/` and every one of the 47 canonical `/tools/{slug}` paths return the intended static source content and application, with unique title, description, canonical URL, social metadata, and valid `WebApplication`/breadcrumb JSON-LD.
@@ -76,7 +81,13 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [ ] Render the social image, validate representative structured data and link previews, and test canonical tool paths with JavaScript enabled and disabled.
 - [ ] Smoke-test the Vercel hostname before changing DNS.
 - [ ] Record the candidate commit/deployment and the previous known-good rollback deployment.
+- [ ] Review unresolved rows and defects. A deferred noncritical row may continue into ongoing beta QA, but an observed privacy, integrity, security, crash, unbounded-resource, offline-update, or rollback failure blocks promotion.
 - [ ] Obtain explicit approval before promotion, adding `localfilestudio.app`, or changing DNS.
+
+## Before custom-domain launch
+
+- [ ] Confirm the initial Vercel beta smoke gate and post-promotion checks passed on the exact candidate, and that every known launch-blocking defect is closed.
+- [ ] Confirm ongoing QA findings and still-untested rows are recorded without being presented as passes or hidden from the release record.
 - [ ] After DNS: verify TLS, redirects, headers, manifest/service-worker scope, online processing, offline reload, and downloads on the final hostname.
 - [ ] After DNS: verify owner-controlled Search Console/Bing properties and submit the canonical sitemap without committing verification tokens or DNS secrets.
 
