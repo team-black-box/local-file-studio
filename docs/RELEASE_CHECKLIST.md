@@ -32,12 +32,13 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] Live GitHub review confirmed private visibility, the selected-action/SHA-pinning policy, read-only workflow token, strict `verify`, no required PR reviews, conversation resolution, administrator enforcement, linear history, merge restrictions, dependency alerts, and Dependabot.
 - [x] Public issue forms, the pull-request template, `CONTRIBUTING.md`, `SECURITY.md`, and the DCO workflow avoid invented contacts or response promises and provide a post-public Private Vulnerability Reporting path.
 - [x] The production beta is live on the canonical apex, the `www` redirect is correct, all 48 sitemap URLs return the matching canonical and security headers, and exact Git-to-production mapping is recorded. This evidence does not mark remaining browser/offline QA rows as passed.
-- [ ] Merge this readiness change and rerun the protected `verify` check on the exact `main` commit proposed for public visibility.
+- [x] Merge the reviewed public-readiness work. PR #11, the Convert Image/search work in PR #13, and the private-iteration documentation in PR #15 are present on private `main`.
+- [ ] Merge the final-audit dependency/documentation change and rerun protected `verify` on the exact resulting `main` commit proposed for public visibility. The local audit branch passed frozen install, a clean advisory audit, full verification, and deterministic notice generation; protected clean-checkout CI remains the authoritative post-merge evidence.
 - [ ] Obtain explicit owner approval for the visibility change. Immediately afterward, enable and test Private Vulnerability Reporting and re-audit every mutable repository control before inviting contributions.
 
 ## Current Vercel production-beta checkpoint
 
-Last verified 2026-08-13. These boxes record owner-authorized external actions and observed deployment state; they do not mark the remaining production QA matrix complete.
+Last verified 2026-08-14. These boxes record owner-authorized external actions and observed deployment state; they do not mark the remaining production QA matrix complete.
 
 - [x] The existing Team Black Box Vercel project is linked locally without committing `.vercel/`, credentials, or environment state.
 - [x] Preview `dpl_J3ThWYmv3zcajRqsrfpSqgBdT6jZ` built the clean private-`main` source at `477e6dd1a90a31913de86388a3b97db817485ba4` and reached `READY`.
@@ -47,7 +48,9 @@ Last verified 2026-08-13. These boxes record owner-authorized external actions a
 - [x] `localfilestudio.app` and `www.localfilestudio.app` are attached, with an explicit permanent redirect from `www` to the canonical apex.
 - [x] The final apex serves over TLS with the committed security headers, while `www` returns a permanent `308` to the apex. The live sitemap exposes exactly 48 canonical URLs, all of which returned `200` with a matching canonical and security headers on 2026-08-13.
 - [x] An authorized cofounder commit proved the Git integration: deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact private-`main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2`.
-- [ ] Exercise the current custom-domain offline reload, two-build service-worker update, and rollback procedure; preserve the immediately previous ready production deployment `dpl_DHUjeNroogj9Xt5vFadSqSghMyzM` until that check is complete.
+- [x] Read-only inspection on 2026-08-14 mapped the apex to READY production deployment `dpl_7wCrLUHAhixQpbRDEDtXsskeh7PJ` from commit `050b09a56871172ad333667b30e2fba51a3fd355`, with no Vercel Functions. The 48 sitemap URLs, matching canonicals, CSP/HSTS, `www` redirect, 77-entry precache, and service-worker revision `0eeaa74b99c2ac74` passed HTTP verification.
+- [ ] Deploy an approved current source commit before claiming production parity. Git deployments for `31eee8320244d1067f09d3f660868659848b661d` and `6d9dcf35b567eeb8b3f720532a001211866a503b` are `BLOCKED` because Git author `abs192` lacks Vercel project access; the live `/tools/convert-image` path therefore still returns homepage metadata while the older `/tools/convert-to-jpg` path remains deployed.
+- [ ] Exercise the current custom-domain offline reload, two-build service-worker update, and rollback procedure. READY deployment `dpl_qt1lzjprg` from commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2` is a confirmed previous artifact, but availability alone is not an exercised rollback.
 - [ ] Continue every unchecked launch-critical and catalog QA row against deployed candidates; do not present an untested row as passed.
 
 ## Before any approved source update
@@ -77,6 +80,7 @@ Last verified 2026-08-13. These boxes record owner-authorized external actions a
 - [x] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
 - [x] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
 - [x] With owner approval, update the GitHub repository homepage to `https://localfilestudio.app/` without changing visibility.
+- [ ] Resolve or explicitly accept the production/source version gap before announcing the public repository as the exact source of the live build. The 2026-08-14 production deployment predates Convert Image and the latest documentation changes.
 - [ ] Choose accurate discovery topics without changing visibility.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
 

@@ -50,6 +50,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Audit registry dependencies
+        run: bun audit --json
+
       - name: Verify production QA catalog coverage
         run: bun .github/scripts/verify-production-qa.mjs
 
