@@ -24,7 +24,7 @@ The following is a dated audit snapshot, not a promise that external settings ca
 
 ### Remaining public-source gate
 
-- Merge the reviewed public-readiness change, then re-run clean-checkout CI on the exact `main` revision proposed for public visibility.
+- The reviewed public-readiness work in PR #11, Convert Image/search work in PR #13, and private-iteration controls in PR #15 are merged. Merge the final audit dependency/documentation change, then re-run protected clean-checkout CI on the exact resulting `main` revision proposed for public visibility.
 - Re-audit Actions pins and allowlist, workflow permissions, token access, branch protection, merge/DCO settings, dependency automation, security features, repository visibility, and the configured remote immediately before launch.
 - Before public visibility, restore one independent approval, stale-review dismissal, and approval of the latest reviewable push by someone other than its pusher; verify the restored rule with a test pull request.
 - Choose a small accurate public topic set before visibility changes; do not change visibility as a side effect.
@@ -49,7 +49,14 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Detailed evidence and limitations are recorded in `docs/PRODUCTION_QA.md`. No deployment-dependent smoke checkbox was closed: Vercel headers/non-indexing, preserved network and Cache Storage evidence, broader browser/device coverage, independent browser-download inspection, the two-build update path, and a real rollback target remain open.
 - The production preview is available locally at `http://127.0.0.1:4200/` for review. This remains local evidence and does not authorize or imply a Vercel deployment.
 
-### Vercel production-beta checkpoint — 2026-08-13
+### Final public-launch audit candidate — 2026-08-14
+
+- The `codex/public-launch-final-audit` branch starts from merged private `main` commit `6d9dcf35b567eeb8b3f720532a001211866a503b`. The audit found a new high-severity advisory against PostCSS's locked `nanoid@3.3.17`; the candidate moves build-only PostCSS to exact `8.5.26` and constrains build-only Nano ID to exact patched `3.3.18`, while DOCX retains its separate compatible `nanoid@5.1.16` copy.
+- Bun 1.2.20 completed a frozen install and `bun audit --json` returned `{}`. The candidate adds that registry advisory audit as a separate CI step while keeping deterministic `bun run verify` independent of network access; the direct SheetJS tarball remains covered by its separate pinned provenance checks. `bun run verify` passed: the reachable-history and intended-file audits, exact 47-tool QA coverage, 14 OCR assets plus two sidecars, 28 provenance hashes, 13 exact license copies, 92 runtime package notices, 32 limits/search/converter tests, 17 editor/result tests, nine protected-PDF tests, 12 DOCX tests, three PPTX tests, the production build, 47 tool pages plus the homepage, 77 offline assets, and source/production notice parity.
+- A production-style local browser smoke opened `/tools/convert-image`, accepted the committed 192 × 192 first-party PNG fixture, and created a 2.8 KB WebP from the 36 KB input without a captured warning or error. This proves one normal PNG-to-WebP path only; the broader animation, TIFF, privacy-panel, offline, repeat/reset, malformed-input, desktop-browser, and physical-mobile checks remain open in `docs/PRODUCTION_QA.md`.
+- The ignored `.env.local` is not a committed or required build input; source inspection found no application environment dependency beyond Vite's compile-time `import.meta.env.PROD` service-worker gate. The clean source remains a static `dist/client` application with no document-processing backend or required secret.
+
+### Vercel production-beta checkpoint — updated 2026-08-14
 
 - The owner subsequently authorized a CLI preview, production promotion, GitHub repository connection, and custom-domain attachment while keeping the GitHub repository private.
 - Private `main` commit `477e6dd1a90a31913de86388a3b97db817485ba4` was exported without Git metadata or ignored local state and built as preview deployment `dpl_J3ThWYmv3zcajRqsrfpSqgBdT6jZ`. Vercel reported `READY`; the static build has no Functions or application backend.
@@ -57,6 +64,9 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - Production responses on the Vercel hostname returned the committed CSP, Permissions Policy, referrer, framing, MIME, cache, service-worker, and HSTS headers. The generated sitemap contains 48 canonical URLs, the precache manifest contains 77 entries, and the deployed service-worker revision is `00d57810cbd189ca`.
 - Vercel is connected to `team-black-box/local-file-studio` with protected `main` as the production branch. An authorized cofounder commit proved the Git trigger: production deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact private-`main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2` without a CLI promotion.
 - `https://localfilestudio.app/` returns `200` with TLS and the committed security headers. `https://www.localfilestudio.app/` returns a permanent `308` redirect to the canonical apex. The live sitemap contains exactly 48 canonical URLs; every URL returned `200` with its matching canonical and security headers during the 2026-08-13 readiness check. The deployed service-worker revision was `54633880d5b7bdee`.
+- On 2026-08-14 the apex mapped to READY production deployment `dpl_7wCrLUHAhixQpbRDEDtXsskeh7PJ` from exact private-`main` commit `050b09a56871172ad333667b30e2fba51a3fd355`. Its 48 sitemap URLs again returned `200` with matching canonicals, CSP, and HSTS; `www` returned the expected `308`; the service worker used revision `0eeaa74b99c2ac74`; and the precache contained 77 entries. No Vercel Functions are defined.
+- Git-triggered production attempts for later commits `31eee8320244d1067f09d3f660868659848b661d` and `6d9dcf35b567eeb8b3f720532a001211866a503b` are `BLOCKED` because Git author `abs192` does not have Vercel project access. Consequently the live site still exposes the prior `/tools/convert-to-jpg` metadata, while `/tools/convert-image` falls back to homepage metadata. Do not claim the current source catalog is deployed until an authorized Vercel identity builds the approved commit.
+- READY deployment `dpl_qt1lzjprg` (`local-file-studio-qt1lzjprg-team-black-box.vercel.app`) from commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2` remains a confirmed previous artifact. Its availability is rollback-readiness evidence only; no rollback, promotion, two-build update, or production offline reload was executed during this read-only audit.
 - The complete 47-tool matrix, preserved browser network/Cache Storage evidence, physical mobile/browser breadth, two-build update path, and exercised rollback remain ongoing beta QA. No unchecked item is relabeled as passed or waived.
 
 ## SEO and AI-discovery launch gate
@@ -103,15 +113,15 @@ Before implementation, resolve the operating-system support matrix, package layo
 
 CLI, MCP, and agent-skill implementation is parked while the repository completes its public-source transition. The research document remains available for later issue scoping, but none of these interfaces is on the active release path and no current product claim depends on them.
 
-## General image-format conversion — implemented locally 2026-08-14
+## General image-format conversion — merged 2026-08-14
 
-The `codex/search-focus-backdrop` work implements one understandable local image converter for common static conversions such as PNG to WebP, rather than forcing users to infer the path through JPG-specific tools. This entry remains a review checklist until its pull request is merged.
+PR #13 merged one understandable local image converter for common static conversions such as PNG to WebP, rather than forcing users to infer the path through JPG-specific tools. The implementation is part of private `main`; production deployment parity and the unchecked QA cases below remain follow-up work.
 
 - **Convert Image** replaces **Convert to JPG** and owns static PNG/JPG/WebP output. **JPG to GIF** retains the separate animation workflow without overlapping static PNG conversion.
 - Output cards detect PNG/JPG/WebP encoder support at runtime. The processor rejects MIME fallbacks and invalid output signatures rather than mislabelling a file.
 - The UI states transparency, lossy quality, metadata stripping, first-frame behavior, TIFF rejection, and new-file behavior before conversion. JPG flattening requires the visible chosen background.
 - Existing central image count, byte, decoded-pixel, batch-pixel, result-retention, ZIP, and output safeguards remain authoritative; processing stays sequential and releases bitmap/canvas resources.
-- Before merging, complete desktop/mobile production-preview checks for transparency, animated input, repeated conversion, offline use, privacy/network behavior, encoder fallback, malformed input, and exact-limit fixtures recorded in `docs/PRODUCTION_QA.md`.
+- Continue desktop/mobile deployed-candidate checks for transparency, animated input, repeated conversion, offline use, privacy/network behavior, encoder fallback, malformed input, and exact-limit fixtures recorded in `docs/PRODUCTION_QA.md`. Do not treat the single PNG-to-WebP audit smoke as completing that matrix.
 
 ## Evaluate custom workflows
 

@@ -96,6 +96,7 @@ Current owner-authorized project configuration:
 - Keep the install, build, and output settings sourced from `vercel.json`: frozen Bun install, `bun run build`, and `dist/client`.
 - Do not add a server function, upload route, rewrite to a backend, or document-processing secret.
 - Pull-request previews are intended for non-production branches. A preview is test infrastructure, not a release. The production Git trigger was proven by an authorized cofounder commit: deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact `main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2`.
+- Read-only inspection on 2026-08-14 mapped the apex to READY deployment `dpl_7wCrLUHAhixQpbRDEDtXsskeh7PJ` from commit `050b09a56871172ad333667b30e2fba51a3fd355`. Git deployments for later `abs192` commits were `BLOCKED` because that Git author lacks Vercel project access. Until an authorized identity builds the approved current commit, the live catalog is older than private `main`; do not describe the public source candidate as the exact deployed artifact.
 - Keep production deployment restricted to `main` or explicit promotion by an authorized maintainer.
 - Apply deployment access controls to private-repository previews if available, without making runtime document processing depend on authentication.
 

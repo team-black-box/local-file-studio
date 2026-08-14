@@ -2643,7 +2643,7 @@ THE SOFTWARE.
 nanoid@5.1.16
 Declared license: MIT
 Repository: ai/nanoid
-Installed path: node_modules/nanoid
+Installed path: node_modules/docx/node_modules/nanoid
 --- LICENSE ---
 The MIT License (MIT)
 
