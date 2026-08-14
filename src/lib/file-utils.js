@@ -500,6 +500,15 @@ export function safeFileName(value, fallback = "result") {
   return cleaned || fallback;
 }
 
+export function isToolSearchShortcut(event) {
+  return Boolean(
+    (event?.metaKey || event?.ctrlKey)
+    && !event?.altKey
+    && !event?.shiftKey
+    && String(event?.key || "").toLowerCase() === "k"
+  );
+}
+
 export async function blobToDataUrl(blob) {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();

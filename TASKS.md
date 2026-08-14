@@ -101,15 +101,15 @@ Before implementation, resolve the operating-system support matrix, package layo
 
 CLI, MCP, and agent-skill implementation is parked while the repository completes its public-source transition. The research document remains available for later issue scoping, but none of these interfaces is on the active release path and no current product claim depends on them.
 
-## Add general image-format conversion
+## General image-format conversion — implemented locally 2026-08-14
 
-Add one understandable local image converter for common static conversions such as PNG to WebP, rather than forcing users to infer the path through the existing JPG-specific tools.
+The `codex/search-focus-backdrop` work implements one understandable local image converter for common static conversions such as PNG to WebP, rather than forcing users to infer the path through JPG-specific tools. This entry remains a review checklist until its pull request is merged.
 
-- Decide whether this replaces or complements **Convert to JPG** and **Convert from JPG**; avoid three overlapping tools with contradictory format or quality behavior.
-- Start from a deliberately tested output matrix such as PNG, JPG, and WebP. Detect encoder support at runtime and advertise only formats that the target browser can actually create; do not claim AVIF, animated output, or metadata preservation without evidence.
-- Make transparency, lossy quality, color profile, orientation, metadata stripping, animation/first-frame behavior, filename extension, and overwrite expectations explicit before conversion. Never silently flatten transparency without a chosen background.
-- Reuse the central image count, byte, decoded-pixel, batch-pixel, and result-retention safeguards. Preflight inputs before decode, bound concurrent encodes, release bitmaps/canvases/object URLs, and fail a batch clearly without presenting partial output as complete.
-- Add success, exact-boundary, malformed, unsupported-encoder, transparency, animated-input, repeated-run, browser-compatibility, offline, privacy/network, and output-signature tests before adding catalog claims.
+- **Convert Image** replaces **Convert to JPG** and owns static PNG/JPG/WebP output. **JPG to GIF** retains the separate animation workflow without overlapping static PNG conversion.
+- Output cards detect PNG/JPG/WebP encoder support at runtime. The processor rejects MIME fallbacks and invalid output signatures rather than mislabelling a file.
+- The UI states transparency, lossy quality, metadata stripping, first-frame behavior, TIFF rejection, and new-file behavior before conversion. JPG flattening requires the visible chosen background.
+- Existing central image count, byte, decoded-pixel, batch-pixel, result-retention, ZIP, and output safeguards remain authoritative; processing stays sequential and releases bitmap/canvas resources.
+- Before merging, complete desktop/mobile production-preview checks for transparency, animated input, repeated conversion, offline use, privacy/network behavior, encoder fallback, malformed input, and exact-limit fixtures recorded in `docs/PRODUCTION_QA.md`.
 
 ## Evaluate custom workflows
 
@@ -127,7 +127,7 @@ Before implementation, prototype the workflow builder with synthetic definitions
 
 ## Restore local HEIC/HEIF input
 
-HEIC/HEIF decoding may return to Convert to JPG only after a replacement path is demonstrably suitable for a public, local-only browser application processing untrusted files.
+HEIC/HEIF decoding may return to Convert Image only after a replacement path is demonstrably suitable for a public, local-only browser application processing untrusted files.
 
 - Select a maintained implementation with an active security posture and explicit browser/offline support. Do not reintroduce `heic2any@0.0.4` or the audited `libheif` 1.10.x / `libde265` 1.0.2 bundle.
 - Document the exact upstream project, version/commit, source and acquisition/build steps, complete dependency/native-code closure, SHA-256 hashes, licenses, notices, and redistribution obligations.

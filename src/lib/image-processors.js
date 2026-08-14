@@ -50,10 +50,33 @@ function makeCanvas(width, height, label = "This image") {
   return canvas;
 }
 
+export function matchesImageSignature(bytes, mime) {
+  const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  if (mime === "image/jpeg") return input.length >= 3 && input[0] === 0xff && input[1] === 0xd8 && input[2] === 0xff;
+  if (mime === "image/png") return input.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => input[index] === value);
+  if (mime === "image/webp") {
+    return input.length >= 12
+      && String.fromCharCode(...input.slice(0, 4)) === "RIFF"
+      && String.fromCharCode(...input.slice(8, 12)) === "WEBP";
+  }
+  return false;
+}
+
 async function canvasToBlob(canvas, mime = "image/png", quality = 0.88) {
-  return await new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("This browser could not encode the image."))), mime, quality);
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((value) => (value ? resolve(value) : reject(new Error("This browser could not encode the image."))), mime, quality);
   });
+  if (blob.type !== mime) {
+    throw new FileLimitError(
+      "unsupported-image-encoder",
+      `This browser cannot create ${IMAGE_OUTPUTS[Object.keys(IMAGE_OUTPUTS).find((key) => IMAGE_OUTPUTS[key].mime === mime)]?.ext.toUpperCase() || mime} images. Choose another output format or update the browser.`,
+    );
+  }
+  const signature = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  if (!matchesImageSignature(signature, mime)) {
+    throw new FileLimitError("invalid-image-output", "The browser returned an invalid encoded image. No result was kept; choose another output format and try again.");
+  }
+  return blob;
 }
 
 async function fileToBitmap(file, limits) {
@@ -86,7 +109,7 @@ async function fileToBitmap(file, limits) {
     if (ifds.length !== 1) {
       throw new FileLimitError(
         "multi-frame-image",
-        `${file.name} contains ${ifds.length.toLocaleString()} pages or frames. Convert to JPG accepts one image per TIFF; export the pages separately and try again.`,
+        `${file.name} contains ${ifds.length.toLocaleString()} pages or frames. Image conversion accepts one image per TIFF; export the pages separately and try again.`,
       );
     }
     assertImageDimensions(ifds[0].width, ifds[0].height, limits, file.name);
@@ -158,7 +181,12 @@ function fitWithin(width, height, maxDimension = 10000) {
 }
 
 function outputConfig(options, fallback = "png") {
-  return IMAGE_OUTPUTS[String(options.format || fallback).toLowerCase()] || IMAGE_OUTPUTS[fallback];
+  const requested = String(options.format || fallback).toLowerCase();
+  const config = IMAGE_OUTPUTS[requested];
+  if (!config) {
+    throw new FileLimitError("unsupported-output-format", "Choose PNG, JPG, or WebP as the image output format.");
+  }
+  return config;
 }
 
 function drawCover(context, source, sourceWidth, sourceHeight, width, height) {
@@ -188,7 +216,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   const quality = Math.max(0.1, Math.min(1, Number(options.quality || 82) / 100));
   let canvas;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
-  let config = outputConfig(options, slug === "convert-to-jpg" ? "jpg" : slug === "convert-from-jpg" ? "png" : originalFormat);
+  let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
 
   try {
     consumeImagePixels(pixelBudget, bitmap, file.name);
@@ -351,7 +379,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
 
     report?.({ phase: "Encoding image", progress: 0.76 });
     const blob = await canvasToBlob(canvas, config.mime, quality);
-    const suffix = slug === "compress-image" ? "compressed" : slug.replace(/-image$|^convert-/g, "") || "edited";
+    const suffix = slug === "compress-image" ? "compressed" : slug === "convert-image" ? "converted" : slug.replace(/-image$|^convert-/g, "") || "edited";
     return resultFromBlob(`${safeFileName(baseName(file.name))}-${safeFileName(suffix)}.${config.ext}`, blob, `${canvas.width} × ${canvas.height}`);
   } finally {
     bitmap.close?.();
@@ -447,7 +475,7 @@ async function htmlToImage(files, options) {
 export async function processImageTool(slug, files, options = {}, report) {
   if (slug === "html-to-image") return await htmlToImage(files, options);
   if (!files.length) throw new Error("Choose at least one image to continue.");
-  if (slug === "convert-from-jpg" && options.format === "gif") return await jpgsToAnimatedGif(files, options, report);
+  if (slug === "convert-from-jpg") return await jpgsToAnimatedGif(files, options, report);
 
   const results = [];
   const limits = getToolLimits(slug);

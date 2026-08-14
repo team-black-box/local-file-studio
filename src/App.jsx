@@ -78,7 +78,7 @@ import {
 import { categories, categoryById, rankToolSearchResults, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
@@ -133,7 +133,8 @@ const iconMap = {
 function toolFromLocation() {
   const pathSlug = window.location.pathname.match(/^\/tools\/([^/]+)\/?$/)?.[1];
   const legacySlug = window.location.hash.match(/^#tool\/(.+)$/)?.[1];
-  const slug = pathSlug || legacySlug;
+  const requestedSlug = pathSlug || legacySlug;
+  const slug = TOOL_SLUG_ALIASES[requestedSlug] || requestedSlug;
   return tools.find((tool) => tool.slug === slug) || null;
 }
 
@@ -159,6 +160,7 @@ function updatePageMetadata(tool) {
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
 const inlineReaderTools = new Set(["ocr-pdf", "translate-pdf", "pdf-to-markdown"]);
+const TOOL_SLUG_ALIASES = Object.freeze({ "convert-to-jpg": "convert-image" });
 const contextualSettings = {
   "remove-pdf-pages": [
     { key: "pages", type: "text", label: "Pages to remove", default: "", hint: "Example: 1,3-5" },
@@ -354,6 +356,7 @@ function Header({ kind, onKind, onHome, onSearchFocus }) {
 function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCount, onViewAll }) {
   const searchShellRef = useRef(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const hasQuery = Boolean(query.trim());
 
@@ -364,13 +367,20 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
 
   const openResult = (tool) => {
     setSearchOpen(false);
+    setSearchActive(false);
     onQuickTool(tool);
   };
 
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchActive(false);
+    searchRef.current?.blur();
+  };
+
   const handleSearchKeyDown = (event) => {
-    if (event.key === "Escape" && searchOpen) {
+    if (event.key === "Escape" && searchActive) {
       event.preventDefault();
-      setSearchOpen(false);
+      closeSearch();
       return;
     }
     if (!hasQuery || !searchResults.length) return;
@@ -391,13 +401,14 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
   return (
     <section className="hero shell" aria-labelledby="hero-title">
       <div className="hero-copy">
+        {searchActive && <div className="search-focus-backdrop" aria-hidden="true" onPointerDown={(event) => { event.preventDefault(); closeSearch(); }} />}
         <div className="eyebrow"><LockIcon size={15} weight="bold" /> Private by default</div>
         <h1 id="hero-title"><span className="hero-line hero-line-first">Every file tool</span><span className="hero-line">you need.</span><span className="hero-line hero-line-accent">Nothing uploaded<b aria-hidden="true">.</b></span></h1>
         <p><span>Work with PDFs and images right in your browser.</span><span>Your files never leave this device—there is no account,</span><span>queue, or server copy.</span></p>
         <div
           ref={searchShellRef}
-          className="hero-search-shell"
-          onBlur={(event) => { if (!searchShellRef.current?.contains(event.relatedTarget)) setSearchOpen(false); }}
+          className={`hero-search-shell${searchActive ? " search-active" : ""}`}
+          onBlur={(event) => { if (!searchShellRef.current?.contains(event.relatedTarget)) { setSearchOpen(false); setSearchActive(false); } }}
         >
           <label className="hero-search">
             <MagnifyingGlassIcon size={23} aria-hidden="true" />
@@ -405,7 +416,7 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
               ref={searchRef}
               value={query}
               onChange={(event) => { setQuery(event.target.value); setSearchOpen(Boolean(event.target.value.trim())); }}
-              onFocus={() => { if (hasQuery) setSearchOpen(true); }}
+              onFocus={() => { setSearchActive(true); if (hasQuery) setSearchOpen(true); }}
               onKeyDown={handleSearchKeyDown}
               placeholder="Search tools or type a command"
               aria-label="Search all tools"
@@ -437,7 +448,7 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
                   <b>{tool.kind === "pdf" ? "PDF" : "IMAGE"}</b>
                 </button>
               )) : <div className="hero-search-empty" role="status"><MagnifyingGlassIcon size={18} aria-hidden="true" /><span><strong>No matching tools</strong><small>Try a format or simpler action.</small></span></div>}
-              <button type="button" className="hero-search-view-all" onClick={() => { setSearchOpen(false); onViewAll(); }} disabled={!resultCount}>
+              <button type="button" className="hero-search-view-all" onClick={() => { setSearchOpen(false); setSearchActive(false); onViewAll(); }} disabled={!resultCount}>
                 <span>{resultCount ? `${resultCount} matching ${resultCount === 1 ? "tool" : "tools"}` : "No tools to show"}</span>
                 <strong>View full list <ArrowRightIcon size={14} aria-hidden="true" /></strong>
               </button>
@@ -446,9 +457,9 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
         </div>
         <div className="hero-quick" aria-label="Popular tools">
           <span>Jump to</span>
-          {["merge-pdf", "compress-pdf", "jpg-to-pdf", "compress-image"].map((slug, index) => {
+          {["merge-pdf", "compress-pdf", "jpg-to-pdf", "compress-image"].map((slug) => {
             const tool = tools.find((item) => item.slug === slug);
-            return <button key={slug} onClick={() => onQuickTool(tool)}><span>{tool.name}</span><kbd>⌘{index + 1}</kbd></button>;
+            return <button key={slug} onClick={() => onQuickTool(tool)}><span>{tool.name}</span></button>;
           })}
         </div>
       </div>
@@ -1739,6 +1750,88 @@ function PdfPreviewDialog({ result, limits, onClose }) {
   );
 }
 
+const imageFormatChoices = [
+  { value: "webp", label: "WebP", badge: "Compact", hint: "Great for web and sharing", description: "Keeps transparency and uses the quality setting." },
+  { value: "png", label: "PNG", badge: "Lossless", hint: "Best for graphics", description: "Keeps transparency; quality does not apply." },
+  { value: "jpg", label: "JPG", badge: "Photos", hint: "Widely compatible", description: "Uses the quality setting and fills transparent pixels." },
+];
+
+function useImageEncoderSupport(enabled) {
+  const [support, setSupport] = useState(() => ({ state: enabled ? "checking" : "idle", formats: {} }));
+
+  useEffect(() => {
+    if (!enabled) {
+      setSupport({ state: "idle", formats: {} });
+      return undefined;
+    }
+    let cancelled = false;
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const check = (format) => new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(Boolean(blob && blob.type === `image/${format === "jpg" ? "jpeg" : format}`)), `image/${format === "jpg" ? "jpeg" : format}`, 0.8);
+    });
+    Promise.all(imageFormatChoices.map(async ({ value }) => [value, await check(value)]))
+      .then((entries) => {
+        if (!cancelled) setSupport({ state: "ready", formats: Object.fromEntries(entries) });
+      })
+      .catch(() => {
+        if (!cancelled) setSupport({ state: "ready", formats: { png: true, jpg: true, webp: false } });
+      })
+      .finally(() => {
+        canvas.width = 1;
+        canvas.height = 1;
+      });
+    return () => {
+      cancelled = true;
+      canvas.width = 1;
+      canvas.height = 1;
+    };
+  }, [enabled]);
+
+  return support;
+}
+
+function ImageFormatControls({ settings, onChange, support }) {
+  const format = settings.format || "webp";
+  const lossy = format === "webp" || format === "jpg";
+  return (
+    <section className="image-format-controls" aria-labelledby="image-format-title">
+      <fieldset>
+        <legend id="image-format-title">Choose the new format</legend>
+        <p>The image dimensions stay the same. The new file is created locally with metadata removed.</p>
+        <div className="image-format-grid">
+          {imageFormatChoices.map((option) => {
+            const selected = format === option.value;
+            const available = support.state !== "ready" || support.formats[option.value] !== false;
+            return (
+              <label className={`image-format-card ${selected ? "selected" : ""} ${available ? "" : "unavailable"}`} key={option.value}>
+                <input type="radio" name="image-output-format" value={option.value} checked={selected} disabled={!available} onChange={() => onChange("format", option.value)} />
+                <span className="image-format-extension">.{option.value}</span>
+                <span className="image-format-copy"><strong>{option.label}<b>{option.badge}</b></strong><small>{option.hint}</small><span>{available ? option.description : "Not supported by this browser."}</span></span>
+                <CheckCircleIcon size={18} weight="fill" aria-hidden="true" />
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      {lossy && (
+        <label className="setting-field range-field" htmlFor="image-convert-quality">
+          <span><strong>{format.toUpperCase()} quality</strong><output>{settings.quality}%</output></span>
+          <input id="image-convert-quality" type="range" min="40" max="100" step="1" value={settings.quality} onChange={(event) => onChange("quality", event.target.value)} />
+        </label>
+      )}
+      {format === "jpg" && (
+        <label className="image-format-background" htmlFor="image-convert-background">
+          <span><strong>Transparency fill</strong><small>JPG cannot store transparency.</small></span>
+          <input id="image-convert-background" type="color" value={settings.background} onChange={(event) => onChange("background", event.target.value)} />
+        </label>
+      )}
+      <div className="image-format-note"><ShieldCheckIcon size={17} weight="fill" aria-hidden="true" /><span><strong>Static output, on device.</strong> Animated inputs use their first frame. Multi-page TIFFs are rejected instead of partially converted.</span></div>
+    </section>
+  );
+}
+
 function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const dialogRef = useRef(null);
   const titleRef = useRef(null);
@@ -1760,6 +1853,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const limitsId = `tool-limits-${tool.slug}`;
   const limitsPrimaryId = `${limitsId}-primary`;
   const [settings, setSettings] = useState(() => Object.fromEntries(settingsList.map((setting) => [setting.key, setting.default])));
+  const imageEncoderSupport = useImageEncoderSupport(tool.slug === "convert-image");
   const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState("idle");
@@ -1781,6 +1875,12 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
     : compressionEstimate;
+
+  useEffect(() => {
+    if (tool.slug !== "convert-image" || imageEncoderSupport.state !== "ready" || imageEncoderSupport.formats[settings.format] !== false) return;
+    const fallback = imageFormatChoices.find(({ value }) => imageEncoderSupport.formats[value])?.value;
+    if (fallback) setSettings((current) => ({ ...current, format: fallback }));
+  }, [imageEncoderSupport, settings.format, tool.slug]);
 
   const getFileId = (file) => {
     if (!fileIdsRef.current.has(file)) fileIdsRef.current.set(file, crypto.randomUUID());
@@ -1923,7 +2023,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         ? Boolean(extractPlan?.valid)
         : true;
   const compressionReady = tool.slug !== "compress-pdf" || !hasRequiredInput || compressionEstimateAllowsProcessing(activeCompressionEstimate);
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && status !== "processing";
+  const imageEncoderReady = tool.slug !== "convert-image" || (imageEncoderSupport.state === "ready" && imageEncoderSupport.formats[settings.format] === true);
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -1943,6 +2044,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
       ? "No size reduction is projected at this strength. Choose another strength or keep the original."
+    : tool.slug === "convert-image" && !imageEncoderReady
+      ? imageEncoderSupport.state === "checking" ? "Checking image encoders in this browser." : "Choose an output format supported by this browser."
     : "";
   const processHintId = `process-hint-${tool.slug}`;
   const showProcessHint = Boolean(processHint) && status !== "processing";
@@ -1999,6 +2102,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? settings.combine === false
         ? `Create ZIP · ${extractPlan.outputCount.toLocaleString()} ${extractPlan.outputCount === 1 ? "PDF" : "PDFs"}`
         : `Create 1 PDF · ${extractPlan.selection.length.toLocaleString()} ${extractPlan.selection.length === 1 ? "page" : "pages"}`
+    : tool.slug === "convert-image" && imageEncoderSupport.state === "checking"
+      ? "Checking browser support"
+    : tool.slug === "convert-image"
+      ? `Convert to ${String(settings.format || "webp").toUpperCase()}`
     : tool.name;
 
   const updateSetting = (key, value) => {
@@ -2135,6 +2242,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <ExtractPdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={extractPlan} limits={limits} />
             ) : tool.slug === "compress-pdf" ? (
               <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
+            ) : tool.slug === "convert-image" ? (
+              <ImageFormatControls settings={settings} onChange={updateSetting} support={imageEncoderSupport} />
             ) : settingsList.length ? settingsList.map((setting) => (
               <SettingControl key={setting.key} setting={setting} value={settings[setting.key]} onChange={(value) => updateSetting(setting.key, value)} />
             )) : <div className="no-settings"><CheckCircleIcon size={20} /><span><strong>Nothing to configure</strong>This tool uses sensible local defaults.</span></div>}
@@ -2145,7 +2254,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
             <div className="output-summary">
               <span>Output</span>
-              <strong>{tool.output.join(" · ").toUpperCase()}</strong>
+              <strong>{tool.slug === "convert-image" ? `.${String(settings.format || "webp").toUpperCase()}` : tool.output.join(" · ").toUpperCase()}</strong>
             </div>
             </div>
             <div className="process-action-stack">
@@ -2235,13 +2344,12 @@ function PopularToolsSection({ onOpen, onBrowse }) {
         </div>
         <div className="popular-layout">
           <div className="popular-primary-list">
-            {paperTerminalPrimaryTools.map((item, index) => {
+            {paperTerminalPrimaryTools.map((item) => {
               const tool = tools.find((candidate) => candidate.slug === item.slug);
               return (
                 <button key={item.slug} onClick={() => onOpen(tool)} aria-label={`Open ${tool.name}`}>
                   <span className="popular-tool-icon"><PopularToolIcon tool={tool} /></span>
                   <span className="popular-tool-copy"><strong>{tool.name}</strong><small>{item.description}</small></span>
-                  <kbd>⌘ {index + 1}</kbd>
                   <CaretRightIcon size={19} aria-hidden="true" />
                 </button>
               );
@@ -2249,9 +2357,9 @@ function PopularToolsSection({ onOpen, onBrowse }) {
           </div>
           <aside className="more-tools-panel" aria-label="More tools">
             <div className="more-tools-heading"><strong>More tools</strong><span aria-hidden="true" /></div>
-            {paperTerminalMoreTools.map((slug, index) => {
+            {paperTerminalMoreTools.map((slug) => {
               const tool = tools.find((candidate) => candidate.slug === slug);
-              return <button key={slug} onClick={() => onOpen(tool)}><span>{tool.name}</span><kbd>⌘ {index + 4}</kbd><CaretRightIcon size={16} /></button>;
+              return <button key={slug} onClick={() => onOpen(tool)}><span>{tool.name}</span><CaretRightIcon size={16} /></button>;
             })}
             <button className="view-all-tools" onClick={onBrowse}><span>View all tools</span><ArrowRightIcon size={17} /></button>
           </aside>
@@ -2266,7 +2374,7 @@ function TerminalTipBar({ onSearch, onHelp }) {
     <section className="terminal-tip-bar" aria-label="Command palette tip">
       <div className="shell terminal-tip-inner">
         <div className="terminal-tip-copy"><KeyboardIcon size={18} /><kbd>TIP</kbd><span>Use the command palette</span><button onClick={onSearch}><kbd>⌘ K</kbd></button><span>to search tools, commands, or file actions.</span></div>
-        <div className="terminal-tip-actions"><span>Shortcuts</span><button onClick={onSearch}><kbd>⌘ /</kbd></button><i aria-hidden="true" /><span>Help</span><button onClick={onHelp} aria-label="Open privacy help">?</button></div>
+        <div className="terminal-tip-actions"><span>Search</span><button onClick={onSearch}><kbd>⌘ K</kbd></button><i aria-hidden="true" /><span>Help</span><button onClick={onHelp} aria-label="Open privacy help">?</button></div>
       </div>
     </section>
   );
@@ -2284,7 +2392,7 @@ export function App() {
 
   useEffect(() => {
     const handleKey = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (isToolSearchShortcut(event)) {
         event.preventDefault();
         searchRef.current?.focus();
       }
@@ -2294,8 +2402,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const legacyTool = window.location.hash.startsWith("#tool/") ? toolFromLocation() : null;
-    if (legacyTool) window.history.replaceState(null, "", toolPath(legacyTool));
+    const locatedTool = toolFromLocation();
+    const pathSlug = window.location.pathname.match(/^\/tools\/([^/]+)\/?$/)?.[1];
+    if (locatedTool && (window.location.hash.startsWith("#tool/") || TOOL_SLUG_ALIASES[pathSlug])) {
+      window.history.replaceState(null, "", toolPath(locatedTool));
+    }
   }, []);
 
   useEffect(() => {

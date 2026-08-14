@@ -30,7 +30,7 @@ Run this focused suite on the exact candidate before a normal beta promotion. Th
 - [ ] **JPG to PDF (row 10):** representative generated-PDF workflow with local preview/download parity.
 - [ ] **Add Image to PDF (row 25):** visual placement, resize/rotate, multi-page edit, cleanup, and inline protected-PDF continuation.
 - [ ] **Unlock and Protect PDF (rows 27–28):** wrong/correct passwords, independent viewer verification, memory-only credential lifecycle, and no credential leakage.
-- [ ] **Convert to JPG (row 38):** PNG/SVG/animated first-frame behavior plus single-page and rejected multi-page TIFF coverage.
+- [ ] **Convert Image (row 38):** PNG/JPG/WebP output, transparency/background handling, PNG/SVG/animated first-frame behavior, plus single-page and rejected multi-page TIFF coverage.
 
 ### Cross-cutting release checks
 
@@ -134,8 +134,8 @@ For every tool that accepts PDF input, repeat the primary check with a synthetic
 | 35 | `/tools/compress-image` — Compress Image | Ready | JPG/PNG/WebP batch with known dimensions/transparency → requested format/quality outputs open, dimensions are expected, transparency handling is explicit, and size is recorded. | [ ] | [ ] | [ ] | [ ] |
 | 36 | `/tools/resize-image` — Resize Image | Ready | Asymmetric JPG/PNG/WebP → exact width/height or proportional result according to settings, correct orientation, and no accidental up/downscale beyond request. | [ ] | [ ] | [ ] | [ ] |
 | 37 | `/tools/crop-image` — Crop Image | Ready | Image with colored edge/corner markers → exact crop region and dimensions; out-of-bounds or zero-area selection fails safely. | [ ] | [ ] | [ ] | [ ] |
-| 38 | `/tools/convert-to-jpg` — Convert to JPG | Beta | PNG, first-frame animated GIF/WebP, SVG, and single-page TIFF synthetic fixtures → readable JPGs with documented frame/page behavior and explicit multi-page TIFF rejection. | [ ] | [ ] | [ ] | [ ] |
-| 39 | `/tools/convert-from-jpg` — Convert from JPG | Ready | JPG/JPEG with gradients and metadata → chosen PNG and GIF outputs open with expected dimensions/colors; no unrequested extra files. | [ ] | [ ] | [ ] | [ ] |
+| 38 | `/tools/convert-image` — Convert Image | Beta | JPG/PNG/WebP, first-frame animated GIF/PNG/WebP, SVG, and single-page TIFF fixtures → chosen PNG/JPG/WebP output has the expected signature, dimensions, transparency/background behavior, quality, stripped metadata, and extension; unavailable browser encoders are disabled and multi-page TIFF is rejected. | [ ] | [ ] | [ ] | [ ] |
+| 39 | `/tools/convert-from-jpg` — JPG to GIF | Ready | Ordered JPG/JPEG frames with gradients and metadata → one animated GIF opens with the expected order, dimensions, delay, loop, and no unrequested extra files. | [ ] | [ ] | [ ] | [ ] |
 | 40 | `/tools/photo-editor` — Photo Editor | Beta | Asymmetric photo → each supported adjustment and combined settings match preview/download; reset restores the original transformation state. | [ ] | [ ] | [ ] | [ ] |
 | 41 | `/tools/upscale-image` — Upscale Image | Beta | Small synthetic JPG/PNG with sharp pattern → selected scale produces exact dimensions and a readable image; record quality limitations and guard maximum output pixels. | [ ] | [ ] | [ ] | [ ] |
 | 42 | `/tools/remove-image-background` — Remove Background | Beta | Synthetic foreground/background image with hard and soft edges → fast/balanced/fine output removes/retains expected regions; transparent, white, and black PNG backgrounds match settings. | [ ] | [ ] | [ ] | [ ] |
@@ -155,6 +155,6 @@ For every tool that accepts PDF input, repeat the primary check with a synthetic
 - [ ] Clearing site data removes offline availability and a subsequent successful online visit restores it.
 - [ ] Security/cache headers, manifest scope, SPA rewrite, direct hash routes, and downloads work on the Vercel hostname and final custom hostname.
 - [ ] Desktop and mobile layouts have no unreachable controls or horizontal overflow; keyboard-only use and reduced-motion/contrast preferences remain usable.
-- [ ] Hero search shows ranked matching tools beside the field without requiring a page scroll; Arrow keys and Enter open the active match, Escape closes suggestions, no-match feedback is clear, and View full list moves to the complete filtered catalog.
+- [ ] Hero search shows ranked matching tools beside the field without requiring a page scroll; `Command/Control + K` focuses it, the rest of the page dims subtly while it is active, and click-away or Escape restores the page. Arrow keys and Enter open the active match, no-match feedback is clear, and View full list moves to the complete filtered catalog. Numbered browser-tab shortcuts (`Command/Control + 1–9`) remain browser-owned and are neither advertised nor intercepted.
 
 Any observed failure involving privacy, document integrity/corruption, security, a crash, unbounded resource use, offline-update safety, or rollback safety is a launch blocker. Other failed or untested rows remain visible in this ledger and require a fix, removal of the advertised capability, or an explicit narrowly defined owner acceptance; they must not be silently marked passed or waived.
