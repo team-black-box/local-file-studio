@@ -9,14 +9,14 @@ Use this checklist for private-repository maintenance, the public-source transit
 
 ## Current private-repository hardening
 
-Last verified live 2026-08-13. These items describe completed GitHub settings, not public-release or production-QA approval.
+Last verified live 2026-08-14. These items describe completed GitHub settings, not public-release or production-QA approval.
 
 Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254) and successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487).
 
 - [x] Repository visibility remains private.
 - [x] GitHub Actions requires full-length commit SHA references and allows selected actions only: GitHub-owned actions are allowed, other verified creators are not, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
 - [x] The default workflow token is read-only and GitHub Actions cannot approve pull requests.
-- [x] `main` requires the strict `verify` status check, including an up-to-date branch, one independent approval, stale-review dismissal, approval after the most recent push by someone other than the pusher, resolved conversations, and linear history. The rule applies to administrators.
+- [x] `main` requires the strict `verify` status check, an up-to-date branch, resolved conversations, and linear history. The rule applies to administrators. Required approvals, stale-review dismissal, and last-push approval were temporarily removed on 2026-08-14 for private iteration.
 - [x] Force pushes and deletion of `main` are blocked.
 - [x] Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically and pull-request branches can be updated.
 - [x] GitHub web commits require a DCO sign-off. The pull-request workflow also verifies every non-merge commit's `Signed-off-by` trailer, covering command-line contributions before merge.
@@ -29,7 +29,7 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] Frozen Bun 1.2.20 install, `bun audit --json`, and `bun run verify` passed on the readiness branch. The repository audit covered 111 intended files totaling 48.71 MiB; the largest file was 4.48 MiB, below GitHub's warning and hard limits. A separate reachable-history audit found no forbidden private/generated paths, oversized blobs, private keys, or high-confidence credential patterns.
 - [x] Provenance verification covered 28 fixed hashes, 13 exact license copies, 92 installed runtime packages, the vendored OCR runtime/model, SheetJS anchors, and byte-identical production notice copies. The canonical root `LICENSE` is unchanged.
 - [x] The dependency audit reported no known advisory for registry packages. Bun does not audit the direct non-default-registry SheetJS tarball; its exact 0.20.3 URL, independently recorded tarball digest, installed anchor hashes, license, and production notice remain separately verified.
-- [x] Live GitHub review confirmed private visibility, the selected-action/SHA-pinning policy, read-only workflow token, strict `verify`, independent and last-push approval, stale-review dismissal, conversation resolution, administrator enforcement, linear history, merge restrictions, dependency alerts, and Dependabot.
+- [x] Live GitHub review confirmed private visibility, the selected-action/SHA-pinning policy, read-only workflow token, strict `verify`, no required PR reviews, conversation resolution, administrator enforcement, linear history, merge restrictions, dependency alerts, and Dependabot.
 - [x] Public issue forms, the pull-request template, `CONTRIBUTING.md`, `SECURITY.md`, and the DCO workflow avoid invented contacts or response promises and provide a post-public Private Vulnerability Reporting path.
 - [x] The production beta is live on the canonical apex, the `www` redirect is correct, all 48 sitemap URLs return the matching canonical and security headers, and exact Git-to-production mapping is recorded. This evidence does not mark remaining browser/offline QA rows as passed.
 - [ ] Merge this readiness change and rerun the protected `verify` check on the exact `main` commit proposed for public visibility.
@@ -69,14 +69,15 @@ Last verified 2026-08-13. These boxes record owner-authorized external actions a
 - [x] Ensure exact upstream licenses, notices, versions, source URLs, SHA-256 hashes, and reproducible acquisition/build notes are committed where applicable.
 - [x] Separate verified copyright/license facts from unresolved legal or patent risk; obtain qualified counsel for unresolved questions rather than representing them as cleared.
 - [x] Confirm the canonical Apache-2.0 `LICENSE` is unchanged and third-party/generated assets do not claim first-party ownership.
-- [x] Re-audit the current Actions allowlist, read-only workflow token, strict `verify` requirement, independent-review rules, administrator enforcement, linear history, and merge restrictions; do not weaken them for publication.
+- [ ] Restore and verify one independent approval, stale-review dismissal, and last-push approval by someone other than its pusher before public visibility. Re-audit the Actions allowlist, read-only workflow token, strict `verify`, administrator enforcement, linear history, and merge restrictions at the same time.
 - [x] Verify DCO sign-off for non-web commits: the pull-request workflow checks every non-merge commit, while the GitHub web setting covers web commits.
 - [x] Check public issue/PR forms and `SECURITY.md` without inventing a private-reporting address or response-time promise.
 - [ ] Review the [launch-critical smoke record](PRODUCTION_QA.md#initial-vercel-beta-smoke-gate) against the public-source candidate. Incomplete noncritical browser rows remain visible ongoing beta work; an observed privacy, integrity, security, crash, unbounded-resource, offline-update, or rollback defect remains a blocker.
 - [ ] Review all unchecked QA rows and known defects. Do not treat deferred rows as passed or waived, and do not proceed with an unresolved privacy, integrity, security, crash, resource-bound, offline-update, or rollback blocker.
 - [x] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
 - [x] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
-- [ ] With owner approval, update the GitHub repository homepage to `https://localfilestudio.app/` and choose accurate discovery topics without changing visibility.
+- [x] With owner approval, update the GitHub repository homepage to `https://localfilestudio.app/` without changing visibility.
+- [ ] Choose accurate discovery topics without changing visibility.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
 
 ## Immediately after an approved public visibility change

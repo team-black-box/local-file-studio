@@ -25,9 +25,9 @@ The `main` branch is protected, including for administrators. Do not push direct
 4. Run the frozen install and full verification commands below.
 5. Exercise affected tools in a production preview. Use the shared checks in [docs/PRODUCTION_QA.md](docs/PRODUCTION_QA.md) and record the relevant rows in the pull request.
 6. Open a pull request with the template completed and every commit signed off for the DCO.
-7. Keep the branch up to date with `main`. The strict required `verify` check must pass on the current revision, all review conversations must be resolved, and at least one independent reviewer must approve.
+7. Keep the branch up to date with `main`. The strict required `verify` check must pass on the current revision and all review conversations must be resolved.
 
-Pull requests should be small enough to review, explain why the behavior is safe, and include tests or documentation for user-visible changes. A passing build is necessary but does not replace manual checks for visual output, browser compatibility, offline operation, malformed input, or resource cleanup. A review becomes stale after a reviewable push, and the person who made the most recent reviewable push cannot supply the required approval for that push.
+Pull requests should be small enough to review, explain why the behavior is safe, and include tests or documentation for user-visible changes. A passing build is necessary but does not replace manual checks for visual output, browser compatibility, offline operation, malformed input, or resource cleanup. While the repository is private, the owner has temporarily removed the independent-approval requirement to reduce iteration friction. Before public contributions are invited, maintainers must restore independent approval, stale-review dismissal, and last-push approval by someone other than the pusher.
 
 ## Local setup
 
@@ -79,7 +79,7 @@ The pull-request workflow checks every non-merge commit for a valid `Signed-off-
 
 ## Review and release
 
-Maintainers merge changes only after the branch is current with `main`, strict `verify` succeeds, review conversations are resolved, the latest reviewable push has an independent approval, DCO evidence is present, and applicable production-preview checks pass. Merging does not promise an immediate public release. The production and rollback process is documented in [docs/RELEASE_OPERATIONS.md](docs/RELEASE_OPERATIONS.md).
+During private iteration, maintainers merge changes only after the branch is current with `main`, strict `verify` succeeds, review conversations are resolved, DCO evidence is present, and applicable production-preview checks pass. Independent approval becomes mandatory again before the repository is made public. Merging does not promise an immediate public release. The production and rollback process is documented in [docs/RELEASE_OPERATIONS.md](docs/RELEASE_OPERATIONS.md).
 
 ## Trademarks
 

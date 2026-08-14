@@ -11,12 +11,13 @@ This file records intentionally deferred repository work whose prerequisites are
 
 The following is a dated audit snapshot, not a promise that external settings cannot drift. Recheck GitHub live immediately before changing visibility, accepting public contributions, or connecting production hosting.
 
-### Private-repository checkpoint — 2026-08-13
+### Private-repository checkpoint — 2026-08-14
 
 - The repository is private. The configured remote remains `https://github.com/team-black-box/local-file-studio.git` and the inspected workflow token defaults remain read-only.
 - GitHub Actions requires full commit SHAs and uses a selected-actions allowlist. The hardened `CI` workflow rerun passed.
-- `main` requires the `verify` check from the `CI` workflow, one independent approving review, approval of the most recent reviewable push by someone other than its pusher, stale-approval dismissal, resolved conversations, and administrator enforcement. Linear history is required; force pushes and branch deletion are blocked.
+- `main` requires the strict `verify` check from the `CI` workflow, resolved conversations, and administrator enforcement. Linear history is required; force pushes and branch deletion are blocked. The owner temporarily removed required approvals, stale-review dismissal, and last-push approval on 2026-08-14 to reduce private-iteration friction.
 - Merge commits are disabled. DCO sign-off is enabled for GitHub web commits, and the pull-request workflow verifies every non-merge commit's `Signed-off-by` trailer.
+- The GitHub repository homepage now uses the canonical `https://localfilestudio.app` URL rather than the legacy Vercel hostname.
 - Dependency alerts and Dependabot are enabled.
 - Private vulnerability reporting is unavailable while the repository remains private. Enable and verify it after public visibility is approved and before inviting public security reports; do not invent a contact address in the meantime.
 - GitHub Secret Protection and Code Security are not enabled because their licensing or purchase has not been approved. Re-evaluate the features available under the chosen public-repository plan and obtain explicit owner approval before enabling a paid or separately licensed capability.
@@ -25,7 +26,8 @@ The following is a dated audit snapshot, not a promise that external settings ca
 
 - Merge the reviewed public-readiness change, then re-run clean-checkout CI on the exact `main` revision proposed for public visibility.
 - Re-audit Actions pins and allowlist, workflow permissions, token access, branch protection, merge/DCO settings, dependency automation, security features, repository visibility, and the configured remote immediately before launch.
-- With separate owner approval, update the GitHub repository homepage from the legacy Vercel hostname to `https://localfilestudio.app/` and choose a small accurate public topic set; do not change visibility as a side effect.
+- Before public visibility, restore one independent approval, stale-review dismissal, and approval of the latest reviewable push by someone other than its pusher; verify the restored rule with a test pull request.
+- Choose a small accurate public topic set before visibility changes; do not change visibility as a side effect.
 - Decide and document the approved secret-scanning/code-security posture. Treat an unavailable or unapproved feature as an explicit residual risk, not as enabled protection.
 - Obtain explicit owner authorization before making the repository public. After visibility changes, verify public vulnerability reporting and every intended public security control before soliciting contributions.
 - Keep the live Vercel beta operationally separate from the still-private source repository. Public visibility, later production promotions, and security-setting changes continue to require their own current approval and verification.

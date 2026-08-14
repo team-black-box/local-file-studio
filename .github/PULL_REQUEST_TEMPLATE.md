@@ -41,8 +41,9 @@ Affected QA rows, browsers, and evidence:
 ## Review and merge readiness
 
 - [ ] All review conversations are resolved.
-- [ ] After the most recent reviewable push, at least one reviewer other than that pusher has approved; I understand that a new reviewable push dismisses stale approval.
 - [ ] The change can be squash- or rebase-merged with a linear history and without force-pushing or deleting `main`.
+
+<!-- Independent approval is temporarily optional while the repository is private. It must be restored before public contributions are invited. -->
 
 ## Deployment notes
 
