@@ -33,7 +33,7 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] Public issue forms, the pull-request template, `CONTRIBUTING.md`, `SECURITY.md`, and the DCO workflow avoid invented contacts or response promises and provide a post-public Private Vulnerability Reporting path.
 - [x] The production beta is live on the canonical apex, the `www` redirect is correct, all 48 sitemap URLs return the matching canonical and security headers, and exact Git-to-production mapping is recorded. This evidence does not mark remaining browser/offline QA rows as passed.
 - [x] Merge the reviewed public-readiness work. PR #11, the Convert Image/search work in PR #13, and the private-iteration documentation in PR #15 are present on private `main`.
-- [ ] Merge the final-audit dependency/documentation change and rerun protected `verify` on the exact resulting `main` commit proposed for public visibility. The local audit branch passed frozen install, a clean advisory audit, full verification, and deterministic notice generation; protected clean-checkout CI remains the authoritative post-merge evidence.
+- [x] Merge the final-audit dependency/documentation change and rerun protected `verify` on the exact resulting `main` commit proposed for public visibility. PR #16 merged at `65dff79f82b0dc6d9e1755d8125ebc7aff4184d0` after the required protected `verify` job passed.
 - [ ] Obtain explicit owner approval for the visibility change. Immediately afterward, enable and test Private Vulnerability Reporting and re-audit every mutable repository control before inviting contributions.
 
 ## Current Vercel production-beta checkpoint
@@ -49,7 +49,7 @@ Last verified 2026-08-14. These boxes record owner-authorized external actions a
 - [x] The final apex serves over TLS with the committed security headers, while `www` returns a permanent `308` to the apex. The live sitemap exposes exactly 48 canonical URLs, all of which returned `200` with a matching canonical and security headers on 2026-08-13.
 - [x] An authorized cofounder commit proved the Git integration: deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact private-`main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2`.
 - [x] Read-only inspection on 2026-08-14 mapped the apex to READY production deployment `dpl_7wCrLUHAhixQpbRDEDtXsskeh7PJ` from commit `050b09a56871172ad333667b30e2fba51a3fd355`, with no Vercel Functions. The 48 sitemap URLs, matching canonicals, CSP/HSTS, `www` redirect, 77-entry precache, and service-worker revision `0eeaa74b99c2ac74` passed HTTP verification.
-- [ ] Deploy an approved current source commit before claiming production parity. Git deployments for `31eee8320244d1067f09d3f660868659848b661d` and `6d9dcf35b567eeb8b3f720532a001211866a503b` are `BLOCKED` because Git author `abs192` lacks Vercel project access; the live `/tools/convert-image` path therefore still returns homepage metadata while the older `/tools/convert-to-jpg` path remains deployed.
+- [x] Deploy an approved current source commit before claiming production parity. Exact merged `main` commit `65dff79f82b0dc6d9e1755d8125ebc7aff4184d0` was exported without Git metadata or ignored local state, built as READY preview `dpl_3cgubPBbTCHFjnJGhEsB4wvrrCzK`, and promoted to READY production `dpl_EY92wx11fjabk3gpkacNVrAoCiMe`. The live `/tools/convert-image` metadata and service-worker revision `0d18c08aa9b66df0` match the reviewed build. Git-triggered releases authored by `abs192` remain blocked pending Vercel project access.
 - [ ] Exercise the current custom-domain offline reload, two-build service-worker update, and rollback procedure. READY deployment `dpl_qt1lzjprg` from commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2` is a confirmed previous artifact, but availability alone is not an exercised rollback.
 - [ ] Continue every unchecked launch-critical and catalog QA row against deployed candidates; do not present an untested row as passed.
 
@@ -80,7 +80,7 @@ Last verified 2026-08-14. These boxes record owner-authorized external actions a
 - [x] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
 - [x] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
 - [x] With owner approval, update the GitHub repository homepage to `https://localfilestudio.app/` without changing visibility.
-- [ ] Resolve or explicitly accept the production/source version gap before announcing the public repository as the exact source of the live build. The 2026-08-14 production deployment predates Convert Image and the latest documentation changes.
+- [x] Resolve or explicitly accept the production/source version gap before announcing the public repository as the exact source of the live build. Production deployment `dpl_EY92wx11fjabk3gpkacNVrAoCiMe` is the promoted artifact built from the clean export of exact merged `main` commit `65dff79f82b0dc6d9e1755d8125ebc7aff4184d0`.
 - [ ] Choose accurate discovery topics without changing visibility.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
 
@@ -126,8 +126,8 @@ Last verified 2026-08-14. These boxes record owner-authorized external actions a
 
 ## After production promotion
 
-- [ ] Confirm the served build maps to the approved `main` commit.
+- [x] Confirm the served build maps to the approved `main` commit. The controlled source export, preview build, promotion record, live tool metadata, and service-worker revision map production deployment `dpl_EY92wx11fjabk3gpkacNVrAoCiMe` to merged `main` commit `65dff79f82b0dc6d9e1755d8125ebc7aff4184d0`.
 - [ ] Run high-value smoke tests: Merge PDF, Compress PDF, OCR Reader, Add Image to PDF, Protect/Unlock PDF, Convert Image with TIFF plus PNG-to-WebP, and one standard image workflow.
 - [ ] Reload once online, then offline, and confirm the current service-worker revision installed completely.
 - [ ] Monitor user reports and hosting/build health without adding document-data telemetry.
-- [ ] Record final evidence, known limitations, and rollback target.
+- [x] Record current deployment evidence, known limitations, and rollback candidates. The current record retains READY deployments `dpl_7wCrLUHAhixQpbRDEDtXsskeh7PJ` and `dpl_qt1lzjprg`; an actual rollback exercise remains open.
