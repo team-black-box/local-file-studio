@@ -14,6 +14,7 @@ import {
   validatePdfOverlayImageSelection,
 } from "./file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./pdfjs-utils.js";
+import { getTiffDimensions } from "./tiff-utils.js";
 
 function rasterScaleFor(tool, options) {
   if (tool.slug === "compress-pdf") {
@@ -147,7 +148,7 @@ async function readImageHeader(file) {
     const module = await import("utif");
     const UTIF = module.default || module;
     const ifd = UTIF.decode(await file.arrayBuffer())[0];
-    return ifd ? { width: ifd.width, height: ifd.height } : null;
+    return getTiffDimensions(ifd);
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());

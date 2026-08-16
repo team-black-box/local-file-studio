@@ -91,11 +91,11 @@ export function useProtectedPdfGate(tool, files, setFiles) {
   const verify = async () => {
     if (!active || active.status === "checking" || active.status === "unsupported" || !password) return;
     const candidate = password;
+    setPassword("");
     setVerifying(true);
     setChecks((current) => new Map(current).set(active.file, { ...active, status: "checking", message: `Checking ${active.file.name} locally…` }));
     try {
       const result = await inspectPdfAccess(active.file, mode, candidate);
-      setPassword("");
       if (result.status === "verified" && candidate && outputPasswordRef.current === null) {
         outputPasswordRef.current = candidate;
         setOutputPasswordAvailable(true);

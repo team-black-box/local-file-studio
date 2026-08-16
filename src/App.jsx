@@ -83,6 +83,7 @@ import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
+import { clearSensitiveToolSettings } from "./lib/tool-settings.js";
 import { useProtectedPdfGate } from "./useProtectedPdfGate.js";
 
 const iconMap = {
@@ -2059,11 +2060,13 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     setProgress({ phase: "Starting", progress: 0.02 });
     setProgressAnnouncement({ id: crypto.randomUUID(), message: "Local processing started." });
     try {
-      const response = await runTool(tool, files, {
+      const processOptions = {
         ...settings,
         inputPasswords: passwordGate.inputPasswords,
         outputPassword: passwordGate.outputPassword,
-      }, (nextProgress) => {
+      };
+      setSettings((current) => clearSensitiveToolSettings(current, settingsList));
+      const response = await runTool(tool, files, processOptions, (nextProgress) => {
         if (!dismissedRef.current) {
           setProgress(nextProgress);
           const message = accessibleProgressMessage(nextProgress.phase);
