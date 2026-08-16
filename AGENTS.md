@@ -40,6 +40,8 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/pdfjs-utils.js`: version-compatible PDF.js document cleanup.
 - `src/lib/pdf-passwords.js`: protected-PDF access modes, permission checks, and in-memory unlock adapter.
 - `src/lib/pdf-output-protection.js`: opt-in fresh protection for generated PDF results.
+- `src/lib/tool-settings.js`: shared cleanup for memory-only sensitive tool settings.
+- `src/lib/tiff-utils.js`: bounded TIFF metadata normalization shared by preflight and decoding.
 - `src/lib/file-limits.js`: canonical resource policies and displayed limit descriptions.
 - `src/lib/file-preflight.js`: pre-allocation inspection and format-aware validation.
 - `src/lib/file-utils.js`: bounded result/download helpers and cleanup utilities.

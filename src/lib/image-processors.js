@@ -3,6 +3,7 @@
 
 import { baseName, createResultBudget, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
 import { FileLimitError, assertImageDimensions, assertOutputDimensions, getToolLimits } from "./file-limits.js";
+import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
   jpg: { mime: "image/jpeg", ext: "jpg" },
@@ -112,11 +113,15 @@ async function fileToBitmap(file, limits) {
         `${file.name} contains ${ifds.length.toLocaleString()} pages or frames. Image conversion accepts one image per TIFF; export the pages separately and try again.`,
       );
     }
-    assertImageDimensions(ifds[0].width, ifds[0].height, limits, file.name);
+    const dimensions = getTiffDimensions(ifds[0]);
+    if (!dimensions) {
+      throw new FileLimitError("unreadable-image-metadata", `${file.name} does not expose readable TIFF dimensions. Re-save it as JPG, PNG, or WebP and try again.`);
+    }
+    assertImageDimensions(dimensions.width, dimensions.height, limits, file.name);
     UTIF.decodeImage(buffer, ifds[0]);
     const rgba = UTIF.toRGBA8(ifds[0]);
-    const canvas = makeCanvas(ifds[0].width, ifds[0].height);
-    canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba), ifds[0].width, ifds[0].height), 0, 0);
+    const canvas = makeCanvas(dimensions.width, dimensions.height);
+    canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba), dimensions.width, dimensions.height), 0, 0);
     return {
       source: canvas,
       width: canvas.width,

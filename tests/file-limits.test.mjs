@@ -3,6 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import UTIF from "utif";
 import {
   ARCHIVE_INPUT_LIMIT_BYTES,
   ARCHIVE_ITEM_LIMIT_BYTES,
@@ -41,6 +42,9 @@ import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
 import { createExtractPagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, isToolSearchShortcut, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { matchesImageSignature } from "../src/lib/image-processors.js";
+import { preflightToolFiles } from "../src/lib/file-preflight.js";
+import { getTiffDimensions } from "../src/lib/tiff-utils.js";
+import { clearSensitiveToolSettings } from "../src/lib/tool-settings.js";
 import { rankToolSearchResults, tools } from "../src/tools.js";
 
 const MiB = 1024 * 1024;
@@ -136,6 +140,27 @@ test("converted image signatures must match the requested output container", () 
   assert.equal(matchesImageSignature(new TextEncoder().encode("RIFF1234WEBP"), "image/webp"), true);
   assert.equal(matchesImageSignature(new TextEncoder().encode("RIFF1234WAVE"), "image/webp"), false);
   assert.equal(matchesImageSignature(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]), "image/jpeg"), false);
+});
+
+test("single-page TIFF dimensions are available before pixel decoding", async () => {
+  const encoded = UTIF.encodeImage(new Uint8Array(3 * 2 * 4).fill(255), 3, 2);
+  const ifd = UTIF.decode(encoded)[0];
+  assert.equal(ifd.width, undefined);
+  assert.deepEqual(getTiffDimensions(ifd), { width: 3, height: 2 });
+
+  const convert = tools.find(({ slug }) => slug === "convert-image");
+  const image = new File([encoded], "small.tiff", { type: "image/tiff" });
+  const inspected = await preflightToolFiles(convert, [image]);
+  assert.deepEqual(inspected.metadata, [{ name: "small.tiff", width: 3, height: 2 }]);
+});
+
+test("password settings clear without changing non-sensitive tool options", () => {
+  const current = { password: "memory-only", quality: "balanced" };
+  const settings = [{ key: "password", type: "password" }, { key: "quality", type: "select" }];
+  assert.deepEqual(clearSensitiveToolSettings(current, settings), { password: "", quality: "balanced" });
+  assert.deepEqual(current, { password: "memory-only", quality: "balanced" });
+  const alreadyClear = { password: "", quality: "balanced" };
+  assert.strictEqual(clearSensitiveToolSettings(alreadyClear, settings), alreadyClear);
 });
 
 test("selection accepts exact boundaries without mutating inputs", () => {
