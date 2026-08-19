@@ -164,6 +164,31 @@ test("JPG to PDF creates a PDF result that is eligible for the shared preview", 
   assert.equal(document.getPageCount(), 1);
 });
 
+test("Scan to PDF preserves visual image order and reports its page fit", async () => {
+  const files = [
+    namedBlob(onePixelPng, "scan-1.png", "image/png"),
+    namedBlob(onePixelPng, "scan-2.png", "image/png"),
+    namedBlob(onePixelPng, "scan-3.png", "image/png"),
+  ];
+
+  const [autoResult] = await processPdfTool("scan-to-pdf", files, { pageSize: "auto" });
+  assert.equal(autoResult.name, "scans-local.pdf");
+  assert.equal(autoResult.type, "application/pdf");
+  assert.equal(autoResult.details, "3 pages · Matched image shapes");
+  assert.deepEqual(autoResult.scanOutcome, { pageCount: 3, pageSize: "auto" });
+  const autoDocument = await PDFDocument.load(await autoResult.blob.arrayBuffer());
+  assert.equal(autoDocument.getPageCount(), 3);
+
+  const [a4Result] = await processPdfTool("scan-to-pdf", files.slice(0, 2), { pageSize: "a4" });
+  assert.equal(a4Result.details, "2 pages · A4 pages");
+  assert.deepEqual(a4Result.scanOutcome, { pageCount: 2, pageSize: "a4" });
+  const a4Document = await PDFDocument.load(await a4Result.blob.arrayBuffer());
+  assert.deepEqual(
+    a4Document.getPages().map((page) => [Math.round(page.getWidth()), Math.round(page.getHeight())]),
+    [[595, 842], [595, 842]],
+  );
+});
+
 test("Split PDF creates the exact visually selected one-page file", async () => {
   const source = await PDFDocument.create();
   source.addPage([200, 300]);
