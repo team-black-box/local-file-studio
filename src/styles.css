@@ -4463,6 +4463,62 @@ kbd {
   flex: 0 0 auto;
 }
 
+.ppt-first-slide {
+  display: grid;
+  gap: 7px;
+}
+
+.ppt-first-slide-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font: 700 7px/1.2 var(--mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.ppt-first-slide-heading strong {
+  color: var(--coral-dark);
+  font-size: 8px;
+}
+
+.ppt-slide-text {
+  max-height: 166px;
+  border-left: 3px solid var(--coral);
+}
+
+.ppt-slide-empty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--coral);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface-soft);
+  color: var(--coral-dark);
+}
+
+.ppt-slide-empty > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ppt-slide-empty strong {
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.ppt-slide-empty small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
 .word-layout-note {
   border: 1px solid #ead3c6;
   border-radius: 8px;
@@ -4481,7 +4537,8 @@ kbd {
 
 .repair-result-summary,
 .scan-result-summary,
-.word-result-summary {
+.word-result-summary,
+.ppt-result-summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
@@ -4492,7 +4549,8 @@ kbd {
 
 .repair-result-summary > span,
 .scan-result-summary > span,
-.word-result-summary > span {
+.word-result-summary > span,
+.ppt-result-summary > span {
   width: 36px;
   height: 36px;
   display: grid;
@@ -4504,7 +4562,8 @@ kbd {
 
 .repair-result-summary > div,
 .scan-result-summary > div,
-.word-result-summary > div {
+.word-result-summary > div,
+.ppt-result-summary > div {
   min-width: 0;
   display: grid;
   gap: 2px;
@@ -4512,14 +4571,16 @@ kbd {
 
 .repair-result-summary > div strong,
 .scan-result-summary > div strong,
-.word-result-summary > div strong {
+.word-result-summary > div strong,
+.ppt-result-summary > div strong {
   color: var(--ink);
   font-size: 11px;
 }
 
 .repair-result-summary > div small,
 .scan-result-summary > div small,
-.word-result-summary > div small {
+.word-result-summary > div small,
+.ppt-result-summary > div small {
   color: var(--muted-strong);
   font-size: 9px;
   line-height: 1.4;
@@ -4527,7 +4588,8 @@ kbd {
 
 .repair-result-summary > p,
 .scan-result-summary > p,
-.word-result-summary > p {
+.word-result-summary > p,
+.ppt-result-summary > p {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;

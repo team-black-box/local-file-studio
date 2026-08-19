@@ -42,17 +42,19 @@ subtree and PDF.js's optional `@napi-rs/canvas` subtree. Those adapters are
 Node-only, are not emitted by the static browser build, and would otherwise
 introduce irrelevant or platform-specific packages into the browser notice.
 
-## DOCX XML parser
+## Office XML parser
 
 - Package: `@xmldom/xmldom` 0.8.13
 - Upstream: <https://github.com/xmldom/xmldom>
 - Declared and packaged license: MIT
 
-The parser reads only the local `[Content_Types].xml`, optional `_rels/.rels`,
-and the single internal main-document part declared there (or the standard
-`word/document.xml` fallback) for the text-only Word-to-PDF workflow. Local
-File Studio rejects document type and entity declarations plus external,
-ambiguous, malformed, or traversing main-document targets; it does not load
+For the text-only Word-to-PDF workflow, the parser reads only the local
+`[Content_Types].xml`, optional `_rels/.rels`, and the single internal main
+document part declared there (or the standard `word/document.xml` fallback).
+For PowerPoint-to-PDF, it reads the corresponding local manifests,
+presentation order, and declared internal slide XML parts. Local File Studio
+rejects document type and entity declarations plus external, ambiguous,
+malformed, disguised, or traversing main/slide targets; it never loads Office
 document resources. The exact packaged license text is reproduced in
 `npm-licenses.txt`.
 
