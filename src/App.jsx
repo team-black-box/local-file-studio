@@ -78,7 +78,7 @@ import {
 import { categories, categoryById, rankToolSearchResults, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
+import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
@@ -161,6 +161,7 @@ function updatePageMetadata(tool) {
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
 const inlineReaderTools = new Set(["ocr-pdf", "translate-pdf", "pdf-to-markdown"]);
+const pdfSettingPreviewTools = new Set(["rotate-pdf", "add-pdf-page-numbers", "watermark-pdf", "crop-pdf", "edit-pdf", "sign-pdf", "redact-pdf"]);
 const TOOL_SLUG_ALIASES = Object.freeze({ "convert-to-jpg": "convert-image" });
 const contextualSettings = {
   "remove-pdf-pages": [
@@ -172,40 +173,18 @@ const contextualSettings = {
   "organize-pdf": [
     { key: "order", type: "text", label: "New page order", default: "all", hint: "Example: 3,1,2,4-8" },
   ],
-  "crop-pdf": [
-    { key: "margin", type: "range", label: "Trim from each edge", default: 5, min: 0, max: 35, step: 1, suffix: "%" },
-  ],
-  "edit-pdf": [
-    { key: "text", type: "text", label: "Text to add", default: "Reviewed locally" },
-    { key: "fontSize", type: "range", label: "Text size", default: 16, min: 8, max: 64, step: 1, suffix: "px" },
-    { key: "x", type: "range", label: "Horizontal position", default: 10, min: 2, max: 80, step: 1, suffix: "%" },
-    { key: "y", type: "range", label: "Vertical position", default: 10, min: 2, max: 90, step: 1, suffix: "%" },
-  ],
   "pdf-forms": [
     { key: "values", type: "textarea", label: "Field values (JSON)", default: "", placeholder: "{\"Full name\": \"Asha Rao\"}" },
     { key: "value", type: "text", label: "Fallback value", default: "Completed locally" },
   ],
-  "sign-pdf": [
-    { key: "name", type: "text", label: "Typed signature", default: "Your name" },
-  ],
   "redact-pdf": [
-    { key: "x", type: "range", label: "From left", default: 10, min: 0, max: 90, step: 1, suffix: "%" },
-    { key: "y", type: "range", label: "From top", default: 40, min: 0, max: 90, step: 1, suffix: "%" },
-    { key: "width", type: "range", label: "Redaction width", default: 80, min: 5, max: 100, step: 1, suffix: "%" },
-    { key: "height", type: "range", label: "Redaction height", default: 10, min: 2, max: 50, step: 1, suffix: "%" },
+    { key: "x", type: "range", label: "Horizontal position", default: 10, min: 0, max: 90, step: 1, suffix: "%", minLabel: "Left", maxLabel: "Right" },
+    { key: "y", type: "range", label: "Vertical position", default: 40, min: 0, max: 90, step: 1, suffix: "%", minLabel: "Top", maxLabel: "Bottom" },
+    { key: "width", type: "range", label: "Redaction width", default: 80, min: 5, max: 100, step: 1, suffix: "%", minLabel: "Narrow", maxLabel: "Wide" },
+    { key: "height", type: "range", label: "Redaction height", default: 10, min: 2, max: 50, step: 1, suffix: "%", minLabel: "Short", maxLabel: "Tall" },
   ],
   "html-to-pdf": [
     { key: "html", type: "textarea", label: "Or paste HTML", default: "", placeholder: "<h1>Local document</h1>" },
-  ],
-  "photo-editor": [
-    { key: "brightness", type: "range", label: "Brightness", default: 100, min: 40, max: 160, step: 1, suffix: "%" },
-    { key: "contrast", type: "range", label: "Contrast", default: 100, min: 40, max: 160, step: 1, suffix: "%" },
-    { key: "saturation", type: "range", label: "Saturation", default: 100, min: 0, max: 200, step: 1, suffix: "%" },
-    { key: "text", type: "text", label: "Optional caption", default: "" },
-  ],
-  "meme-generator": [
-    { key: "topText", type: "text", label: "Top caption", default: "WHEN THE FILE" },
-    { key: "bottomText", type: "text", label: "STAYS ON YOUR DEVICE", default: "STAYS ON YOUR DEVICE" },
   ],
   "convert-from-jpg": [
     { key: "delay", type: "number", label: "GIF frame delay", default: 900, min: 80, max: 5000, step: 20, suffix: "ms" },
@@ -570,23 +549,64 @@ function SettingControl({ setting, value, onChange }) {
     return (
       <label className="setting-field range-field" htmlFor={id}>
         <span><strong>{setting.label}</strong><output>{value}{setting.suffix || ""}</output></span>
+        {setting.hint && <small className="field-description">{setting.hint}</small>}
         <input id={id} type="range" min={setting.min} max={setting.max} step={setting.step || 1} value={value} onChange={(event) => onChange(event.target.value)} />
+        {(setting.minLabel || setting.maxLabel) && <span className="range-scale" aria-hidden="true"><small>{setting.minLabel || setting.min}</small><small>{setting.maxLabel || setting.max}</small></span>}
       </label>
     );
   }
 
   if (setting.type === "select") {
     return (
-      <label className="setting-field" htmlFor={id}>
-        <span><strong>{setting.label}</strong></span>
-        <select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
-          {setting.options.map((option) => <option key={String(option.value)} value={option.value}>{option.label}</option>)}
-        </select>
-      </label>
+      <fieldset className={`visual-choice-setting ${setting.compactChoices ? "compact" : ""} columns-${setting.choiceColumns || 2}`}>
+        <legend>{setting.label}</legend>
+        {setting.hint && <p>{setting.hint}</p>}
+        <div className="visual-choice-grid">
+          {setting.options.map((option) => {
+            const selected = String(option.value) === String(value);
+            return (
+              <button key={String(option.value)} type="button" className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange(option.value)}>
+                <strong>{option.label}</strong>
+                {option.hint && <small>{option.hint}</small>}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
     );
   }
 
-  const inputType = ["number", "password", "color"].includes(setting.type) ? setting.type : "text";
+  if (setting.type === "number") {
+    const numericValue = Number(value);
+    const current = Number.isFinite(numericValue) ? numericValue : Number(setting.default || setting.min || 0);
+    const step = Number(setting.step || 1);
+    const clamp = (next) => Math.min(setting.max ?? Number.POSITIVE_INFINITY, Math.max(setting.min ?? Number.NEGATIVE_INFINITY, next));
+    const changeBy = (direction) => onChange(clamp(current + (step * direction)));
+    return (
+      <div className="setting-field number-setting">
+        <label htmlFor={id}><strong>{setting.label}</strong></label>
+        {setting.hint && <small id={`${id}-description`} className="field-description">{setting.hint}</small>}
+        {setting.presets?.length > 0 && (
+          <div className="number-presets" aria-label={`${setting.label} presets`}>
+            {setting.presets.map((preset) => {
+              const selected = Number(preset.value) === current;
+              return <button key={preset.value} type="button" aria-pressed={selected} className={selected ? "selected" : ""} onClick={() => onChange(preset.value)}><strong>{preset.label}</strong>{preset.value !== Number(preset.label) && <small>{preset.value}{setting.suffix || ""}</small>}</button>;
+            })}
+          </div>
+        )}
+        <div className="number-stepper">
+          <button type="button" onClick={() => changeBy(-1)} disabled={setting.min != null && current <= setting.min} aria-label={`Decrease ${setting.label}`}>−</button>
+          <div className={setting.suffix ? "input-with-suffix" : ""}>
+            <input id={id} type="number" inputMode="numeric" required={setting.required} min={setting.min} max={setting.max} step={step} aria-describedby={setting.hint ? `${id}-description` : undefined} value={value} onChange={(event) => onChange(event.target.value)} />
+            {setting.suffix && <span>{setting.suffix}</span>}
+          </div>
+          <button type="button" onClick={() => changeBy(1)} disabled={setting.max != null && current >= setting.max} aria-label={`Increase ${setting.label}`}>+</button>
+        </div>
+      </div>
+    );
+  }
+
+  const inputType = ["password", "color"].includes(setting.type) ? setting.type : "text";
   const description = [
     setting.hint,
     setting.maxLength ? `Maximum ${Number(setting.maxLength).toLocaleString()} characters.` : "",
@@ -685,6 +705,17 @@ function getExtractPlan(settings, info, limits) {
     let selection = [];
     try { selection = parseSplitPageSelection(settings.pages, info.pageCount); } catch { /* Keep valid over-limit selections visible when possible. */ }
     return { valid: false, selection, outputCount: 0, message: error?.message || "Choose valid pages to extract." };
+  }
+}
+
+function getOrganizePlan(settings, info, limits) {
+  if (info.state === "idle") return { valid: false, order: [], message: "Add one PDF to arrange its pages." };
+  if (info.state === "loading") return { valid: false, order: [], message: "Reading the page count locally…" };
+  if (info.state === "error") return { valid: false, order: [], message: info.message };
+  try {
+    return { valid: true, ...createOrganizePagePlan(settings.order, info.pageCount, limits), message: "" };
+  } catch (error) {
+    return { valid: false, order: [], message: error?.message || "Choose a valid page order." };
   }
 }
 
@@ -917,6 +948,52 @@ function PdfPageThumbnail({ document, pageIndex }) {
       {state === "loading" && <SpinnerGapIcon size={17} className="spin" />}
       {state === "error" && <FilePdfIcon size={20} weight="duotone" />}
     </span>
+  );
+}
+
+function PdfSettingPreview({ tool, settings, info }) {
+  if (info.state === "idle") return null;
+  if (info.state !== "ready") {
+    return <PdfPageSourceStatus info={info} />;
+  }
+
+  const slug = tool.slug;
+  const position = settings.position || "bottom-center";
+  const editPosition = settings.position || "top-left";
+  const rotation = Number(settings.angle || 90);
+  const previewDescription = slug === "rotate-pdf"
+    ? `The first page turns ${rotation === 270 ? "90 degrees counter-clockwise" : `${rotation} degrees clockwise`}.`
+    : slug === "add-pdf-page-numbers"
+      ? `The first page shows ${Number(settings.startAt || 1)} at the ${position.replace("-", " ")}.`
+      : slug === "watermark-pdf"
+        ? `The first page shows the watermark “${String(settings.text || "PRIVATE")}” at ${Number(settings.opacity || 24)} percent opacity.`
+        : slug === "crop-pdf"
+          ? `${Number(settings.margin || 0)} percent is trimmed from every edge.`
+          : slug === "edit-pdf"
+            ? `“${String(settings.text || "Reviewed locally")}” appears at the ${editPosition.replace("-", " ")}.`
+            : slug === "sign-pdf"
+              ? `The typed signature “${String(settings.name || "Signed locally")}” appears near the bottom of the final page.`
+              : "The shaded block shows the redaction area applied to each page.";
+
+  return (
+    <section className="pdf-setting-preview" aria-labelledby={`${slug}-setting-preview-title`}>
+      <div className="pdf-setting-preview-heading">
+        <span><strong id={`${slug}-setting-preview-title`}>First-page preview</strong><small>Representative only · the generated PDF remains available in Preview</small></span>
+        <EyeIcon size={17} aria-hidden="true" />
+      </div>
+      <div className="pdf-setting-preview-stage">
+        <div className={`pdf-setting-preview-page ${slug === "rotate-pdf" ? "rotated" : ""}`} style={slug === "rotate-pdf" ? { "--preview-rotation": `${rotation}deg` } : undefined}>
+          <PdfPageThumbnail document={info.document} pageIndex={0} />
+          {slug === "add-pdf-page-numbers" && <span className={`preview-page-number ${position}`}>{Number(settings.startAt || 1)}</span>}
+          {slug === "watermark-pdf" && <span className="preview-watermark" style={{ opacity: Math.max(0.12, Number(settings.opacity || 24) / 100) }}>{String(settings.text || "PRIVATE")}</span>}
+          {slug === "crop-pdf" && <span className="preview-crop" style={{ inset: `${Math.max(0, Math.min(42, Number(settings.margin || 0)))}%` }} />}
+          {slug === "edit-pdf" && <span className={`preview-edit-text ${editPosition}`} style={{ fontSize: `${Math.max(7, Math.min(16, Number(settings.fontSize || 16) * 0.38))}px` }}>{String(settings.text || "Reviewed locally")}</span>}
+          {slug === "sign-pdf" && <span className="preview-signature">{String(settings.name || "Signed locally")}</span>}
+          {slug === "redact-pdf" && <span className={`preview-redaction ${settings.overlay === "white" ? "white" : ""}`} style={{ left: `${Number(settings.x || 10)}%`, top: `${Number(settings.y || 40)}%`, width: `${Number(settings.width || 80)}%`, height: `${Number(settings.height || 10)}%` }} />}
+        </div>
+      </div>
+      <p>{previewDescription}</p>
+    </section>
   );
 }
 
@@ -1206,6 +1283,134 @@ function ExtractPdfControls({ settings, onChange, info, plan, limits }) {
       <div id="extract-plan-message" className={`split-output-plan ${plan.valid ? "ready" : planIsWarning ? "warning" : "pending"}`} role={planIsWarning ? "alert" : "status"} aria-live="polite">
         {plan.valid ? (separate ? <FileZipIcon size={18} weight="duotone" aria-hidden="true" /> : <FilePdfIcon size={18} weight="duotone" aria-hidden="true" />) : <WarningCircleIcon size={18} weight="fill" aria-hidden="true" />}
         <span><strong>{plan.valid ? separate ? `${plan.outputCount.toLocaleString()} ${plan.outputCount === 1 ? "PDF" : "PDFs"} ready in ZIP` : "One PDF ready" : "Choose pages"}</strong><small>{resultDescription}</small></span>
+      </div>
+    </div>
+  );
+}
+
+function OrganizePdfControls({ settings, onChange, info, plan, limits }) {
+  const pagesPerWindow = 6;
+  const [windowStart, setWindowStart] = useState(0);
+  const railRef = useRef(null);
+  const lastWheelPageTurnRef = useRef(0);
+  const order = plan.order;
+  const visibleOrder = order.slice(windowStart, windowStart + pagesPerWindow);
+  const maxPages = info.pageCount * limits.maxOrganizedPageMultiplier;
+  const missingPages = info.state === "ready"
+    ? Array.from({ length: info.pageCount }, (_, index) => index).filter((pageIndex) => !order.includes(pageIndex))
+    : [];
+  const rangeEnd = Math.min(order.length, windowStart + pagesPerWindow);
+
+  useEffect(() => {
+    const maxStart = Math.max(0, Math.floor((order.length - 1) / pagesPerWindow) * pagesPerWindow);
+    setWindowStart((current) => Math.min(current, maxStart));
+  }, [order.length]);
+
+  const commitOrder = (next) => onChange("order", next.map((pageIndex) => pageIndex + 1).join(","));
+  const move = (outputIndex, direction) => {
+    const target = outputIndex + direction;
+    if (target < 0 || target >= order.length) return;
+    const next = [...order];
+    [next[outputIndex], next[target]] = [next[target], next[outputIndex]];
+    commitOrder(next);
+    if (target < windowStart) setWindowStart(Math.max(0, windowStart - pagesPerWindow));
+    if (target >= windowStart + pagesPerWindow) setWindowStart(windowStart + pagesPerWindow);
+  };
+  const duplicate = (outputIndex) => {
+    if (order.length >= maxPages) return;
+    const next = [...order];
+    next.splice(outputIndex + 1, 0, order[outputIndex]);
+    commitOrder(next);
+  };
+  const remove = (outputIndex) => {
+    if (order.length <= 1) return;
+    commitOrder(order.filter((_, index) => index !== outputIndex));
+  };
+  const appendMissing = () => {
+    if (!missingPages.length) return;
+    commitOrder([...order, ...missingPages].slice(0, maxPages));
+    setWindowStart(Math.floor(order.length / pagesPerWindow) * pagesPerWindow);
+  };
+  const reset = () => {
+    onChange("order", "all");
+    setWindowStart(0);
+  };
+  const showWindow = (next) => setWindowStart(Math.max(0, Math.min(Math.max(0, Math.floor((order.length - 1) / pagesPerWindow) * pagesPerWindow), next)));
+  const scrollRail = (event) => {
+    const rail = event.currentTarget;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (!delta) return;
+    const maxScrollLeft = rail.scrollWidth - rail.clientWidth;
+    const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, rail.scrollLeft + delta));
+    if (nextScrollLeft !== rail.scrollLeft) {
+      event.preventDefault();
+      rail.scrollLeft = nextScrollLeft;
+      return;
+    }
+    const nextWindow = delta > 0 ? windowStart + pagesPerWindow : windowStart - pagesPerWindow;
+    const maxWindow = Math.max(0, Math.floor((order.length - 1) / pagesPerWindow) * pagesPerWindow);
+    if (nextWindow < 0 || nextWindow > maxWindow) return;
+    event.preventDefault();
+    const now = performance.now();
+    if (now - lastWheelPageTurnRef.current < 220) return;
+    lastWheelPageTurnRef.current = now;
+    showWindow(nextWindow);
+  };
+
+  return (
+    <div className="page-tool-controls organize-page-controls">
+      <PdfPageSourceStatus info={info} />
+      {info.state === "ready" && (
+        <section className="organize-page-planner" aria-labelledby="organize-page-title">
+          <div className="page-selection-heading organize-page-heading">
+            <span><strong id="organize-page-title">Arrange the output pages</strong><small>Move, copy, or remove each page. The numbered badges show the new PDF order.</small></span>
+            <b aria-live="polite">{order.length.toLocaleString()} {order.length === 1 ? "page" : "pages"}</b>
+          </div>
+          <div className="page-selection-actions organize-page-actions" aria-label="Page arrangement actions">
+            <button type="button" onClick={reset} disabled={order.length === info.pageCount && order.every((page, index) => page === index)}><ArrowClockwiseIcon size={14} aria-hidden="true" />Reset order</button>
+            <button type="button" onClick={appendMissing} disabled={!missingPages.length}><PlusIcon size={14} aria-hidden="true" />Add {missingPages.length ? `${missingPages.length} missing` : "missing pages"}</button>
+          </div>
+          <div className="page-selection-strip-heading">
+            <small>Use the arrows to reorder. Copy creates another instance of that page.</small>
+            {order.length > pagesPerWindow && (
+              <span className="split-window-controls">
+                <button type="button" onClick={() => showWindow(windowStart - pagesPerWindow)} disabled={windowStart === 0} aria-label="Show previous arranged pages"><ArrowLeftIcon size={14} /></button>
+                <b aria-live="polite">Items {windowStart + 1}–{rangeEnd} of {order.length}</b>
+                <button type="button" onClick={() => showWindow(windowStart + pagesPerWindow)} disabled={rangeEnd >= order.length} aria-label="Show next arranged pages"><ArrowRightIcon size={14} /></button>
+              </span>
+            )}
+          </div>
+          <div className="organize-page-rail" ref={railRef} role="list" aria-label="Arranged PDF pages" onWheel={scrollRail}>
+            {visibleOrder.map((pageIndex, visibleIndex) => {
+              const outputIndex = windowStart + visibleIndex;
+              return (
+                <article className="organize-page-card" role="listitem" key={`${outputIndex}-${pageIndex}`}>
+                  <span className="organize-output-position" aria-label={`Output position ${outputIndex + 1}`}>{outputIndex + 1}</span>
+                  <PdfPageThumbnail document={info.document} pageIndex={pageIndex} />
+                  <span><strong>Page {pageIndex + 1}</strong><small>Source page</small></span>
+                  <div className="organize-card-actions">
+                    <button type="button" onClick={() => move(outputIndex, -1)} disabled={outputIndex === 0} aria-label={`Move source page ${pageIndex + 1} left`}><ArrowLeftIcon size={14} /></button>
+                    <button type="button" onClick={() => duplicate(outputIndex)} disabled={order.length >= maxPages} aria-label={`Copy source page ${pageIndex + 1}`}><FilePlusIcon size={14} /></button>
+                    <button type="button" onClick={() => remove(outputIndex)} disabled={order.length <= 1} aria-label={`Remove source page ${pageIndex + 1} from output`}><TrashIcon size={14} /></button>
+                    <button type="button" onClick={() => move(outputIndex, 1)} disabled={outputIndex === order.length - 1} aria-label={`Move source page ${pageIndex + 1} right`}><ArrowRightIcon size={14} /></button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <details className="page-manual-entry organize-manual-entry">
+            <summary><KeyboardIcon size={15} aria-hidden="true" /><span>Enter an exact page order instead</span><CaretRightIcon size={13} aria-hidden="true" /></summary>
+            <div className="setting-field">
+              <label htmlFor="organize-page-order"><strong>Output page order</strong></label>
+              <small id="organize-page-order-description" className="field-description">Example: 3, 1, 2, 2 copies page 2. Ranges such as 6-4 work too.</small>
+              <input id="organize-page-order" type="text" maxLength={4096} value={settings.order} aria-describedby="organize-page-order-description organize-plan-message" aria-invalid={!plan.valid} onChange={(event) => onChange("order", event.target.value)} />
+            </div>
+          </details>
+        </section>
+      )}
+      <div id="organize-plan-message" className={`split-output-plan ${plan.valid ? "ready" : ["idle", "loading"].includes(info.state) ? "pending" : "warning"}`} role={plan.valid || ["idle", "loading"].includes(info.state) ? "status" : "alert"} aria-live="polite">
+        {plan.valid ? <FilesIcon size={18} weight="duotone" aria-hidden="true" /> : <WarningCircleIcon size={18} weight="fill" aria-hidden="true" />}
+        <span><strong>{plan.valid ? "Output order ready" : "Arrange pages"}</strong><small>{plan.valid ? `${order.length.toLocaleString()} ${order.length === 1 ? "page" : "pages"} will be saved in the order shown above.` : plan.message}</small></span>
       </div>
     </div>
   );
@@ -1861,17 +2066,20 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [progress, setProgress] = useState({ phase: "Ready", progress: 0 });
   const [progressAnnouncement, setProgressAnnouncement] = useState(null);
   const [results, setResults] = useState([]);
+  const [automaticDownloadRequested, setAutomaticDownloadRequested] = useState(false);
   const [previewResult, setPreviewResult] = useState(null);
   const [processError, setProcessError] = useState("");
   const [fileIssue, setFileIssue] = useState(null);
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
-  const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages"].includes(tool.slug);
-  const pageInfo = usePdfPageInfo(files[0], usesPagePicker && passwordGate.ready, limits, tool.name);
+  const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
+  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug);
+  const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
   const extractPlan = useMemo(() => tool.slug === "extract-pdf-pages" ? getExtractPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
+  const organizePlan = useMemo(() => tool.slug === "organize-pdf" ? getOrganizePlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
@@ -1890,6 +2098,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   const clearResults = () => {
     setResults([]);
+    setAutomaticDownloadRequested(false);
     setPreviewResult(null);
   };
 
@@ -2020,8 +2229,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     ? Boolean(splitPlan?.valid)
     : tool.slug === "remove-pdf-pages"
       ? Boolean(removePlan?.valid)
-      : tool.slug === "extract-pdf-pages"
-        ? Boolean(extractPlan?.valid)
+    : tool.slug === "extract-pdf-pages"
+      ? Boolean(extractPlan?.valid)
+      : tool.slug === "organize-pdf"
+        ? Boolean(organizePlan?.valid)
         : true;
   const compressionReady = tool.slug !== "compress-pdf" || !hasRequiredInput || compressionEstimateAllowsProcessing(activeCompressionEstimate);
   const imageEncoderReady = tool.slug !== "convert-image" || (imageEncoderSupport.state === "ready" && imageEncoderSupport.formats[settings.format] === true);
@@ -2041,6 +2252,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? removePlan?.message
     : tool.slug === "extract-pdf-pages" && !extractPlan?.valid
       ? extractPlan?.message
+    : tool.slug === "organize-pdf" && !organizePlan?.valid
+      ? organizePlan?.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -2074,7 +2287,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         }
       });
       if (dismissedRef.current) return;
+      const automaticResult = getAutomaticDownloadResult(response.results, !inlineReaderTools.has(tool.slug));
+      if (automaticResult) downloadResult(automaticResult);
       setResults(response.results);
+      setAutomaticDownloadRequested(Boolean(automaticResult));
       setStatus("complete");
       onComplete({ tool, files: files.length, results: response.results.length, elapsedMs: response.elapsedMs });
     } catch (error) {
@@ -2120,7 +2336,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages"].includes(tool.slug) ? "remove-pages-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -2134,7 +2350,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -2213,7 +2429,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
             {results.length > 0 && !inlineReaderTools.has(tool.slug) && (
               <div className="results-card">
-                <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : "Created locally. Download it before closing this tab."}</p></div></div>
+                <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : automaticDownloadRequested ? "Automatic download requested. Preview it or download it again below." : "Created locally. Download the files before closing this tab."}</p></div></div>
                 {tool.slug === "compress-pdf" && files[0] && results[0] && (
                   <CompressionResultSummary inputSize={files[0].size} result={results[0]} />
                 )}
@@ -2225,7 +2441,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                       {isPdfPreviewResult(result) && (
                         <button onClick={(event) => openResultPreview(result, event.currentTarget)} aria-label={`Preview ${result.name}`}><EyeIcon size={16} aria-hidden="true" />Preview</button>
                       )}
-                      <button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}>Download</button>
+                      <button onClick={() => downloadResult(result)} aria-label={`Download ${result.name}`}>{automaticDownloadRequested ? "Download again" : "Download"}</button>
                     </span>
                   </div>
                 ))}
@@ -2243,13 +2459,18 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <RemovePdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={removePlan} />
             ) : tool.slug === "extract-pdf-pages" ? (
               <ExtractPdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={extractPlan} limits={limits} />
+            ) : tool.slug === "organize-pdf" ? (
+              <OrganizePdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={organizePlan} limits={limits} />
             ) : tool.slug === "compress-pdf" ? (
               <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
             ) : tool.slug === "convert-image" ? (
               <ImageFormatControls settings={settings} onChange={updateSetting} support={imageEncoderSupport} />
-            ) : settingsList.length ? settingsList.map((setting) => (
-              <SettingControl key={setting.key} setting={setting} value={settings[setting.key]} onChange={(value) => updateSetting(setting.key, value)} />
-            )) : <div className="no-settings"><CheckCircleIcon size={20} /><span><strong>Nothing to configure</strong>This tool uses sensible local defaults.</span></div>}
+            ) : settingsList.length ? (
+              <>
+                {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
+                {settingsList.map((setting) => <SettingControl key={setting.key} setting={setting} value={settings[setting.key]} onChange={(value) => updateSetting(setting.key, value)} />)}
+              </>
+            ) : <div className="no-settings"><CheckCircleIcon size={20} /><span><strong>Nothing to configure</strong>This tool uses sensible local defaults.</span></div>}
 
             {tool.maturity === "beta" && (
               <div className="beta-note"><SparkleIcon size={18} /><span><strong>Local beta</strong>Complex layouts, rare formats, and very large files may vary by browser.</span></div>
@@ -2275,6 +2496,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "extract-pdf-pages" && extractPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{settings.combine === false ? `${extractPlan.outputCount.toLocaleString()} ${extractPlan.outputCount === 1 ? "PDF" : "PDFs"} in ZIP` : "1 PDF"} ready</strong>
+              )}
+              {tool.slug === "organize-pdf" && organizePlan?.valid && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{organizePlan.order.length.toLocaleString()} {organizePlan.order.length === 1 ? "page" : "pages"} ready</strong>
               )}
               {!(inlineReaderTools.has(tool.slug) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
