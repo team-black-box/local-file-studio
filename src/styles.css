@@ -4306,8 +4306,56 @@ kbd {
   gap: 12px;
 }
 
-.spreadsheet-pdf-controls .visual-choice-setting {
+.spreadsheet-pdf-controls .visual-choice-setting,
+.html-pdf-controls .visual-choice-setting {
+  width: 100%;
   margin: 0;
+}
+
+.html-pdf-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.html-source-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #cfe2d9;
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--privacy-soft);
+}
+
+.html-source-file > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 72%);
+  color: var(--privacy);
+}
+
+.html-source-file > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.html-source-file strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.html-source-file small {
+  color: var(--muted-strong);
+  font-size: 8px;
+  line-height: 1.4;
 }
 
 .word-preview-empty > span,
@@ -4633,6 +4681,17 @@ kbd {
   color: currentColor;
 }
 
+.html-preview-text {
+  max-height: 176px;
+  border-left: 3px solid var(--privacy);
+}
+
+.html-safety-note {
+  border-color: #cfe2d9;
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+}
+
 .word-pdf-workbench .process-action-stack:empty {
   display: none;
 }
@@ -4641,7 +4700,8 @@ kbd {
 .scan-result-summary,
 .word-result-summary,
 .ppt-result-summary,
-.spreadsheet-result-summary {
+.spreadsheet-result-summary,
+.html-result-summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
@@ -4654,7 +4714,8 @@ kbd {
 .scan-result-summary > span,
 .word-result-summary > span,
 .ppt-result-summary > span,
-.spreadsheet-result-summary > span {
+.spreadsheet-result-summary > span,
+.html-result-summary > span {
   width: 36px;
   height: 36px;
   display: grid;
@@ -4668,7 +4729,8 @@ kbd {
 .scan-result-summary > div,
 .word-result-summary > div,
 .ppt-result-summary > div,
-.spreadsheet-result-summary > div {
+.spreadsheet-result-summary > div,
+.html-result-summary > div {
   min-width: 0;
   display: grid;
   gap: 2px;
@@ -4678,7 +4740,8 @@ kbd {
 .scan-result-summary > div strong,
 .word-result-summary > div strong,
 .ppt-result-summary > div strong,
-.spreadsheet-result-summary > div strong {
+.spreadsheet-result-summary > div strong,
+.html-result-summary > div strong {
   color: var(--ink);
   font-size: 11px;
 }
@@ -4687,7 +4750,8 @@ kbd {
 .scan-result-summary > div small,
 .word-result-summary > div small,
 .ppt-result-summary > div small,
-.spreadsheet-result-summary > div small {
+.spreadsheet-result-summary > div small,
+.html-result-summary > div small {
   color: var(--muted-strong);
   font-size: 9px;
   line-height: 1.4;
@@ -4697,7 +4761,8 @@ kbd {
 .scan-result-summary > p,
 .word-result-summary > p,
 .ppt-result-summary > p,
-.spreadsheet-result-summary > p {
+.spreadsheet-result-summary > p,
+.html-result-summary > p {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;

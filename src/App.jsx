@@ -809,6 +809,109 @@ function useSpreadsheetDocumentPreview(file, enabled, tool, limits, orientation)
   return { ...layout.preview, state: "ready", file, message: "" };
 }
 
+function useHtmlDocumentPreview(file, markup, enabled, tool, limits, pageSize) {
+  const [inspection, setInspection] = useState({ state: "idle", file: null, markup: "", message: "", extraction: null, preview: null });
+  const [layout, setLayout] = useState({ state: "idle", file: null, markup: "", pageSize: "", pageCount: 0, message: "" });
+
+  useEffect(() => {
+    const activeMarkup = file ? "" : String(markup || "");
+    if (!enabled || (!file && !activeMarkup.trim())) {
+      setInspection({ state: "idle", file: null, markup: "", message: "", extraction: null, preview: null });
+      setLayout({ state: "idle", file: null, markup: "", pageSize: "", pageCount: 0, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let timer;
+    setInspection({ state: "loading", file, markup: activeMarkup, message: file ? "Reading the HTML file locally…" : "Checking the pasted HTML locally…", extraction: null, preview: null });
+    setLayout({ state: "idle", file, markup: activeMarkup, pageSize: "", pageCount: 0, message: "" });
+    timer = window.setTimeout(() => {
+      (async () => {
+        const htmlTextPromise = import("./lib/html-text.js");
+        if (file) await preflightToolFiles(tool, [file], {});
+        const source = file ? await file.text() : activeMarkup;
+        const htmlText = await htmlTextPromise;
+        const extraction = htmlText.extractHtmlText(source, limits, file?.name || "Pasted HTML");
+        if (!cancelled) {
+          setInspection({
+            state: "ready",
+            file,
+            markup: activeMarkup,
+            message: "",
+            extraction,
+            preview: htmlText.createHtmlTextPreview(extraction),
+          });
+        }
+      })().catch((error) => {
+        if (cancelled) return;
+        const friendly = toFriendlyResourceError(error, tool.name);
+        setInspection({ state: "error", file, markup: activeMarkup, message: friendly?.message || "The readable HTML text could not be inspected.", extraction: null, preview: null });
+      });
+    }, file ? 0 : 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [enabled, file, limits, markup, tool]);
+
+  useEffect(() => {
+    const activeMarkup = file ? "" : String(markup || "");
+    if (!enabled
+      || inspection.state !== "ready"
+      || inspection.file !== file
+      || inspection.markup !== activeMarkup
+      || !inspection.extraction) return undefined;
+
+    const normalizedPageSize = pageSize === "letter" ? "letter" : "a4";
+    let cancelled = false;
+    setLayout({ state: "loading", file, markup: activeMarkup, pageSize: normalizedPageSize, pageCount: 0, message: "Calculating PDF pages…" });
+    (async () => {
+      const [{ textToPdfDocument }, htmlText] = await Promise.all([
+        import("./lib/pdf-processors.js"),
+        import("./lib/html-text.js"),
+      ]);
+      const pdf = await textToPdfDocument(inspection.extraction.text, file?.name || "local-html", { pageSize: normalizedPageSize }, "html-to-pdf");
+      const pageCount = pdf.getNumberOfPages();
+      if (!cancelled) {
+        setLayout({
+          state: "ready",
+          file,
+          markup: activeMarkup,
+          pageSize: normalizedPageSize,
+          pageCount,
+          message: "",
+          preview: htmlText.createHtmlTextPreview(inspection.extraction, { pageCount, pageSize: normalizedPageSize }),
+        });
+      }
+    })().catch((error) => {
+      if (cancelled) return;
+      const friendly = toFriendlyResourceError(error, tool.name);
+      setLayout({ state: "error", file, markup: activeMarkup, pageSize: normalizedPageSize, pageCount: 0, message: friendly?.message || "The PDF page layout could not be calculated." });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, file, inspection.extraction, inspection.file, inspection.markup, inspection.state, markup, pageSize, tool.name]);
+
+  const activeMarkup = file ? "" : String(markup || "");
+  if (!enabled || (!file && !activeMarkup.trim())) return { state: "idle", file: null, markup: "", message: "" };
+  if (inspection.file !== file || inspection.markup !== activeMarkup) {
+    return { state: "loading", file, markup: activeMarkup, message: file ? "Reading the HTML file locally…" : "Checking the pasted HTML locally…" };
+  }
+  if (inspection.state !== "ready") return inspection;
+  if (layout.state === "error") return { ...inspection.preview, state: "error", file, markup: activeMarkup, message: layout.message };
+  const normalizedPageSize = pageSize === "letter" ? "letter" : "a4";
+  if (layout.state !== "ready"
+    || layout.file !== file
+    || layout.markup !== activeMarkup
+    || layout.pageSize !== normalizedPageSize) {
+    return { ...inspection.preview, state: "layout-loading", file, markup: activeMarkup, message: "Calculating the PDF page count locally…" };
+  }
+  return { ...layout.preview, state: "ready", file, markup: activeMarkup, message: "" };
+}
+
 function usePdfFormInfo(file, enabled, limits) {
   const [info, setInfo] = useState({ state: "idle", fieldCount: 0, fields: [], message: "" });
 
@@ -2706,6 +2809,82 @@ function SpreadsheetPdfResultSummary({ result }) {
   );
 }
 
+function HtmlPdfControls({ file, preview, pageSizeSetting, pageSize, onPageSizeChange, htmlSetting, html, onHtmlChange }) {
+  const normalizedPageSize = pageSize === "letter" ? "letter" : "a4";
+  const pageSizeLabel = normalizedPageSize === "letter" ? "US Letter" : "A4";
+  const previewMatchesInput = preview.file === file && Boolean(file || preview.markup === String(html || ""));
+
+  return (
+    <div className="html-pdf-controls">
+      <SettingControl setting={pageSizeSetting} value={pageSize} onChange={onPageSizeChange} />
+
+      {file ? (
+        <div className="html-source-file" role="status">
+          <span><FileHtmlIcon size={19} weight="duotone" aria-hidden="true" /></span>
+          <div><strong title={file.name}>{file.name}</strong><small>This selected file is the source. Remove it from Files to paste HTML instead.</small></div>
+        </div>
+      ) : (
+        <SettingControl setting={htmlSetting} value={html} onChange={onHtmlChange} />
+      )}
+
+      {!file && !String(html || "").trim() ? (
+        <section className="word-preview-empty html-preview-empty" aria-labelledby="html-preview-title">
+          <span><FileHtmlIcon size={21} weight="duotone" aria-hidden="true" /></span>
+          <div><strong id="html-preview-title">Preview readable content</strong><small>Add an HTML file or paste markup to check its text and PDF page count.</small></div>
+        </section>
+      ) : ["loading", "layout-loading"].includes(preview.state) || !previewMatchesInput ? (
+        <section className="word-preview-loading html-preview-loading" aria-live="polite">
+          <SpinnerGapIcon size={21} className="spin" aria-hidden="true" />
+          <div><strong>{preview.state === "layout-loading" ? "Readable text found" : "Checking HTML locally"}</strong><small>{preview.state === "layout-loading" ? `Calculating the exact ${pageSizeLabel} PDF page count.` : "Ignoring code and remote resources while extracting readable text."}</small></div>
+        </section>
+      ) : preview.state === "error" ? (
+        <section className="word-preview-error html-preview-error" role="alert">
+          <WarningCircleIcon size={21} weight="fill" aria-hidden="true" />
+          <div><strong>Preview unavailable</strong><small>{preview.message}</small></div>
+        </section>
+      ) : (
+        <section className="word-document-preview html-document-preview" aria-labelledby="html-preview-title">
+          <header role="status" aria-live="polite">
+            <span><EyeIcon size={19} weight="duotone" aria-hidden="true" /></span>
+            <div><strong id="html-preview-title">{preview.pageCount.toLocaleString()}-page {pageSizeLabel} PDF</strong><small>{preview.characterCount ? "This readable content will be reconstructed in the PDF." : "No readable body text was found; the PDF will contain a clear notice."}</small></div>
+          </header>
+          <dl className="word-preview-stats html-preview-stats">
+            <div><dt>PDF pages</dt><dd>{preview.pageCount.toLocaleString()}</dd></div>
+            <div><dt>Characters</dt><dd>{preview.characterCount.toLocaleString()}</dd></div>
+            <div><dt>Words</dt><dd>{preview.wordCount.toLocaleString()}</dd></div>
+          </dl>
+          {preview.characterCount > 0 && (
+            <div className="word-preview-text html-preview-text" tabIndex="0" aria-label="Sanitized readable HTML text preview">
+              <pre>{preview.previewText}</pre>
+            </div>
+          )}
+          {preview.characterCount > 0 && (
+            <p className="word-preview-scope">
+              <CheckCircleIcon size={15} weight="fill" aria-hidden="true" />
+              <span>{preview.truncated ? `Showing the first ${preview.previewCharacterCount.toLocaleString()} of ${preview.characterCount.toLocaleString()} characters. All ${preview.paragraphCount.toLocaleString()} readable ${preview.paragraphCount === 1 ? "section" : "sections"} will be used.` : `All ${preview.characterCount.toLocaleString()} readable characters across ${preview.paragraphCount.toLocaleString()} ${preview.paragraphCount === 1 ? "section are" : "sections are"} shown.`}</span>
+            </p>
+          )}
+          <p className="word-layout-note html-safety-note"><ShieldCheckIcon size={15} weight="fill" aria-hidden="true" /><span><strong>Text only—no web page is opened.</strong> Scripts, forms, styles, frames, and remote resources are ignored; no URL is fetched.</span></p>
+          <p className="word-layout-note"><WarningCircleIcon size={15} weight="duotone" aria-hidden="true" /><span><strong>Clean reconstruction, not a browser screenshot.</strong> Original layout, images, colors, fonts, and interactive controls are not preserved.</span></p>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function HtmlPdfResultSummary({ result }) {
+  const outcome = result?.htmlOutcome;
+  if (!outcome) return null;
+  const pageSizeLabel = outcome.pageSize === "letter" ? "US Letter" : "A4";
+  return (
+    <div className="html-result-summary" role="status">
+      <span><FileHtmlIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>Readable HTML rebuilt across {outcome.pageCount.toLocaleString()} {pageSizeLabel} {outcome.pageCount === 1 ? "page" : "pages"}</strong><small>{outcome.characterCount.toLocaleString()} readable characters from {outcome.paragraphCount.toLocaleString()} {outcome.paragraphCount === 1 ? "section" : "sections"} were placed into a clean PDF.</small></div>
+      <p><EyeIcon size={16} aria-hidden="true" />Preview the PDF to review text, line wrapping, and page breaks before sharing it.</p>
+    </div>
+  );
+}
+
 function RepairPdfControls() {
   return (
     <section className="repair-explainer" aria-labelledby="repair-explainer-title">
@@ -3445,13 +3624,14 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
   const wordPreview = useWordDocumentPreview(files[0], tool.slug === "word-to-pdf", tool, limits);
   const powerpointPreview = usePowerPointDocumentPreview(files[0], tool.slug === "powerpoint-to-pdf", tool, limits);
   const spreadsheetPreview = useSpreadsheetDocumentPreview(files[0], tool.slug === "excel-to-pdf", tool, limits, settings.orientation);
+  const htmlPreview = useHtmlDocumentPreview(files[0], files[0] ? "" : settings.html, tool.slug === "html-to-pdf", tool, limits, settings.pageSize);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
@@ -3630,7 +3810,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && status !== "processing";
+  const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -3664,6 +3845,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? spreadsheetPreview.state === "loading" ? "Reading and checking the workbook locally before export." : "Calculating the PDF page count for this orientation."
     : tool.slug === "excel-to-pdf" && spreadsheetPreview.file === files[0] && spreadsheetPreview.state === "error"
       ? spreadsheetPreview.message
+    : tool.slug === "html-to-pdf" && ["loading", "layout-loading"].includes(htmlPreview.state)
+      ? htmlPreview.state === "loading" ? "Checking the readable HTML content locally before export." : "Calculating the PDF page count for this page size."
+    : tool.slug === "html-to-pdf" && htmlPreview.state === "error"
+      ? htmlPreview.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3723,6 +3908,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Rebuild PDF"
     : tool.slug === "excel-to-pdf" && spreadsheetPreview.state === "ready"
       ? `Create ${spreadsheetPreview.pageCount.toLocaleString()}-page PDF`
+    : tool.slug === "html-to-pdf" && htmlPreview.state === "ready" && Number.isInteger(htmlPreview.pageCount)
+      ? `Create ${htmlPreview.pageCount.toLocaleString()}-page PDF`
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3776,7 +3963,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : ["word-to-pdf", "powerpoint-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -3893,6 +4080,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "word-to-pdf" && <WordPdfResultSummary result={results[0]} />}
                 {tool.slug === "powerpoint-to-pdf" && <PowerPointPdfResultSummary result={results[0]} />}
                 {tool.slug === "excel-to-pdf" && <SpreadsheetPdfResultSummary result={results[0]} />}
+                {tool.slug === "html-to-pdf" && <HtmlPdfResultSummary result={results[0]} />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -3912,7 +4100,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : "Settings"}</h3><p>{tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -3957,6 +4145,17 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 orientation={settings.orientation}
                 onOrientationChange={(value) => updateSetting("orientation", value)}
               />
+            ) : tool.slug === "html-to-pdf" ? (
+              <HtmlPdfControls
+                file={files[0]}
+                preview={htmlPreview}
+                pageSizeSetting={settingsList.find((setting) => setting.key === "pageSize")}
+                pageSize={settings.pageSize}
+                onPageSizeChange={(value) => updateSetting("pageSize", value)}
+                htmlSetting={settingsList.find((setting) => setting.key === "html")}
+                html={settings.html}
+                onHtmlChange={(value) => updateSetting("html", value)}
+              />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
@@ -3996,7 +4195,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {tool.slug === "redact-pdf" && redactionPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{redactionPlan.regionCount.toLocaleString()} {redactionPlan.regionCount === 1 ? "area" : "areas"} on {redactionPlan.affectedPageCount.toLocaleString()} {redactionPlan.affectedPageCount === 1 ? "page" : "pages"}</strong>
               )}
-              {!((inlineReaderTools.has(tool.slug) || ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf"].includes(tool.slug)) && results.length) && (
+              {!((inlineReaderTools.has(tool.slug) || ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
                   {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
                 </button>

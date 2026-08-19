@@ -38,6 +38,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/docx-text.js`: bounded, local DOCX text extraction for Word-to-PDF.
 - `src/lib/pptx-text.js`: bounded, ordered local PPTX slide-text extraction and preview.
 - `src/lib/spreadsheet-text.js`: bounded XLS/XLSX value extraction, used-range inspection, and preview data.
+- `src/lib/html-text.js`: bounded parser-free HTML text extraction and sanitized preview data without loading remote resources.
 - `src/lib/pptx-writer.js`: dependency-light text reconstruction for PDF-to-PPTX output.
 - `src/lib/pdfjs-utils.js`: version-compatible PDF.js document cleanup.
 - `src/lib/pdf-passwords.js`: protected-PDF access modes, permission checks, and in-memory unlock adapter.
@@ -137,6 +138,7 @@ bun run verify:third-party
 bun run test:docx
 bun run test:pptx
 bun run test:spreadsheet
+bun run test:html
 bun run build
 bun run test:seo
 bun run test:offline
