@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  PDF_TO_JPG_RENDER_SCALE,
   baseName,
   createSplitPdfGroups,
   createResultBudget,
@@ -606,7 +607,7 @@ async function pdfToImages(file, options, report) {
   try {
     for (let index = 0; index < rendered.numPages; index += 1) {
       report?.({ phase: `Rendering page ${index + 1} of ${rendered.numPages}`, progress: index / rendered.numPages });
-      const page = await renderPdfPage(rendered, index, { scale: Number(options.scale || 1.7), ...format, limits, label: `${file.name}, page ${index + 1}` });
+      const page = await renderPdfPage(rendered, index, { scale: Number(options.scale || PDF_TO_JPG_RENDER_SCALE), ...format, limits, label: `${file.name}, page ${index + 1}` });
       try {
         results.push(retainResult(
           resultBudget,

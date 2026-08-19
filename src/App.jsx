@@ -78,7 +78,7 @@ import {
 import { categories, categoryById, rankToolSearchResults, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
+import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createPdfJpgOutputPlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
@@ -1237,6 +1237,197 @@ function PdfPageThumbnail({ document, pageIndex }) {
       {state === "loading" && <SpinnerGapIcon size={17} className="spin" />}
       {state === "error" && <FilePdfIcon size={20} weight="duotone" />}
     </span>
+  );
+}
+
+const PDF_JPG_PAGE_WINDOW = 6;
+
+function usePdfJpgPageSample(pdfDocument, pageIndex, quality, enabled, limits) {
+  const [sample, setSample] = useState({ state: "idle", url: "", pageIndex: 0, quality: 0, size: 0, width: 0, height: 0, message: "" });
+
+  useEffect(() => {
+    if (!enabled || !pdfDocument || !Number.isInteger(pageIndex) || pageIndex < 0) {
+      setSample({ state: "idle", url: "", pageIndex: 0, quality: 0, size: 0, width: 0, height: 0, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let page;
+    let renderTask;
+    let canvas;
+    let sampleUrl = "";
+    const normalizedQuality = Math.max(40, Math.min(100, Number(quality || 88)));
+    setSample({ state: "loading", url: "", pageIndex, quality: normalizedQuality, size: 0, width: 0, height: 0, message: "Encoding this page as a JPG locally…" });
+
+    const timer = window.setTimeout(() => {
+      (async () => {
+        page = await pdfDocument.getPage(pageIndex + 1);
+        const viewport = page.getViewport({ scale: PDF_TO_JPG_RENDER_SCALE });
+        assertRasterDimensions(viewport.width, viewport.height, limits, `PDF page ${pageIndex + 1} preview`);
+        canvas = window.document.createElement("canvas");
+        canvas.width = Math.max(1, Math.ceil(viewport.width));
+        canvas.height = Math.max(1, Math.ceil(viewport.height));
+        const context = canvas.getContext("2d", { alpha: false });
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        renderTask = page.render({ canvasContext: context, viewport });
+        await renderTask.promise;
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob((value) => value ? resolve(value) : reject(new Error("This page could not be encoded as a JPG preview.")), "image/jpeg", normalizedQuality / 100);
+        });
+        if (cancelled) return;
+        sampleUrl = URL.createObjectURL(blob);
+        setSample({
+          state: "ready",
+          url: sampleUrl,
+          pageIndex,
+          quality: normalizedQuality,
+          size: blob.size,
+          width: canvas.width,
+          height: canvas.height,
+          message: "",
+        });
+      })().catch((error) => {
+        if (cancelled || error?.name === "RenderingCancelledException") return;
+        setSample({ state: "error", url: "", pageIndex, quality: normalizedQuality, size: 0, width: 0, height: 0, message: error?.message || "This page preview could not be rendered." });
+      }).finally(() => {
+        const finishedCanvas = canvas;
+        canvas = undefined;
+        if (finishedCanvas) {
+          finishedCanvas.width = 1;
+          finishedCanvas.height = 1;
+        }
+        const finishedPage = page;
+        page = undefined;
+        finishedPage?.cleanup();
+      });
+    }, 140);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      try { renderTask?.cancel(); } catch { /* Rendering already completed. */ }
+      const activePage = page;
+      page = undefined;
+      activePage?.cleanup();
+      const activeCanvas = canvas;
+      canvas = undefined;
+      if (activeCanvas) {
+        activeCanvas.width = 1;
+        activeCanvas.height = 1;
+      }
+      if (sampleUrl) URL.revokeObjectURL(sampleUrl);
+    };
+  }, [enabled, limits, pageIndex, pdfDocument, quality]);
+
+  return sample;
+}
+
+function PdfJpgControls({ setting, value, onChange, info, limits }) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageWindowStart, setPageWindowStart] = useState(0);
+  const ready = info.state === "ready" && info.document && info.pageCount > 0;
+  const plan = useMemo(() => {
+    if (!ready) return null;
+    try {
+      return createPdfJpgOutputPlan(info.pageCount, limits.maxGeneratedItems);
+    } catch {
+      return null;
+    }
+  }, [info.pageCount, limits.maxGeneratedItems, ready]);
+  const sample = usePdfJpgPageSample(info.document, pageIndex, value, ready, limits);
+
+  useEffect(() => {
+    setPageIndex(0);
+    setPageWindowStart(0);
+  }, [info.document]);
+
+  useEffect(() => {
+    if (!ready || pageIndex < info.pageCount) return;
+    setPageIndex(Math.max(0, info.pageCount - 1));
+  }, [info.pageCount, pageIndex, ready]);
+
+  const maxWindowStart = ready ? Math.max(0, info.pageCount - PDF_JPG_PAGE_WINDOW) : 0;
+  const visiblePages = ready
+    ? Array.from({ length: Math.min(PDF_JPG_PAGE_WINDOW, info.pageCount - pageWindowStart) }, (_, offset) => pageWindowStart + offset)
+    : [];
+  const windowLabel = ready
+    ? `${pageWindowStart + 1}–${Math.min(pageWindowStart + PDF_JPG_PAGE_WINDOW, info.pageCount)} of ${info.pageCount}`
+    : "";
+
+  const showWindow = (requestedStart) => {
+    const nextStart = Math.max(0, Math.min(maxWindowStart, requestedStart));
+    setPageWindowStart(nextStart);
+    if (pageIndex < nextStart || pageIndex >= nextStart + PDF_JPG_PAGE_WINDOW) setPageIndex(nextStart);
+  };
+
+  const movePageRail = (event) => {
+    if (!ready) return;
+    const distance = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (Math.abs(distance) < 8) return;
+    const direction = distance > 0 ? 1 : -1;
+    const nextStart = pageWindowStart + direction;
+    if (nextStart < 0 || nextStart > maxWindowStart) return;
+    event.preventDefault();
+    showWindow(nextStart);
+  };
+
+  return (
+    <section className="pdf-jpg-controls" aria-labelledby="pdf-jpg-preview-title">
+      <SettingControl setting={setting} value={value} onChange={onChange} />
+
+      {!ready ? <PdfPageSourceStatus info={info} /> : (
+        <>
+          <div className="pdf-jpg-output-plan" role="status" aria-live="polite">
+            <span><ImagesIcon size={19} weight="duotone" aria-hidden="true" /></span>
+            <span><strong>{plan?.outputLabel}</strong><small>One export-size JPG for every PDF page.</small></span>
+            <b>{plan?.archive ? "ZIP" : "JPG"}</b>
+          </div>
+
+          <div className="pdf-jpg-sample">
+            <div className="pdf-jpg-sample-heading">
+              <span><strong id="pdf-jpg-preview-title">Page {pageIndex + 1} quality preview</strong><small>Actual local JPG encoding at {Number(value).toLocaleString()}% quality</small></span>
+              <EyeIcon size={17} aria-hidden="true" />
+            </div>
+            <div className={`pdf-jpg-sample-stage ${sample.state}`} aria-live="polite">
+              {sample.state === "ready" && <img src={sample.url} alt={`JPG preview of PDF page ${pageIndex + 1} at ${Number(value).toLocaleString()} percent quality`} />}
+              {sample.state === "loading" && <span><SpinnerGapIcon size={22} className="spin" aria-hidden="true" />Encoding page {pageIndex + 1}…</span>}
+              {sample.state === "error" && <span><WarningCircleIcon size={22} aria-hidden="true" />{sample.message}</span>}
+            </div>
+            {sample.state === "ready" && (
+              <p><strong>{sample.width.toLocaleString()} × {sample.height.toLocaleString()} px</strong><span>{formatBytes(sample.size)} for this page</span></p>
+            )}
+          </div>
+
+          {info.pageCount > 1 && (
+            <>
+              <div className="pdf-jpg-page-heading">
+                <span><strong>Choose a sample page</strong><small>Scroll sideways with a trackpad or use the arrows.</small></span>
+                {info.pageCount > PDF_JPG_PAGE_WINDOW && (
+                  <span>
+                    <button type="button" onClick={() => showWindow(pageWindowStart - PDF_JPG_PAGE_WINDOW)} disabled={pageWindowStart === 0} aria-label="Show previous PDF pages"><ArrowLeftIcon size={14} /></button>
+                    <b aria-live="polite">{windowLabel}</b>
+                    <button type="button" onClick={() => showWindow(pageWindowStart + PDF_JPG_PAGE_WINDOW)} disabled={pageWindowStart >= maxWindowStart} aria-label="Show next PDF pages"><ArrowRightIcon size={14} /></button>
+                  </span>
+                )}
+              </div>
+              <div className="pdf-jpg-page-strip" role="group" aria-label={`Choose one of ${info.pageCount.toLocaleString()} PDF pages for the JPG quality preview`} onWheel={movePageRail}>
+                {visiblePages.map((index) => (
+                  <button type="button" key={index} className={index === pageIndex ? "selected" : ""} aria-pressed={index === pageIndex} onClick={() => setPageIndex(index)} aria-label={`Preview page ${index + 1} as a JPG`}>
+                    <PdfPageThumbnail document={info.document} pageIndex={index} />
+                    <small>Page {index + 1}</small>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          <p className="pdf-jpg-estimate-note"><GaugeIcon size={15} aria-hidden="true" /><span>{plan?.archive
+            ? "The sample size is exact for this page. Total ZIP size depends on every page, so it is calculated only after conversion."
+            : "This sample size is the exact JPG output size at the selected quality."
+          }</span></p>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -3624,9 +3815,17 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
-  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
+  const pdfJpgPlan = useMemo(() => {
+    if (tool.slug !== "pdf-to-jpg" || pageInfo.state !== "ready") return null;
+    try {
+      return createPdfJpgOutputPlan(pageInfo.pageCount, limits.maxGeneratedItems);
+    } catch {
+      return null;
+    }
+  }, [limits.maxGeneratedItems, pageInfo.pageCount, pageInfo.state, tool.slug]);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
   const wordPreview = useWordDocumentPreview(files[0], tool.slug === "word-to-pdf", tool, limits);
   const powerpointPreview = usePowerPointDocumentPreview(files[0], tool.slug === "powerpoint-to-pdf", tool, limits);
@@ -3807,11 +4006,12 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageEncoderReady = tool.slug !== "convert-image" || (imageEncoderSupport.state === "ready" && imageEncoderSupport.formats[settings.format] === true);
   const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
+  const pdfJpgReady = tool.slug !== "pdf-to-jpg" || !hasRequiredInput || Boolean(pdfJpgPlan);
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -3833,6 +4033,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? pdfFormPlan?.message
     : tool.slug === "redact-pdf" && !redactionPlan?.valid
       ? redactionPlan?.message
+    : tool.slug === "pdf-to-jpg" && pageInfo.state === "loading"
+      ? "Reading the PDF page count before JPG conversion."
+    : tool.slug === "pdf-to-jpg" && pageInfo.state === "error"
+      ? pageInfo.message
     : tool.slug === "word-to-pdf" && wordPreview.file === files[0] && wordPreview.state === "loading"
       ? "Reading and checking the DOCX locally before export."
     : tool.slug === "word-to-pdf" && wordPreview.file === files[0] && wordPreview.state === "error"
@@ -3910,6 +4114,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? `Create ${spreadsheetPreview.pageCount.toLocaleString()}-page PDF`
     : tool.slug === "html-to-pdf" && htmlPreview.state === "ready" && Number.isInteger(htmlPreview.pageCount)
       ? `Create ${htmlPreview.pageCount.toLocaleString()}-page PDF`
+    : tool.slug === "pdf-to-jpg" && pdfJpgPlan
+      ? pdfJpgPlan.actionLabel
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3963,7 +4169,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -3977,7 +4183,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -4100,7 +4306,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -4123,6 +4329,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               />
             ) : tool.slug === "compress-pdf" ? (
               <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
+            ) : tool.slug === "pdf-to-jpg" ? (
+              <PdfJpgControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} info={pageInfo} limits={limits} />
             ) : tool.slug === "convert-image" ? (
               <ImageFormatControls settings={settings} onChange={updateSetting} support={imageEncoderSupport} />
             ) : tool.slug === "pdf-forms" ? (
@@ -4194,6 +4402,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "redact-pdf" && redactionPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{redactionPlan.regionCount.toLocaleString()} {redactionPlan.regionCount === 1 ? "area" : "areas"} on {redactionPlan.affectedPageCount.toLocaleString()} {redactionPlan.affectedPageCount === 1 ? "page" : "pages"}</strong>
+              )}
+              {tool.slug === "pdf-to-jpg" && pdfJpgPlan && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{pdfJpgPlan.readyLabel}</strong>
               )}
               {!((inlineReaderTools.has(tool.slug) || ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>

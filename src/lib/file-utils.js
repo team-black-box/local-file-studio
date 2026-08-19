@@ -14,6 +14,8 @@ import {
   FileLimitError,
 } from "./file-limits.js";
 
+export const PDF_TO_JPG_RENDER_SCALE = 1.7;
+
 export function formatBytes(bytes = 0) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
@@ -71,6 +73,29 @@ export function projectPdfCompressionSize(inputBytes, pageCount, sampleSizes) {
 export function compressionEstimateAllowsProcessing(estimate) {
   if (estimate?.state === "error") return true;
   return estimate?.state === "ready" && estimate.status === "reduced";
+}
+
+export function createPdfJpgOutputPlan(pageCount, maxGeneratedItems = MAX_GENERATED_RESULTS) {
+  const count = Number(pageCount);
+  const maxItems = Number(maxGeneratedItems);
+  if (!Number.isInteger(count) || count < 1 || !Number.isInteger(maxItems) || maxItems < 1) {
+    throw new FileLimitError("invalid-pdf-page-count", "The PDF page count could not be used to plan JPG output. Choose the PDF again.");
+  }
+  if (count > maxItems) {
+    throw new FileLimitError(
+      "result-count-limit",
+      `This PDF would create ${count.toLocaleString()} JPG files; the safe local limit is ${maxItems.toLocaleString()}. Split it first.`,
+    );
+  }
+  const archive = count > 1;
+  return {
+    pageCount: count,
+    outputCount: count,
+    archive,
+    outputLabel: archive ? `${count.toLocaleString()} JPGs in one ZIP` : "1 JPG file",
+    actionLabel: archive ? `Create ZIP · ${count.toLocaleString()} JPGs` : "Create 1 JPG",
+    readyLabel: archive ? `${count.toLocaleString()} JPGs in one ZIP ready` : "1 JPG ready",
+  };
 }
 
 export function buildOcrCopyText(pages) {

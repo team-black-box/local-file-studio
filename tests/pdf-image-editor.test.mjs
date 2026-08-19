@@ -18,7 +18,7 @@ import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
 import { createOcrReaderResult, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
-import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
+import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
 
@@ -67,6 +67,28 @@ test("compression size summaries report reductions without hiding larger outputs
   assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "unchanged" }), false);
   assert.equal(compressionEstimateAllowsProcessing({ state: "loading" }), false);
   assert.equal(compressionEstimateAllowsProcessing({ state: "error" }), true);
+});
+
+test("PDF to JPG plans one direct image or an exact multi-page ZIP", () => {
+  assert.equal(PDF_TO_JPG_RENDER_SCALE, 1.7);
+  assert.deepEqual(createPdfJpgOutputPlan(1, 100), {
+    pageCount: 1,
+    outputCount: 1,
+    archive: false,
+    outputLabel: "1 JPG file",
+    actionLabel: "Create 1 JPG",
+    readyLabel: "1 JPG ready",
+  });
+  assert.deepEqual(createPdfJpgOutputPlan(8, 100), {
+    pageCount: 8,
+    outputCount: 8,
+    archive: true,
+    outputLabel: "8 JPGs in one ZIP",
+    actionLabel: "Create ZIP · 8 JPGs",
+    readyLabel: "8 JPGs in one ZIP ready",
+  });
+  assert.throws(() => createPdfJpgOutputPlan(0, 100), (error) => error instanceof FileLimitError && error.code === "invalid-pdf-page-count");
+  assert.throws(() => createPdfJpgOutputPlan(101, 100), (error) => error instanceof FileLimitError && error.code === "result-count-limit" && /101 JPG files/.test(error.message));
 });
 
 test("OCR reader results keep bounded page text in memory without a download blob", () => {
