@@ -763,7 +763,7 @@ export const tools = withPhosphorExports([
   {
     slug: "redact-pdf",
     name: "Redact PDF",
-    description: "Permanently flatten a rectangular privacy region on every PDF page.",
+    description: "Draw permanent redaction areas on the exact PDF pages that need them.",
     kind: "pdf",
     category: "security",
     accepts: [".pdf"],
@@ -783,6 +783,12 @@ export const tools = withPhosphorExports([
           { value: "black", label: "Black box", hint: "Clear, conventional redaction." },
           { value: "white", label: "White space", hint: "Blend the removed area into the page." },
         ],
+      },
+      {
+        key: "regions",
+        type: "hidden",
+        label: "Redaction areas",
+        default: "[]",
       },
     ],
   },
