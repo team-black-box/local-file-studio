@@ -690,41 +690,40 @@ export function createOcrReaderResult(fileName, pages) {
   };
 }
 
-export function textToPdfDocument(text, title = "Local document", options = {}, toolSlug = "html-to-pdf") {
+export async function textToPdfDocument(text, title = "Local document", options = {}, toolSlug = "html-to-pdf") {
   const limits = getToolLimits(toolSlug);
   const conversionLabel = `${title || "This document"} conversion`;
   const pageSize = options.pageSize === "letter" ? "letter" : "a4";
   const orientation = options.orientation === "landscape" ? "landscape" : "portrait";
   const sourceText = String(text || "No readable text was found.");
   assertPdfTextFontCompatibility(sourceText, conversionLabel);
-  return import("jspdf").then(({ jsPDF }) => {
-    const document = new jsPDF({ unit: "pt", format: pageSize, orientation });
-    document.setProperties({ title: standardPdfMetadataText(title, "Local document"), creator: "Local File Studio" });
-    document.setFont("helvetica", "normal");
-    document.setFontSize(11);
-    const margin = 48;
-    const maxWidth = document.internal.pageSize.getWidth() - margin * 2;
-    const pageHeight = document.internal.pageSize.getHeight();
-    const linesPerPage = Math.floor((pageHeight - 52 - 58) / 16) + 1;
-    const explicitLinePages = Math.max(1, Math.ceil(countLogicalLines(sourceText) / linesPerPage));
-    assertGeneratedPdfPageCount(explicitLinePages, limits, conversionLabel);
-    const lines = document.splitTextToSize(sourceText, maxWidth);
-    const requiredPages = Math.max(1, Math.ceil(lines.length / linesPerPage));
-    assertGeneratedPdfPageCount(requiredPages, limits, conversionLabel);
-    let y = 58;
-    let pageCount = 1;
-    for (const line of lines) {
-      if (y > pageHeight - 52) {
-        pageCount += 1;
-        assertGeneratedPdfPageCount(pageCount, limits, conversionLabel);
-        document.addPage();
-        y = 58;
-      }
-      document.text(line, margin, y);
-      y += 16;
+  const { jsPDF } = await import("jspdf");
+  const document = new jsPDF({ unit: "pt", format: pageSize, orientation });
+  document.setProperties({ title: standardPdfMetadataText(title, "Local document"), creator: "Local File Studio" });
+  document.setFont("helvetica", "normal");
+  document.setFontSize(11);
+  const margin = 48;
+  const maxWidth = document.internal.pageSize.getWidth() - margin * 2;
+  const pageHeight = document.internal.pageSize.getHeight();
+  const linesPerPage = Math.floor((pageHeight - 52 - 58) / 16) + 1;
+  const explicitLinePages = Math.max(1, Math.ceil(countLogicalLines(sourceText) / linesPerPage));
+  assertGeneratedPdfPageCount(explicitLinePages, limits, conversionLabel);
+  const lines = document.splitTextToSize(sourceText, maxWidth);
+  const requiredPages = Math.max(1, Math.ceil(lines.length / linesPerPage));
+  assertGeneratedPdfPageCount(requiredPages, limits, conversionLabel);
+  let y = 58;
+  let pageCount = 1;
+  for (const line of lines) {
+    if (y > pageHeight - 52) {
+      pageCount += 1;
+      assertGeneratedPdfPageCount(pageCount, limits, conversionLabel);
+      document.addPage();
+      y = 58;
     }
-    return document;
-  });
+    document.text(line, margin, y);
+    y += 16;
+  }
+  return document;
 }
 
 async function officeToPdf(slug, file, options, report) {
