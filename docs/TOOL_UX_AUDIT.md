@@ -38,7 +38,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | PowerPoint to PDF | Bounded pre-export slide count and first-slide text preview with honest ordered text reconstruction | Keep; continue real-deck, malformed-archive, and mobile QA |
 | Excel to PDF | Visual orientation cards, bounded first-sheet value preview, and exact sheet/used-cell/PDF-page feedback | Keep; continue real-workbook, malformed-file, formula-cache, and mobile QA |
 | HTML to PDF | Visual A4/US Letter choices, bounded sanitized text preview, exact readable-text/page feedback, and explicit no-fetch reconstruction scope | Keep; continue malformed-markup, remote-reference, mobile, and offline QA |
-| PDF to JPG | Quality slider only | Add page thumbnails, output count, and a representative quality preview |
+| PDF to JPG | Bounded page-thumbnail rail, exact JPG/ZIP output plan, and an actual encoded sample-page quality preview with per-page dimensions and size | Keep; continue protected-input, long-document, mobile, and boundary QA |
 | PDF to Word | One-action conversion | Show extracted page/text count before export |
 | PDF to PowerPoint | One-action conversion | Show slide count before export |
 | PDF to Excel | One-action conversion | Show sheet count before export |
