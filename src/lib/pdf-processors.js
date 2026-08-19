@@ -907,7 +907,20 @@ async function pdfToOffice(slug, file, options, report) {
   if (slug === "pdf-to-powerpoint") {
     const { createTextPresentation } = await import("./pptx-writer.js");
     const blob = await createTextPresentation(pages);
-    return [resultFromBlob(`${cleanName}.pptx`, blob, "One reconstructed slide per PDF page")];
+    const result = resultFromBlob(
+      `${cleanName}.pptx`,
+      blob,
+      `${textPreview.pageCount.toLocaleString()} editable ${textPreview.pageCount === 1 ? "slide" : "slides"} · ${textPreview.characterCount.toLocaleString()} characters`,
+    );
+    result.pdfOfficeTextOutcome = {
+      pageCount: textPreview.pageCount,
+      pagesWithText: textPreview.pagesWithText,
+      emptyPageCount: textPreview.emptyPageCount,
+      characterCount: textPreview.characterCount,
+      wordCount: textPreview.wordCount,
+      format: "pptx",
+    };
+    return [result];
   }
 
   const XLSX = await import("xlsx");

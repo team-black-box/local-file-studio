@@ -134,6 +134,34 @@ test("PDF to Word previews exact page text and reuses the checked extraction", a
   );
 });
 
+test("PDF to PowerPoint previews exact slide text and reuses the checked extraction", async () => {
+  const source = await PDFDocument.create();
+  source.addPage([300, 400]);
+  source.addPage([300, 400]);
+  const file = namedBlob(await source.save(), "checked-slides.pdf", "application/pdf");
+  const [result] = await processPdfTool("pdf-to-powerpoint", [file], { pdfOfficeTextPages: ["Alpha beta", ""] });
+
+  assert.equal(result.name, "checked-slides.pptx");
+  assert.equal(result.details, "2 editable slides · 10 characters");
+  assert.deepEqual(result.pdfOfficeTextOutcome, {
+    pageCount: 2,
+    pagesWithText: 1,
+    emptyPageCount: 1,
+    characterCount: 10,
+    wordCount: 2,
+    format: "pptx",
+  });
+
+  const archive = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  assert.match(await archive.file("ppt/slides/slide1.xml").async("string"), /Alpha beta/);
+  assert.match(await archive.file("ppt/slides/slide2.xml").async("string"), /No selectable text found on this page\./);
+
+  await assert.rejects(
+    () => processPdfTool("pdf-to-powerpoint", [file], { pdfOfficeTextPages: ["x".repeat(1_000_001)] }),
+    (error) => error instanceof FileLimitError && error.code === "extracted-text-limit",
+  );
+});
+
 test("OCR reader results keep bounded page text in memory without a download blob", () => {
   const result = createOcrReaderResult("scan.pdf", [
     { pageNumber: 1, text: "First page", confidence: 97.6 },
