@@ -29,7 +29,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Remove Pages | Strong visual page selection | Keep; continue boundary/mobile QA |
 | Extract Pages | Strong visual page selection and output choice | Keep; continue boundary/mobile QA |
 | Organize PDF | Visual page rail with reorder, copy, remove, restore, reset, and exact-entry fallback | Keep; add direct drag-and-drop only if testing shows the buttons are slower |
-| Scan to PDF | Ordered files; page size was a dropdown | Use visual page-size cards and show a page-frame preview |
+| Scan to PDF | Numbered thumbnail order strip, accessible earlier/later controls, visual page-shape cards, real first-page fit preview, exact page-count action, and post-run review summary | Keep; validate longer mobile camera batches and mixed portrait/landscape scans |
 | Compress PDF | Strong visual modes, local estimate, and actual result delta | Keep; improve scan/image-heavy explanation only if testing finds confusion |
 | Repair PDF | One clear rebuild action with honest recovery limits, original-file reassurance, and a review-before-replace result summary | Keep; continue malformed, protected, browser, and boundary QA |
 | OCR Reader | Strong page-by-page copyable reader | Keep; add page navigation/search only after core QA |

@@ -479,7 +479,16 @@ async function imageFilesToPdf(slug, files, options, report) {
     const drawHeight = image.height * scale;
     page.drawImage(image, { x: (pageWidth - drawWidth) / 2, y: (pageHeight - drawHeight) / 2, width: drawWidth, height: drawHeight });
   }
-  return [pdfResult(options.outputName ? `${safeFileName(options.outputName)}.pdf` : "images-local.pdf", await output.save(), `${files.length} images converted`)];
+  const bytes = await output.save();
+  if (slug === "scan-to-pdf") {
+    const pageSize = options.pageSize === "a4" ? "a4" : options.pageSize === "letter" ? "letter" : "auto";
+    const pageSizeLabel = pageSize === "a4" ? "A4 pages" : pageSize === "letter" ? "US Letter pages" : "Matched image shapes";
+    return [{
+      ...pdfResult(options.outputName ? `${safeFileName(options.outputName)}.pdf` : "scans-local.pdf", bytes, `${files.length} ${files.length === 1 ? "page" : "pages"} · ${pageSizeLabel}`),
+      scanOutcome: { pageCount: files.length, pageSize },
+    }];
+  }
+  return [pdfResult(options.outputName ? `${safeFileName(options.outputName)}.pdf` : "images-local.pdf", bytes, `${files.length} images converted`)];
 }
 
 async function rasterizePdf(file, options, report, mode = "compress") {

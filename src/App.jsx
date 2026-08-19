@@ -1405,6 +1405,126 @@ function PdfSettingPreview({ tool, settings, info }) {
   );
 }
 
+function useLocalImageUrl(file) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    if (!file) {
+      setUrl("");
+      return undefined;
+    }
+    const nextUrl = URL.createObjectURL(file);
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file]);
+
+  return url;
+}
+
+function ScanFileQueue({ files, getFileId, moveFile, removeFile, reorderButtonsRef, removeButtonsRef }) {
+  const [urls, setUrls] = useState(new Map());
+
+  useEffect(() => {
+    const nextEntries = files.map((file) => [getFileId(file), URL.createObjectURL(file)]);
+    setUrls(new Map(nextEntries));
+    return () => nextEntries.forEach(([, url]) => URL.revokeObjectURL(url));
+  }, [files]);
+
+  return (
+    <div className="scan-order" role="group" aria-labelledby="scan-order-title">
+      <div className="scan-order-heading">
+        <span><strong id="scan-order-title">PDF page order</strong><small>Each image becomes one page. Use the arrows to arrange the final PDF.</small></span>
+        <b>{files.length.toLocaleString()} {files.length === 1 ? "page" : "pages"}</b>
+      </div>
+      <div className="scan-order-strip" role="list" aria-label={`${files.length} scan pages in output order`}>
+        {files.map((file, index) => {
+          const fileId = getFileId(file);
+          return (
+            <article className="scan-order-card" role="listitem" key={fileId}>
+              <div className="scan-order-thumbnail">
+                <img src={urls.get(fileId) || ""} alt="" />
+                <b aria-hidden="true">{index + 1}</b>
+              </div>
+              <span className="scan-order-file"><strong title={file.name}>{file.name}</strong><small>Page {index + 1} · {formatBytes(file.size)}</small></span>
+              <div className="scan-order-actions">
+                <span>
+                  <button
+                    ref={(node) => { const key = `${fileId}:up`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }}
+                    type="button"
+                    onClick={() => moveFile(index, -1)}
+                    disabled={index === 0}
+                    aria-label={`Move ${file.name} earlier from page ${index + 1} of ${files.length}`}
+                  ><ArrowLeftIcon size={15} aria-hidden="true" /></button>
+                  <button
+                    ref={(node) => { const key = `${fileId}:down`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }}
+                    type="button"
+                    onClick={() => moveFile(index, 1)}
+                    disabled={index === files.length - 1}
+                    aria-label={`Move ${file.name} later from page ${index + 1} of ${files.length}`}
+                  ><ArrowRightIcon size={15} aria-hidden="true" /></button>
+                </span>
+                <button
+                  ref={(node) => { if (node) removeButtonsRef.current.set(fileId, node); else removeButtonsRef.current.delete(fileId); }}
+                  type="button"
+                  onClick={() => removeFile(file, index)}
+                  aria-label={`Remove ${file.name}, page ${index + 1} of ${files.length}`}
+                ><TrashIcon size={15} aria-hidden="true" /></button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <p><ArrowsLeftRightIcon size={15} aria-hidden="true" />Scroll sideways with a trackpad or swipe to review every page.</p>
+    </div>
+  );
+}
+
+function ScanPdfControls({ files, setting, value, onChange }) {
+  const previewUrl = useLocalImageUrl(files[0]);
+  const [measuredImage, setMeasuredImage] = useState({ file: null, ratio: 0.75 });
+  const options = setting?.options || [];
+  const pageSize = options.some((option) => option.value === value) ? value : "auto";
+  const imageRatio = measuredImage.file === files[0] ? measuredImage.ratio : 0.75;
+  const pageAspect = pageSize === "a4" ? 595.28 / 841.89 : pageSize === "letter" ? 612 / 792 : imageRatio;
+  const boundedPageAspect = Math.max(0.45, Math.min(2.2, pageAspect));
+  const previewWidth = Math.min(176, 126 * boundedPageAspect);
+  const previewHeight = previewWidth / boundedPageAspect;
+  const selectedLabel = options.find((option) => option.value === pageSize)?.label || "Match image";
+  const previewCopy = pageSize === "auto"
+    ? "Each page follows its image shape, with a small white edge."
+    : `Every image is contained on portrait ${selectedLabel} paper with white margins.`;
+
+  return (
+    <section className="scan-controls" aria-labelledby="scan-page-size-title">
+      <fieldset className="scan-size-picker">
+        <legend id="scan-page-size-title">Choose the PDF page shape</legend>
+        <div>
+          {options.map((option) => {
+            const selected = pageSize === option.value;
+            const Icon = option.value === "auto" ? ImageSquareIcon : FilePdfIcon;
+            return (
+              <button key={option.value} type="button" className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange(option.value)}>
+                <span><Icon size={19} weight="duotone" aria-hidden="true" /></span>
+                <span><strong>{option.label}</strong><small>{option.hint}</small></span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <div className="scan-page-preview" aria-live="polite">
+        <div className="scan-page-preview-heading"><span><strong>First-page preview</strong><small>{files.length ? `${files.length.toLocaleString()} ${files.length === 1 ? "page" : "pages"} will follow this fit rule` : "Add an image to preview its fit"}</small></span><EyeIcon size={17} aria-hidden="true" /></div>
+        <div className="scan-page-preview-stage">
+          <div className="scan-page-preview-paper" style={{ width: `${previewWidth}px`, height: `${previewHeight}px` }}>
+            {previewUrl ? <img src={previewUrl} alt={`Preview of ${files[0].name} on ${selectedLabel} PDF paper`} onLoad={(event) => setMeasuredImage({ file: files[0], ratio: event.currentTarget.naturalWidth / event.currentTarget.naturalHeight })} /> : <ImageSquareIcon size={28} weight="duotone" aria-hidden="true" />}
+          </div>
+        </div>
+        <p><CheckCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Nothing is cropped or stretched.</strong>{previewCopy}</span></p>
+      </div>
+    </section>
+  );
+}
+
 const splitMethodOptions = [
   { value: "half", label: "Split in half", Icon: ColumnsIcon },
   { value: "every2", label: "Every 2 pages", Icon: SelectionBackgroundIcon },
@@ -2165,6 +2285,18 @@ function SummaryPlan({ settings }) {
   );
 }
 
+function ScanResultSummary({ result }) {
+  const outcome = result?.scanOutcome;
+  if (!outcome) return null;
+  return (
+    <div className="scan-result-summary" role="status">
+      <span><FilesIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.pageCount.toLocaleString()}-page PDF created</strong><small>The numbered image order was preserved and every image was fitted without cropping.</small></div>
+      <p><EyeIcon size={16} aria-hidden="true" />Preview the PDF to check page order and margins before sharing it.</p>
+    </div>
+  );
+}
+
 function RepairPdfControls() {
   return (
     <section className="repair-explainer" aria-labelledby="repair-explainer-title">
@@ -2904,7 +3036,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
@@ -3186,6 +3318,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         : "Flatten PDF form"
     : tool.slug === "redact-pdf" && redactionPlan?.valid
       ? `Redact ${redactionPlan.regionCount.toLocaleString()} ${redactionPlan.regionCount === 1 ? "area" : "areas"}`
+    : tool.slug === "scan-to-pdf" && hasRequiredInput
+      ? `Create ${files.length.toLocaleString()}-page PDF`
     : tool.slug === "compare-pdf" && hasRequiredInput
       ? "Compare 2 PDFs"
     : tool.name;
@@ -3264,16 +3398,27 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             {files.length > 0 && (
               <div className="file-queue">
                 <div className="queue-heading"><strong>{files.length} {files.length === 1 ? "file" : "files"}</strong><span>{formatBytes(files.reduce((sum, file) => sum + file.size, 0))} total</span></div>
-                <div role="list" aria-label={`${files.length} queued ${files.length === 1 ? "file" : "files"}`}>
-                  {files.map((file, index) => (
-                    <div className="file-row" role="listitem" key={getFileId(file)}>
-                      <span className={`file-type ${tool.kind}`}><ToolIcon tool={tool} size={19} /></span>
-                      <span className="file-info"><strong title={file.name}>{file.name}</strong><small>{formatBytes(file.size)} · ready locally</small></span>
-                      {files.length > 1 && <span className="reorder-controls"><button ref={(node) => { const key = `${getFileId(file)}:up`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }} onClick={() => moveFile(index, -1)} disabled={index === 0} aria-label={`Move ${file.name} up from position ${index + 1} of ${files.length}`}><ArrowUpIcon size={15} aria-hidden="true" /></button><button ref={(node) => { const key = `${getFileId(file)}:down`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }} onClick={() => moveFile(index, 1)} disabled={index === files.length - 1} aria-label={`Move ${file.name} down from position ${index + 1} of ${files.length}`}><ArrowDownIcon size={15} aria-hidden="true" /></button></span>}
-                      <button ref={(node) => { const fileId = getFileId(file); if (node) removeButtonsRef.current.set(fileId, node); else removeButtonsRef.current.delete(fileId); }} className="remove-file" onClick={() => removeFile(file, index)} aria-label={`Remove ${file.name}, position ${index + 1} of ${files.length}`}><TrashIcon size={17} aria-hidden="true" /></button>
-                    </div>
-                  ))}
-                </div>
+                {tool.slug === "scan-to-pdf" ? (
+                  <ScanFileQueue
+                    files={files}
+                    getFileId={getFileId}
+                    moveFile={moveFile}
+                    removeFile={removeFile}
+                    reorderButtonsRef={reorderButtonsRef}
+                    removeButtonsRef={removeButtonsRef}
+                  />
+                ) : (
+                  <div role="list" aria-label={`${files.length} queued ${files.length === 1 ? "file" : "files"}`}>
+                    {files.map((file, index) => (
+                      <div className="file-row" role="listitem" key={getFileId(file)}>
+                        <span className={`file-type ${tool.kind}`}><ToolIcon tool={tool} size={19} /></span>
+                        <span className="file-info"><strong title={file.name}>{file.name}</strong><small>{formatBytes(file.size)} · ready locally</small></span>
+                        {files.length > 1 && <span className="reorder-controls"><button ref={(node) => { const key = `${getFileId(file)}:up`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }} onClick={() => moveFile(index, -1)} disabled={index === 0} aria-label={`Move ${file.name} up from position ${index + 1} of ${files.length}`}><ArrowUpIcon size={15} aria-hidden="true" /></button><button ref={(node) => { const key = `${getFileId(file)}:down`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }} onClick={() => moveFile(index, 1)} disabled={index === files.length - 1} aria-label={`Move ${file.name} down from position ${index + 1} of ${files.length}`}><ArrowDownIcon size={15} aria-hidden="true" /></button></span>}
+                        <button ref={(node) => { const fileId = getFileId(file); if (node) removeButtonsRef.current.set(fileId, node); else removeButtonsRef.current.delete(fileId); }} className="remove-file" onClick={() => removeFile(file, index)} aria-label={`Remove ${file.name}, position ${index + 1} of ${files.length}`}><TrashIcon size={17} aria-hidden="true" /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -3310,6 +3455,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "compress-pdf" && files[0] && results[0] && (
                   <CompressionResultSummary inputSize={files[0].size} result={results[0]} />
                 )}
+                {tool.slug === "scan-to-pdf" && <ScanResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
@@ -3339,6 +3485,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <ExtractPdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={extractPlan} limits={limits} />
             ) : tool.slug === "organize-pdf" ? (
               <OrganizePdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={organizePlan} limits={limits} />
+            ) : tool.slug === "scan-to-pdf" ? (
+              <ScanPdfControls files={files} setting={settingsList.find((setting) => setting.key === "pageSize")} value={settings.pageSize} onChange={(value) => updateSetting("pageSize", value)} />
             ) : tool.slug === "compress-pdf" ? (
               <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
             ) : tool.slug === "convert-image" ? (

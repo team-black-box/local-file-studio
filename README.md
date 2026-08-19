@@ -39,6 +39,8 @@ PDF Forms reads the selected AcroForm locally and presents its text fields, chec
 
 Repair PDF leniently reads recoverable objects and creates a fresh, full, non-incremental PDF rewrite while leaving the original untouched. It can help with damaged indexes or trailing updates, but it cannot recreate pages, images, fonts, text, or bytes that are missing from the source. The result stays previewable before download.
 
+Scan to PDF presents camera images as numbered page thumbnails before conversion, with accessible earlier/later controls that determine the exact PDF order. Match Image preserves each image's natural page shape; A4 and US Letter contain the full image on portrait paper with white margins. No mode crops or stretches the image, and the generated PDF remains previewable before sharing.
+
 Redact PDF shows the actual document pages and lets users draw, move, resize, review, and remove multiple black or white redaction areas on specific pages. Exact percentage controls remain available for keyboard and precision entry. The generated PDF rasterizes every page so covered pixels and hidden text are removed; this also means text is no longer selectable anywhere in the output.
 
 Compare PDF presents the bounded selectable-text difference directly in the workbench, with original/revised line numbers, changes-only and all-lines views, and local pagination. The optional HTML report is self-contained, scriptless, and generated locally. This is a text comparison: scans, images, fonts, layout, and visual movement are not compared.
