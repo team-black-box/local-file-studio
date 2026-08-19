@@ -248,9 +248,40 @@ function validatePdfOfficeTextPages(pages, file, limits) {
   return preview;
 }
 
-export async function inspectPdfOfficeText(file, password = "", limits = getToolLimits("pdf-to-word"), report, signal) {
+function pdfTextToSpreadsheetRows(text) {
+  if (!String(text).trim()) return [];
+  return String(text).split("\n").map((line) => line.split(/\s{2,}|\t|\|/).map((cell) => cell.trim()));
+}
+
+export function createPdfSpreadsheetPlan(pages, maxPreviewRows = 8, maxPreviewColumns = 6) {
+  createPdfOfficeTextPreview(pages, 1);
+  const sheets = pages.map((text, index) => {
+    const rows = pdfTextToSpreadsheetRows(text);
+    const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+    return {
+      pageNumber: index + 1,
+      name: `Page ${index + 1}`.slice(0, 31),
+      rowCount: rows.length,
+      valueCount: rows.reduce((sum, row) => sum + row.filter(Boolean).length, 0),
+      columnCount,
+      previewRows: rows.slice(0, maxPreviewRows).map((row) => row.slice(0, maxPreviewColumns)),
+      previewTruncatedRows: rows.length > maxPreviewRows,
+      previewTruncatedColumns: columnCount > maxPreviewColumns,
+    };
+  });
+  return {
+    sheetCount: sheets.length,
+    rowCount: sheets.reduce((sum, sheet) => sum + sheet.rowCount, 0),
+    valueCount: sheets.reduce((sum, sheet) => sum + sheet.valueCount, 0),
+    sheets,
+  };
+}
+
+export async function inspectPdfOfficeText(file, password = "", limits = getToolLimits("pdf-to-word"), report, signal, format) {
   const pages = await extractPdfPagesText(file, password, report, limits.maxExtractedCharactersTotal, signal);
-  return { pages, ...validatePdfOfficeTextPages(pages, file, limits) };
+  const preview = { pages, ...validatePdfOfficeTextPages(pages, file, limits) };
+  if (format === "xlsx") preview.spreadsheetPlan = createPdfSpreadsheetPlan(pages);
+  return preview;
 }
 
 async function loadPdfLib(file) {
@@ -925,12 +956,25 @@ async function pdfToOffice(slug, file, options, report) {
 
   const XLSX = await import("xlsx");
   const workbook = XLSX.utils.book_new();
-  pages.forEach((text, index) => {
-    const rows = text.split("\n").map((line) => line.split(/\s{2,}|\t|\|/).map((cell) => cell.trim()));
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), `Page ${index + 1}`.slice(0, 31));
-  });
+  const spreadsheetPlan = createPdfSpreadsheetPlan(pages);
+  pages.forEach((text, index) => XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(pdfTextToSpreadsheetRows(text)), spreadsheetPlan.sheets[index].name));
   const bytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
-  return [resultFromBlob(`${cleanName}.xlsx`, new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "Coordinate-light table reconstruction")];
+  const result = resultFromBlob(
+    `${cleanName}.xlsx`,
+    new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    `${spreadsheetPlan.sheetCount.toLocaleString()} editable ${spreadsheetPlan.sheetCount === 1 ? "sheet" : "sheets"} · ${spreadsheetPlan.valueCount.toLocaleString()} values`,
+  );
+  result.pdfOfficeTextOutcome = {
+    pageCount: textPreview.pageCount,
+    pagesWithText: textPreview.pagesWithText,
+    emptyPageCount: textPreview.emptyPageCount,
+    characterCount: textPreview.characterCount,
+    wordCount: textPreview.wordCount,
+    format: "xlsx",
+    rowCount: spreadsheetPlan.rowCount,
+    valueCount: spreadsheetPlan.valueCount,
+  };
+  return [result];
 }
 
 export function extractiveSummary(text, targetSentences = 5) {

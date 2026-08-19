@@ -15,7 +15,7 @@ import {
   validatePdfOverlayPlacements,
 } from "../src/lib/file-limits.js";
 import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
-import { createOcrReaderResult, createPdfOfficeTextPreview, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
+import { createOcrReaderResult, createPdfOfficeTextPreview, createPdfSpreadsheetPlan, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
@@ -158,6 +158,49 @@ test("PDF to PowerPoint previews exact slide text and reuses the checked extract
 
   await assert.rejects(
     () => processPdfTool("pdf-to-powerpoint", [file], { pdfOfficeTextPages: ["x".repeat(1_000_001)] }),
+    (error) => error instanceof FileLimitError && error.code === "extracted-text-limit",
+  );
+});
+
+test("PDF to Excel previews exact sheets, rows, and values before export", async () => {
+  const pages = ["Name  Score\nAlice  9", "City|Country\nPune|India", ""];
+  assert.deepEqual(createPdfSpreadsheetPlan(pages, 1, 1), {
+    sheetCount: 3,
+    rowCount: 4,
+    valueCount: 8,
+    sheets: [
+      { pageNumber: 1, name: "Page 1", rowCount: 2, valueCount: 4, columnCount: 2, previewRows: [["Name"]], previewTruncatedRows: true, previewTruncatedColumns: true },
+      { pageNumber: 2, name: "Page 2", rowCount: 2, valueCount: 4, columnCount: 2, previewRows: [["City"]], previewTruncatedRows: true, previewTruncatedColumns: true },
+      { pageNumber: 3, name: "Page 3", rowCount: 0, valueCount: 0, columnCount: 0, previewRows: [], previewTruncatedRows: false, previewTruncatedColumns: false },
+    ],
+  });
+
+  const source = await PDFDocument.create();
+  pages.forEach(() => source.addPage([300, 400]));
+  const file = namedBlob(await source.save(), "checked-sheets.pdf", "application/pdf");
+  const [result] = await processPdfTool("pdf-to-excel", [file], { pdfOfficeTextPages: pages });
+  assert.equal(result.name, "checked-sheets.xlsx");
+  assert.equal(result.details, "3 editable sheets · 8 values");
+  assert.deepEqual(result.pdfOfficeTextOutcome, {
+    pageCount: 3,
+    pagesWithText: 2,
+    emptyPageCount: 1,
+    characterCount: pages.reduce((sum, page) => sum + page.length, 0),
+    wordCount: 6,
+    format: "xlsx",
+    rowCount: 4,
+    valueCount: 8,
+  });
+
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.read(await result.blob.arrayBuffer(), { type: "array" });
+  assert.deepEqual(workbook.SheetNames, ["Page 1", "Page 2", "Page 3"]);
+  assert.equal(workbook.Sheets["Page 1"].A2.v, "Alice");
+  assert.equal(workbook.Sheets["Page 1"].B2.v, "9");
+  assert.equal(workbook.Sheets["Page 2"].B2.v, "India");
+
+  await assert.rejects(
+    () => processPdfTool("pdf-to-excel", [file], { pdfOfficeTextPages: ["x".repeat(2_000_001)] }),
     (error) => error instanceof FileLimitError && error.code === "extracted-text-limit",
   );
 });

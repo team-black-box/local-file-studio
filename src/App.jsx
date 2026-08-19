@@ -666,7 +666,7 @@ function usePdfPageInfo(file, enabled, limits, toolName) {
   return info;
 }
 
-function usePdfOfficeTextPreview(file, password, enabled, limits) {
+function usePdfOfficeTextPreview(file, password, enabled, limits, format) {
   const [preview, setPreview] = useState({ state: "idle", file: null, pages: [], pageStats: [], message: "" });
 
   useEffect(() => {
@@ -689,6 +689,7 @@ function usePdfOfficeTextPreview(file, password, enabled, limits) {
           if (!cancelled) setPreview((current) => ({ ...current, message: progress.phase }));
         },
         controller.signal,
+        format,
       );
       if (!cancelled) setPreview({ state: "ready", file, message: "", ...inspected });
     })().catch((error) => {
@@ -701,7 +702,7 @@ function usePdfOfficeTextPreview(file, password, enabled, limits) {
       cancelled = true;
       controller.abort();
     };
-  }, [enabled, file, limits, password]);
+  }, [enabled, file, format, limits, password]);
 
   return preview;
 }
@@ -1477,9 +1478,10 @@ function PdfOfficeTextControls({ file, preview, format }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [pageWindowStart, setPageWindowStart] = useState(0);
   const isPresentation = format === "pptx";
-  const OutputIcon = isPresentation ? FilePptIcon : FileDocIcon;
-  const outputLabel = isPresentation ? "PPTX" : "DOCX";
-  const unit = isPresentation ? "slide" : "section";
+  const isSpreadsheet = format === "xlsx";
+  const OutputIcon = isPresentation ? FilePptIcon : isSpreadsheet ? FileXlsIcon : FileDocIcon;
+  const outputLabel = isPresentation ? "PPTX" : isSpreadsheet ? "XLSX" : "DOCX";
+  const unit = isPresentation ? "slide" : isSpreadsheet ? "sheet" : "section";
 
   useEffect(() => {
     setPageIndex(0);
@@ -1490,7 +1492,7 @@ function PdfOfficeTextControls({ file, preview, format }) {
     return (
       <section className="word-preview-empty pdf-office-preview-empty" aria-labelledby="pdf-office-preview-title">
         <span><OutputIcon size={21} weight="duotone" aria-hidden="true" /></span>
-        <div><strong id="pdf-office-preview-title">Preview selectable text</strong><small>Add one PDF to see the editable {outputLabel} {isPresentation ? "slides" : "sections"} before export.</small></div>
+        <div><strong id="pdf-office-preview-title">Preview selectable text</strong><small>Add one PDF to see the editable {outputLabel} {unit}s before export.</small></div>
       </section>
     );
   }
@@ -1517,6 +1519,8 @@ function PdfOfficeTextControls({ file, preview, format }) {
   const maxWindowStart = Math.max(0, pageCount - PDF_OFFICE_PAGE_WINDOW);
   const visiblePages = preview.pageStats.slice(pageWindowStart, pageWindowStart + PDF_OFFICE_PAGE_WINDOW);
   const selectedPage = preview.pageStats[Math.min(pageIndex, Math.max(0, pageCount - 1))];
+  const selectedSheet = isSpreadsheet ? preview.spreadsheetPlan?.sheets?.[Math.min(pageIndex, Math.max(0, pageCount - 1))] : null;
+  const sheetPreviewColumnCount = selectedSheet?.previewRows?.reduce((maximum, row) => Math.max(maximum, row.length), 0) || 0;
   const windowLabel = `${pageWindowStart + 1}–${Math.min(pageWindowStart + PDF_OFFICE_PAGE_WINDOW, pageCount)} of ${pageCount}`;
   const showWindow = (requestedStart) => {
     const nextStart = Math.max(0, Math.min(maxWindowStart, requestedStart));
@@ -1540,27 +1544,54 @@ function PdfOfficeTextControls({ file, preview, format }) {
         <b>{outputLabel}</b>
       </div>
 
-      <dl className="word-preview-stats pdf-office-preview-stats">
-        <div><dt>PDF pages</dt><dd>{pageCount.toLocaleString()}</dd></div>
-        <div><dt>With text</dt><dd>{preview.pagesWithText.toLocaleString()}</dd></div>
-        <div><dt>Characters</dt><dd>{preview.characterCount.toLocaleString()}</dd></div>
-      </dl>
+      {isSpreadsheet ? (
+        <dl className="word-preview-stats pdf-office-preview-stats">
+          <div><dt>Sheets</dt><dd>{preview.spreadsheetPlan?.sheetCount.toLocaleString()}</dd></div>
+          <div><dt>Rows</dt><dd>{preview.spreadsheetPlan?.rowCount.toLocaleString()}</dd></div>
+          <div><dt>Values</dt><dd>{preview.spreadsheetPlan?.valueCount.toLocaleString()}</dd></div>
+        </dl>
+      ) : (
+        <dl className="word-preview-stats pdf-office-preview-stats">
+          <div><dt>PDF pages</dt><dd>{pageCount.toLocaleString()}</dd></div>
+          <div><dt>With text</dt><dd>{preview.pagesWithText.toLocaleString()}</dd></div>
+          <div><dt>Characters</dt><dd>{preview.characterCount.toLocaleString()}</dd></div>
+        </dl>
+      )}
 
       {selectedPage && (
         <div className="pdf-office-page-preview">
           <div className="pdf-office-page-preview-heading">
-            <span><strong>Page {selectedPage.pageNumber} text</strong><small>{selectedPage.characterCount.toLocaleString()} characters · {selectedPage.wordCount.toLocaleString()} words</small></span>
+            <span><strong>{isSpreadsheet ? `PDF page ${selectedPage.pageNumber} → Sheet “${selectedSheet?.name || selectedPage.pageNumber}”` : `Page ${selectedPage.pageNumber} text`}</strong><small>{isSpreadsheet ? `${selectedSheet?.rowCount.toLocaleString() || 0} rows · ${selectedSheet?.valueCount.toLocaleString() || 0} values` : `${selectedPage.characterCount.toLocaleString()} characters · ${selectedPage.wordCount.toLocaleString()} words`}</small></span>
             <EyeIcon size={17} aria-hidden="true" />
           </div>
           {selectedPage.hasText ? (
-            <div className="word-preview-text pdf-office-preview-text" tabIndex="0" aria-label={`Selectable text preview for PDF page ${selectedPage.pageNumber}`}>
-              <pre>{selectedPage.previewText}</pre>
-            </div>
+            isSpreadsheet ? (
+              <div className="spreadsheet-table-wrap pdf-office-sheet-preview" tabIndex="0" aria-label={`Generated value preview for worksheet ${selectedSheet?.name || selectedPage.pageNumber}`}>
+                <table>
+                  <thead><tr><th aria-label="Row number" />{Array.from({ length: sheetPreviewColumnCount }, (_, index) => <th key={index} scope="col">{spreadsheetColumnLabel(index)}</th>)}</tr></thead>
+                  <tbody>
+                    {selectedSheet.previewRows.map((row, rowIndex) => (
+                      <tr key={rowIndex}><th scope="row">{rowIndex + 1}</th>{Array.from({ length: sheetPreviewColumnCount }, (_, columnIndex) => <td key={columnIndex} title={row[columnIndex] || undefined}>{row[columnIndex] || ""}</td>)}</tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="word-preview-text pdf-office-preview-text" tabIndex="0" aria-label={`Selectable text preview for PDF page ${selectedPage.pageNumber}`}>
+                <pre>{selectedPage.previewText}</pre>
+              </div>
+            )
           ) : (
-            <div className="pdf-office-empty-page" role="status"><FilePdfIcon size={18} weight="duotone" aria-hidden="true" /><span><strong>No selectable text on this page</strong><small>{isPresentation ? "Its PPTX slide will keep the page order and show a clear no-text placeholder." : "Its DOCX section will keep the page position but contain no extracted body text."}</small></span></div>
+            <div className="pdf-office-empty-page" role="status"><FilePdfIcon size={18} weight="duotone" aria-hidden="true" /><span><strong>No selectable text on this page</strong><small>{isPresentation ? "Its PPTX slide will keep the page order and show a clear no-text placeholder." : isSpreadsheet ? "Its XLSX sheet will keep the page order and contain no extracted values." : "Its DOCX section will keep the page position but contain no extracted body text."}</small></span></div>
           )}
           {selectedPage.hasText && (
-            <p className="word-preview-scope"><CheckCircleIcon size={15} weight="fill" aria-hidden="true" /><span>{selectedPage.truncated ? `Showing the first ${selectedPage.previewText.length.toLocaleString()} of ${selectedPage.characterCount.toLocaleString()} characters from this page. All checked text will be exported.` : "All selectable text from this page is shown above."}</span></p>
+            <p className="word-preview-scope"><CheckCircleIcon size={15} weight="fill" aria-hidden="true" /><span>{isSpreadsheet
+              ? selectedSheet.previewTruncatedRows || selectedSheet.previewTruncatedColumns
+                ? `Showing up to the first 8 rows and 6 columns of ${selectedSheet.name}. All checked values will be exported.`
+                : `All generated rows and columns for ${selectedSheet.name} are shown above.`
+              : selectedPage.truncated
+                ? `Showing the first ${selectedPage.previewText.length.toLocaleString()} of ${selectedPage.characterCount.toLocaleString()} characters from this page. All checked text will be exported.`
+                : "All selectable text from this page is shown above."}</span></p>
           )}
         </div>
       )}
@@ -1581,14 +1612,21 @@ function PdfOfficeTextControls({ file, preview, format }) {
             {visiblePages.map((page) => (
               <button type="button" key={page.pageNumber} className={page.pageNumber - 1 === pageIndex ? "selected" : ""} aria-pressed={page.pageNumber - 1 === pageIndex} onClick={() => setPageIndex(page.pageNumber - 1)} aria-label={`Preview selectable text from PDF page ${page.pageNumber}`}>
                 <span><OutputIcon size={16} weight="duotone" aria-hidden="true" /><strong>Page {page.pageNumber}</strong></span>
-                <small>{page.hasText ? `${page.characterCount.toLocaleString()} chars` : "No text"}</small>
+                <small>{page.hasText ? isSpreadsheet ? `${preview.spreadsheetPlan.sheets[page.pageNumber - 1].rowCount.toLocaleString()} rows` : `${page.characterCount.toLocaleString()} chars` : "No text"}</small>
               </button>
             ))}
           </div>
         </>
       )}
 
-      <p className="word-layout-note pdf-office-layout-note"><WarningCircleIcon size={15} weight="duotone" aria-hidden="true" /><span><strong>Editable text reconstruction, not a layout copy.</strong> {isPresentation ? "Graphics, page geometry, tables, columns, fonts, and original placement are not preserved." : "Images, page geometry, tables, columns, fonts, and original placement are not preserved."}</span></p>
+      {isSpreadsheet && (
+        <div className="pdf-office-sheet-rule">
+          <ColumnsIcon size={18} weight="duotone" aria-hidden="true" />
+          <span><strong>How each sheet is built</strong><small>PDF text lines become rows. Tabs, pipes, or wider spaces separate values into columns.</small></span>
+        </div>
+      )}
+
+      <p className="word-layout-note pdf-office-layout-note"><WarningCircleIcon size={15} weight="duotone" aria-hidden="true" /><span><strong>Editable text reconstruction, not a layout copy.</strong> {isPresentation ? "Graphics, page geometry, tables, columns, fonts, and original placement are not preserved." : isSpreadsheet ? "Complex table geometry, merged cells, formulas, images, fonts, and original placement are not preserved." : "Images, page geometry, tables, columns, fonts, and original placement are not preserved."}</span></p>
     </section>
   );
 }
@@ -1597,13 +1635,18 @@ function PdfOfficeTextResultSummary({ result }) {
   const outcome = result?.pdfOfficeTextOutcome;
   if (!outcome) return null;
   const isPresentation = outcome.format === "pptx";
-  const OutputIcon = isPresentation ? FilePptIcon : FileDocIcon;
-  const unit = isPresentation ? "slide" : "section";
+  const isSpreadsheet = outcome.format === "xlsx";
+  const OutputIcon = isPresentation ? FilePptIcon : isSpreadsheet ? FileXlsIcon : FileDocIcon;
+  const unit = isPresentation ? "slide" : isSpreadsheet ? "sheet" : "section";
+  const outputLabel = isPresentation ? "PPTX" : isSpreadsheet ? "XLSX" : "DOCX";
+  const outcomeDetails = isSpreadsheet
+    ? `${outcome.rowCount.toLocaleString()} rows · ${outcome.valueCount.toLocaleString()} values`
+    : `${outcome.pagesWithText.toLocaleString()} ${outcome.pagesWithText === 1 ? "page has" : "pages have"} selectable text · ${outcome.characterCount.toLocaleString()} characters`;
   return (
     <div className="word-result-summary pdf-office-result-summary" role="status">
       <span><OutputIcon size={23} weight="duotone" aria-hidden="true" /></span>
-      <div><strong>{outcome.pageCount.toLocaleString()} editable {outcome.pageCount === 1 ? unit : `${unit}s`} created</strong><small>{outcome.pagesWithText.toLocaleString()} {outcome.pagesWithText === 1 ? "page has" : "pages have"} selectable text · {outcome.characterCount.toLocaleString()} characters</small></div>
-      <p><CheckCircleIcon size={16} weight="fill" aria-hidden="true" />The checked page text was reused for this {isPresentation ? "PPTX" : "DOCX"} without uploading or re-reading the PDF.</p>
+      <div><strong>{outcome.pageCount.toLocaleString()} editable {outcome.pageCount === 1 ? unit : `${unit}s`} created</strong><small>{outcomeDetails}</small></div>
+      <p><CheckCircleIcon size={16} weight="fill" aria-hidden="true" />The checked page text was reused for this {outputLabel} without uploading or re-reading the PDF.</p>
     </div>
   );
 }
@@ -3992,8 +4035,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -4023,7 +4066,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   }, [limits, pdfFormInfo, settings.flatten, settings.values, tool.slug]);
   const redactionPlan = useMemo(() => tool.slug === "redact-pdf" ? getRedactionPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
-  const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits);
+  const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits, tool.output[0]?.slice(1));
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
     : compressionEstimate;
@@ -4307,6 +4350,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? `Create DOCX · ${pdfOfficeTextPreview.pageCount.toLocaleString()} ${pdfOfficeTextPreview.pageCount === 1 ? "section" : "sections"}`
     : tool.slug === "pdf-to-powerpoint" && pdfOfficeTextPreview.state === "ready"
       ? `Create PPTX · ${pdfOfficeTextPreview.pageCount.toLocaleString()} ${pdfOfficeTextPreview.pageCount === 1 ? "slide" : "slides"}`
+    : tool.slug === "pdf-to-excel" && pdfOfficeTextPreview.state === "ready"
+      ? `Create XLSX · ${pdfOfficeTextPreview.pageCount.toLocaleString()} ${pdfOfficeTextPreview.pageCount === 1 ? "sheet" : "sheets"}`
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -4498,7 +4543,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -4527,6 +4572,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <PdfOfficeTextControls file={files[0]} preview={pdfOfficeTextPreview} format="docx" />
             ) : tool.slug === "pdf-to-powerpoint" ? (
               <PdfOfficeTextControls file={files[0]} preview={pdfOfficeTextPreview} format="pptx" />
+            ) : tool.slug === "pdf-to-excel" ? (
+              <PdfOfficeTextControls file={files[0]} preview={pdfOfficeTextPreview} format="xlsx" />
             ) : tool.slug === "convert-image" ? (
               <ImageFormatControls settings={settings} onChange={updateSetting} support={imageEncoderSupport} />
             ) : tool.slug === "pdf-forms" ? (
@@ -4608,7 +4655,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {tool.slug === "pdf-to-powerpoint" && pdfOfficeTextPreview.state === "ready" && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{pdfOfficeTextPreview.pageCount.toLocaleString()} {pdfOfficeTextPreview.pageCount === 1 ? "slide" : "slides"} ready</strong>
               )}
-              {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "pdf-to-powerpoint", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
+              {tool.slug === "pdf-to-excel" && pdfOfficeTextPreview.state === "ready" && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{pdfOfficeTextPreview.pageCount.toLocaleString()} {pdfOfficeTextPreview.pageCount === 1 ? "sheet" : "sheets"} ready</strong>
+              )}
+              {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
                   {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
                 </button>
