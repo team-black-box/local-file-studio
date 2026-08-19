@@ -53,7 +53,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Unlock PDF | Clear password gate and previewable result | Keep |
 | Protect PDF | Clear memory-only password control and previewable result | Keep |
 | Sign PDF | Typed signature, date choice, and representative placement preview | Build final-page drag placement only if preset placement tests poorly |
-| Redact PDF | Visual style choice, position/size controls, and representative region preview | Build per-page multi-region redaction before public launch |
+| Redact PDF | Real per-page canvas with drag-to-draw, multiple movable/resizable areas, page counts, black/white preview, exact controls, undo, page/all reset, and flattened-result preview | Keep; continue touch, protected-input, and large-document QA |
 | Compare PDF | Produces an HTML file only | Show the local diff inline, with HTML download as a secondary action |
 | Local Summarizer | Length/format dropdowns and TXT download | Use visual choices and show the summary in the shared copyable reader |
 | Translate PDF | Visual language choice and copyable reader | Keep; improve model/glossary status clarity |
@@ -75,7 +75,7 @@ Native text or number entry remains available when precision matters. Numeric li
 ## Delivery waves
 
 1. **Shared foundation:** visual choice cards, number steppers/presets, meaningful range endpoints, and safe single-result automatic download.
-2. **PDF page editors:** Organize, representative single-operation previews, and the field-aware Forms panel are complete; next build per-page multi-region redaction.
+2. **PDF page editors:** Organize, representative single-operation previews, field-aware Forms, and per-page multi-region Redact are complete; continue targeted touch and large-document QA.
 3. **PDF conversions and readers:** pre-export page/text/output feedback plus inline Compare and Summary results.
 4. **Image canvas tools:** Resize, Crop, Photo Editor, Remove Background, Watermark, Meme, Rotate, and Blur Face live previews.
 5. **Final QA:** keyboard, screen-reader names, mobile reflow, large/boundary files, repeated runs, preview, automatic download, offline reload, and browser coverage.

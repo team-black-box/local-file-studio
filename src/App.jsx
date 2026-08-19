@@ -82,6 +82,7 @@ import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProc
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
+import { MIN_REDACTION_REGION_PERCENT, clampRedactionRegion, createRedactionPlan, parseRedactionRegions, serializeRedactionRegions } from "./lib/pdf-redactions.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
 import { clearSensitiveToolSettings } from "./lib/tool-settings.js";
@@ -162,7 +163,7 @@ function updatePageMetadata(tool) {
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
 const inlineReaderTools = new Set(["ocr-pdf", "translate-pdf", "pdf-to-markdown"]);
-const pdfSettingPreviewTools = new Set(["rotate-pdf", "add-pdf-page-numbers", "watermark-pdf", "crop-pdf", "edit-pdf", "sign-pdf", "redact-pdf"]);
+const pdfSettingPreviewTools = new Set(["rotate-pdf", "add-pdf-page-numbers", "watermark-pdf", "crop-pdf", "edit-pdf", "sign-pdf"]);
 const TOOL_SLUG_ALIASES = Object.freeze({ "convert-to-jpg": "convert-image" });
 const contextualSettings = {
   "remove-pdf-pages": [
@@ -173,12 +174,6 @@ const contextualSettings = {
   ],
   "organize-pdf": [
     { key: "order", type: "text", label: "New page order", default: "all", hint: "Example: 3,1,2,4-8" },
-  ],
-  "redact-pdf": [
-    { key: "x", type: "range", label: "Horizontal position", default: 10, min: 0, max: 90, step: 1, suffix: "%", minLabel: "Left", maxLabel: "Right" },
-    { key: "y", type: "range", label: "Vertical position", default: 40, min: 0, max: 90, step: 1, suffix: "%", minLabel: "Top", maxLabel: "Bottom" },
-    { key: "width", type: "range", label: "Redaction width", default: 80, min: 5, max: 100, step: 1, suffix: "%", minLabel: "Narrow", maxLabel: "Wide" },
-    { key: "height", type: "range", label: "Redaction height", default: 10, min: 2, max: 50, step: 1, suffix: "%", minLabel: "Short", maxLabel: "Tall" },
   ],
   "html-to-pdf": [
     { key: "html", type: "textarea", label: "Or paste HTML", default: "", placeholder: "<h1>Local document</h1>" },
@@ -750,6 +745,21 @@ function getOrganizePlan(settings, info, limits) {
   }
 }
 
+function getRedactionPlan(settings, info, limits) {
+  if (info.state === "idle") return { valid: false, regions: [], regionCount: 0, affectedPages: [], affectedPageCount: 0, message: "Add one PDF to choose redaction areas." };
+  if (info.state === "loading") return { valid: false, regions: [], regionCount: 0, affectedPages: [], affectedPageCount: 0, message: "Reading the PDF pages locally…" };
+  if (info.state === "error") return { valid: false, regions: [], regionCount: 0, affectedPages: [], affectedPageCount: 0, message: info.message };
+  try {
+    const regions = parseRedactionRegions(settings.regions, info.pageCount, limits);
+    if (!regions.length) {
+      return { valid: false, regions, regionCount: 0, affectedPages: [], affectedPageCount: 0, message: "Draw or add at least one area to redact." };
+    }
+    return { valid: true, ...createRedactionPlan(regions, info.pageCount, limits), message: "" };
+  } catch (error) {
+    return { valid: false, regions: [], regionCount: 0, affectedPages: [], affectedPageCount: 0, message: error?.message || "Choose valid redaction areas." };
+  }
+}
+
 function PdfPageSourceStatus({ info }) {
   return (
     <div className={`split-source-status ${info.state}`} role="status" aria-live="polite">
@@ -982,6 +992,373 @@ function PdfPageThumbnail({ document, pageIndex }) {
   );
 }
 
+function PdfRedactionCanvas({ document, pageIndex, regions, overlay, selectedIndex, onSelect, onCreate, onUpdate, onRemove }) {
+  const canvasRef = useRef(null);
+  const frameRef = useRef(null);
+  const pointerActionRef = useRef(null);
+  const [renderState, setRenderState] = useState("loading");
+  const [aspectRatio, setAspectRatio] = useState("8.5 / 11");
+  const [draft, setDraft] = useState(null);
+
+  useEffect(() => {
+    if (!document || !canvasRef.current) return undefined;
+    let cancelled = false;
+    let page;
+    let renderTask;
+    setRenderState("loading");
+    (async () => {
+      page = await document.getPage(pageIndex + 1);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(1.8, 760 / base.width, 980 / base.height);
+      const viewport = page.getViewport({ scale });
+      const canvas = canvasRef.current;
+      if (!canvas || cancelled) return;
+      canvas.width = Math.max(1, Math.ceil(viewport.width));
+      canvas.height = Math.max(1, Math.ceil(viewport.height));
+      setAspectRatio(`${viewport.width} / ${viewport.height}`);
+      const context = canvas.getContext("2d", { alpha: false });
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      renderTask = page.render({ canvasContext: context, viewport });
+      await renderTask.promise;
+      if (!cancelled) setRenderState("ready");
+    })().catch((error) => {
+      if (!cancelled && error?.name !== "RenderingCancelledException") setRenderState("error");
+    });
+    return () => {
+      cancelled = true;
+      try { renderTask?.cancel(); } catch { /* Rendering already completed. */ }
+      page?.cleanup();
+    };
+  }, [document, pageIndex]);
+
+  const pointFromEvent = (event) => {
+    const bounds = frameRef.current?.getBoundingClientRect();
+    if (!bounds?.width || !bounds?.height) return { x: 0, y: 0 };
+    return {
+      x: Math.max(0, Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100)),
+      y: Math.max(0, Math.min(100, ((event.clientY - bounds.top) / bounds.height) * 100)),
+    };
+  };
+
+  const capturePointer = (event) => {
+    try { frameRef.current?.setPointerCapture(event.pointerId); } catch { /* Pointer may already be released. */ }
+  };
+
+  const beginDraw = (event) => {
+    if (event.button !== 0 || event.target.closest(".redaction-region")) return;
+    event.preventDefault();
+    const start = pointFromEvent(event);
+    pointerActionRef.current = { type: "draw", start };
+    setDraft({ page: pageIndex + 1, x: start.x, y: start.y, width: 0, height: 0 });
+    capturePointer(event);
+  };
+
+  const beginRegionAction = (event, index, type) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const start = pointFromEvent(event);
+    pointerActionRef.current = { type, index, start, original: regions.find((region) => region.index === index) };
+    onSelect(index);
+    capturePointer(event);
+  };
+
+  const movePointer = (event) => {
+    const action = pointerActionRef.current;
+    if (!action) return;
+    event.preventDefault();
+    const point = pointFromEvent(event);
+    if (action.type === "draw") {
+      setDraft({
+        page: pageIndex + 1,
+        x: Math.min(action.start.x, point.x),
+        y: Math.min(action.start.y, point.y),
+        width: Math.abs(point.x - action.start.x),
+        height: Math.abs(point.y - action.start.y),
+      });
+      return;
+    }
+    if (!action.original) return;
+    const deltaX = point.x - action.start.x;
+    const deltaY = point.y - action.start.y;
+    if (action.type === "move") {
+      onUpdate(action.index, clampRedactionRegion({ ...action.original, x: action.original.x + deltaX, y: action.original.y + deltaY }));
+      return;
+    }
+    onUpdate(action.index, {
+      ...action.original,
+      width: Math.max(MIN_REDACTION_REGION_PERCENT, Math.min(100 - action.original.x, action.original.width + deltaX)),
+      height: Math.max(MIN_REDACTION_REGION_PERCENT, Math.min(100 - action.original.y, action.original.height + deltaY)),
+    });
+  };
+
+  const finishPointer = (event) => {
+    const action = pointerActionRef.current;
+    if (!action) return;
+    event.preventDefault();
+    if (action.type === "draw" && draft?.width >= MIN_REDACTION_REGION_PERCENT && draft?.height >= MIN_REDACTION_REGION_PERCENT) {
+      onCreate(clampRedactionRegion(draft));
+    }
+    pointerActionRef.current = null;
+    setDraft(null);
+    try { frameRef.current?.releasePointerCapture(event.pointerId); } catch { /* Pointer capture already ended. */ }
+  };
+
+  const moveRegionWithKeyboard = (event, region) => {
+    const step = event.shiftKey ? 5 : 1;
+    const deltas = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
+    if (deltas[event.key]) {
+      event.preventDefault();
+      const [x, y] = deltas[event.key];
+      onUpdate(region.index, clampRedactionRegion({ ...region, x: region.x + x, y: region.y + y }));
+    }
+    if (["Backspace", "Delete"].includes(event.key)) {
+      event.preventDefault();
+      onRemove(region.index);
+    }
+  };
+
+  return (
+    <div className={`redaction-page-shell ${renderState}`}>
+      <div
+        ref={frameRef}
+        className="redaction-page-frame"
+        style={{ aspectRatio }}
+        aria-label={`Page ${pageIndex + 1} redaction canvas`}
+        onPointerDown={beginDraw}
+        onPointerMove={movePointer}
+        onPointerUp={finishPointer}
+        onPointerCancel={finishPointer}
+      >
+        <canvas ref={canvasRef} aria-hidden="true" />
+        {renderState === "loading" && <span className="redaction-canvas-state"><SpinnerGapIcon size={22} className="spin" />Rendering page locally…</span>}
+        {renderState === "error" && <span className="redaction-canvas-state"><WarningCircleIcon size={22} />This page preview could not be rendered.</span>}
+        {regions.map((region, pageRegionIndex) => (
+          <div
+            key={region.index}
+            className={`redaction-region ${overlay === "white" ? "white" : "black"} ${selectedIndex === region.index ? "selected" : ""}`}
+            style={{ left: `${region.x}%`, top: `${region.y}%`, width: `${region.width}%`, height: `${region.height}%` }}
+            role="button"
+            tabIndex="0"
+            aria-label={`Redaction area ${pageRegionIndex + 1} on page ${pageIndex + 1}. Use arrow keys to move it or Delete to remove it.`}
+            onFocus={() => onSelect(region.index)}
+            onClick={(event) => { event.stopPropagation(); onSelect(region.index); }}
+            onKeyDown={(event) => moveRegionWithKeyboard(event, region)}
+            onPointerDown={(event) => beginRegionAction(event, region.index, "move")}
+          >
+            <span className="redaction-region-number" aria-hidden="true">{pageRegionIndex + 1}</span>
+            <span className="redaction-resize-handle" aria-hidden="true" onPointerDown={(event) => beginRegionAction(event, region.index, "resize")}><ResizeIcon size={13} weight="bold" /></span>
+          </div>
+        ))}
+        {draft && <span className="redaction-region draft" style={{ left: `${draft.x}%`, top: `${draft.y}%`, width: `${draft.width}%`, height: `${draft.height}%` }} aria-hidden="true" />}
+      </div>
+    </div>
+  );
+}
+
+function RedactPdfControls({ settings, onChange, info, plan, limits }) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageWindowStart, setPageWindowStart] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const pageRailRef = useRef(null);
+  const pendingRailAlignmentRef = useRef(null);
+  const lastWheelPageTurnRef = useRef(0);
+  const pageCount = info.pageCount || 0;
+  const pagesPerWindow = 6;
+  const regions = plan?.regions || [];
+  const pageRegions = regions.map((region, index) => ({ ...region, index })).filter((region) => region.page === pageIndex + 1);
+  const visiblePages = Array.from(
+    { length: Math.min(pagesPerWindow, Math.max(0, pageCount - pageWindowStart)) },
+    (_, index) => pageWindowStart + index,
+  );
+  const selectedRegion = Number.isInteger(selectedIndex) ? regions[selectedIndex] : null;
+  const totalAtLimit = regions.length >= limits.maxRedactionRegions;
+  const pageAtLimit = pageRegions.length >= limits.maxRedactionRegionsPerPage;
+
+  useEffect(() => {
+    setPageIndex((current) => Math.min(current, Math.max(0, pageCount - 1)));
+    setPageWindowStart((current) => Math.min(current, Math.max(0, Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow)));
+  }, [pageCount]);
+
+  useEffect(() => {
+    const alignment = pendingRailAlignmentRef.current;
+    const rail = pageRailRef.current;
+    if (!alignment || !rail) return;
+    rail.scrollLeft = alignment === "end" ? Math.max(0, rail.scrollWidth - rail.clientWidth) : 0;
+    pendingRailAlignmentRef.current = null;
+  }, [pageWindowStart]);
+
+  useEffect(() => {
+    if (!selectedRegion || selectedRegion.page !== pageIndex + 1) setSelectedIndex(null);
+  }, [pageIndex, selectedRegion]);
+
+  if (info.state !== "ready") return <PdfPageSourceStatus info={info} />;
+
+  const commitRegions = (nextRegions, nextSelectedIndex = selectedIndex) => {
+    onChange("regions", serializeRedactionRegions(nextRegions, pageCount, limits));
+    setSelectedIndex(nextSelectedIndex);
+  };
+
+  const addRegion = (region) => {
+    if (totalAtLimit || pageAtLimit) return;
+    const next = [...regions, clampRedactionRegion({ ...region, page: pageIndex + 1 })];
+    commitRegions(next, next.length - 1);
+  };
+
+  const addDefaultRegion = () => {
+    const offset = (pageRegions.length * 4) % 24;
+    addRegion({ page: pageIndex + 1, x: 12 + offset, y: 18 + offset, width: 58, height: 9 });
+  };
+
+  const updateRegion = (index, region) => {
+    if (!regions[index]) return;
+    const next = [...regions];
+    next[index] = clampRedactionRegion({ ...region, page: regions[index].page });
+    commitRegions(next, index);
+  };
+
+  const removeRegion = (index) => {
+    if (!regions[index]) return;
+    const next = regions.filter((_, regionIndex) => regionIndex !== index);
+    commitRegions(next, null);
+  };
+
+  const clearCurrentPage = () => commitRegions(regions.filter((region) => region.page !== pageIndex + 1), null);
+  const clearAll = () => commitRegions([], null);
+  const undoLast = () => {
+    if (!regions.length) return;
+    const next = regions.slice(0, -1);
+    commitRegions(next, null);
+  };
+
+  const showPageWindow = (nextStart, alignment = "start") => {
+    const maxStart = Math.max(0, Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow);
+    pendingRailAlignmentRef.current = alignment;
+    setPageWindowStart(Math.max(0, Math.min(maxStart, nextStart)));
+  };
+
+  const movePageRailHorizontally = (event) => {
+    const rail = pageRailRef.current;
+    if (!rail) return;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    const next = Math.max(0, Math.min(rail.scrollWidth - rail.clientWidth, rail.scrollLeft + delta));
+    if (next !== rail.scrollLeft) {
+      event.preventDefault();
+      rail.scrollLeft = next;
+      return;
+    }
+    const maxStart = Math.max(0, Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow);
+    const nextWindow = delta > 0 ? Math.min(maxStart, pageWindowStart + pagesPerWindow) : Math.max(0, pageWindowStart - pagesPerWindow);
+    if (nextWindow === pageWindowStart) return;
+    event.preventDefault();
+    const now = performance.now();
+    if (now - lastWheelPageTurnRef.current < 220) return;
+    lastWheelPageTurnRef.current = now;
+    showPageWindow(nextWindow, delta > 0 ? "start" : "end");
+  };
+
+  const choosePage = (nextPageIndex) => {
+    setPageIndex(nextPageIndex);
+    setPageWindowStart(Math.floor(nextPageIndex / pagesPerWindow) * pagesPerWindow);
+    setSelectedIndex(null);
+  };
+
+  const updateSelectedCoordinate = (key, value) => {
+    if (!selectedRegion || value === "" || !Number.isFinite(Number(value))) return;
+    const number = Number(value);
+    const nextValue = key === "width" ? Math.min(100 - selectedRegion.x, number) : key === "height" ? Math.min(100 - selectedRegion.y, number) : number;
+    updateRegion(selectedIndex, clampRedactionRegion({ ...selectedRegion, [key]: nextValue }));
+  };
+
+  const readyMessage = plan.valid
+    ? `${plan.regionCount.toLocaleString()} ${plan.regionCount === 1 ? "area" : "areas"} on ${plan.affectedPageCount.toLocaleString()} ${plan.affectedPageCount === 1 ? "page" : "pages"} will be permanently flattened.`
+    : plan.message;
+
+  return (
+    <section className="redaction-planner" aria-labelledby="redaction-planner-title">
+      <div className="redaction-planner-heading">
+        <span><strong id="redaction-planner-title">Mark what should disappear</strong><small>Drag across the page to draw an area. Choose another page below to add different areas.</small></span>
+        <b aria-live="polite">{regions.length.toLocaleString()} / {limits.maxRedactionRegions.toLocaleString()}</b>
+      </div>
+
+      <fieldset className="redaction-style-picker">
+        <legend>Cover style</legend>
+        <div>
+          <button type="button" className={settings.overlay !== "white" ? "selected" : ""} aria-pressed={settings.overlay !== "white"} onClick={() => onChange("overlay", "black")}><span className="redaction-style-swatch black" /><span><strong>Black box</strong><small>Conventional redaction</small></span></button>
+          <button type="button" className={settings.overlay === "white" ? "selected" : ""} aria-pressed={settings.overlay === "white"} onClick={() => onChange("overlay", "white")}><span className="redaction-style-swatch white" /><span><strong>White space</strong><small>Blend into the page</small></span></button>
+        </div>
+      </fieldset>
+
+      <div className="redaction-canvas-heading">
+        <span><strong>Page {pageIndex + 1} of {pageCount}</strong><small>{pageRegions.length ? `${pageRegions.length} ${pageRegions.length === 1 ? "area" : "areas"} on this page` : "No areas on this page yet"}</small></span>
+        <div className="redaction-canvas-actions">
+          <button type="button" onClick={addDefaultRegion} disabled={totalAtLimit || pageAtLimit}><PlusIcon size={15} weight="bold" />Add area</button>
+          <button type="button" onClick={undoLast} disabled={!regions.length} aria-label="Undo the most recently added redaction area"><ClockCounterClockwiseIcon size={15} />Undo</button>
+          <button type="button" onClick={clearCurrentPage} disabled={!pageRegions.length}>Clear page</button>
+        </div>
+      </div>
+
+      <PdfRedactionCanvas
+        document={info.document}
+        pageIndex={pageIndex}
+        regions={pageRegions}
+        overlay={settings.overlay}
+        selectedIndex={selectedIndex}
+        onSelect={setSelectedIndex}
+        onCreate={addRegion}
+        onUpdate={updateRegion}
+        onRemove={removeRegion}
+      />
+
+      <p className="redaction-canvas-tip"><EyeSlashIcon size={16} weight="fill" aria-hidden="true" /><span>Black or white areas replace the pixels beneath them. The whole output is flattened, so its text is no longer selectable.</span></p>
+
+      <div className="redaction-page-strip-heading">
+        <span><strong>Choose a page</strong><small>Scroll sideways with a trackpad or swipe.</small></span>
+        {pageCount > pagesPerWindow && (
+          <span className="redaction-page-window-controls">
+            <button type="button" onClick={() => showPageWindow(pageWindowStart - pagesPerWindow, "end")} disabled={pageWindowStart === 0} aria-label="Show previous PDF pages"><ArrowLeftIcon size={14} /></button>
+            <b aria-live="polite">{pageWindowStart + 1}–{Math.min(pageWindowStart + pagesPerWindow, pageCount)} of {pageCount}</b>
+            <button type="button" onClick={() => showPageWindow(pageWindowStart + pagesPerWindow)} disabled={pageWindowStart + pagesPerWindow >= pageCount} aria-label="Show next PDF pages"><ArrowRightIcon size={14} /></button>
+          </span>
+        )}
+      </div>
+      <div ref={pageRailRef} className="redaction-page-strip" role="group" aria-label="PDF pages and redaction counts" onWheel={movePageRailHorizontally}>
+        {visiblePages.map((index) => {
+          const count = regions.filter((region) => region.page === index + 1).length;
+          return (
+            <button type="button" key={index} className={index === pageIndex ? "selected" : ""} aria-pressed={index === pageIndex} aria-label={`Page ${index + 1}, ${count ? `${count} redaction ${count === 1 ? "area" : "areas"}` : "no redaction areas"}`} onClick={() => choosePage(index)}>
+              <span><PdfPageThumbnail document={info.document} pageIndex={index} />{count > 0 && <b aria-hidden="true">{count}</b>}</span>
+              <small>Page {index + 1}</small>
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedRegion && (
+        <details className="redaction-exact-controls" open>
+          <summary><KeyboardIcon size={15} aria-hidden="true" /><span>Exact position · area {pageRegions.findIndex((region) => region.index === selectedIndex) + 1}</span><CaretRightIcon size={13} aria-hidden="true" /></summary>
+          <p>Percent of page size. Arrow keys move the selected area; Shift moves it faster.</p>
+          <div>
+            {[{ key: "x", label: "Left" }, { key: "y", label: "Top" }, { key: "width", label: "Width" }, { key: "height", label: "Height" }].map(({ key, label }) => (
+              <label key={key}><span>{label}</span><span><input type="number" min={key === "width" || key === "height" ? MIN_REDACTION_REGION_PERCENT : 0} max="100" step="0.5" value={selectedRegion[key]} onChange={(event) => updateSelectedCoordinate(key, event.target.value)} /><small>%</small></span></label>
+            ))}
+          </div>
+          <button type="button" className="redaction-delete-area" onClick={() => removeRegion(selectedIndex)}><TrashIcon size={15} />Delete this area</button>
+        </details>
+      )}
+
+      {(totalAtLimit || pageAtLimit) && <div className="error-card" role="alert"><WarningCircleIcon size={18} weight="fill" /><span><strong>Area limit reached</strong>{pageAtLimit ? `Page ${pageIndex + 1} already has ${limits.maxRedactionRegionsPerPage.toLocaleString()} areas.` : `This PDF already has ${limits.maxRedactionRegions.toLocaleString()} areas.`}</span></div>}
+      <div className={`redaction-plan ${plan.valid ? "ready" : "waiting"}`} role="status" aria-live="polite">{plan.valid ? <CheckCircleIcon size={17} weight="fill" /> : <WarningCircleIcon size={17} />}<span>{readyMessage}</span>{regions.length > 0 && <button type="button" onClick={clearAll}>Reset all</button>}</div>
+    </section>
+  );
+}
+
 function PdfSettingPreview({ tool, settings, info }) {
   if (info.state === "idle") return null;
   if (info.state !== "ready") {
@@ -1004,7 +1381,7 @@ function PdfSettingPreview({ tool, settings, info }) {
             ? `“${String(settings.text || "Reviewed locally")}” appears at the ${editPosition.replace("-", " ")}.`
             : slug === "sign-pdf"
               ? `The typed signature “${String(settings.name || "Signed locally")}” appears near the bottom of the final page.`
-              : "The shaded block shows the redaction area applied to each page.";
+              : "The selected change is shown on the first page.";
 
   return (
     <section className="pdf-setting-preview" aria-labelledby={`${slug}-setting-preview-title`}>
@@ -1020,7 +1397,6 @@ function PdfSettingPreview({ tool, settings, info }) {
           {slug === "crop-pdf" && <span className="preview-crop" style={{ inset: `${Math.max(0, Math.min(42, Number(settings.margin || 0)))}%` }} />}
           {slug === "edit-pdf" && <span className={`preview-edit-text ${editPosition}`} style={{ fontSize: `${Math.max(7, Math.min(16, Number(settings.fontSize || 16) * 0.38))}px` }}>{String(settings.text || "Reviewed locally")}</span>}
           {slug === "sign-pdf" && <span className="preview-signature">{String(settings.name || "Signed locally")}</span>}
-          {slug === "redact-pdf" && <span className={`preview-redaction ${settings.overlay === "white" ? "white" : ""}`} style={{ left: `${Number(settings.x || 10)}%`, top: `${Number(settings.y || 40)}%`, width: `${Number(settings.width || 80)}%`, height: `${Number(settings.height || 10)}%` }} />}
         </div>
       </div>
       <p>{previewDescription}</p>
@@ -2356,8 +2732,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || tool.slug === "pdf-forms";
-  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug);
+  const usesStickySettings = usesPagePicker || ["pdf-forms", "redact-pdf"].includes(tool.slug);
+  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
@@ -2372,6 +2748,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     if (pdfFormInfo.state === "error") return { valid: false, values: {}, changeCount: 0, message: pdfFormInfo.message };
     return createPdfFormPlan(settings.values, pdfFormInfo.fields, settings.flatten, limits);
   }, [limits, pdfFormInfo, settings.flatten, settings.values, tool.slug]);
+  const redactionPlan = useMemo(() => tool.slug === "redact-pdf" ? getRedactionPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
@@ -2449,6 +2826,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     if (validation.accepted.length) {
       passwordGate.resetForFileChange();
       if (tool.slug === "pdf-forms") setSettings((current) => ({ ...current, values: "" }));
+      if (tool.slug === "redact-pdf") setSettings((current) => ({ ...current, regions: "[]" }));
       setFiles(validation.nextFiles);
       clearResults();
       setStatus("idle");
@@ -2502,6 +2880,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     const nextFocusId = nextFocusFile ? getFileId(nextFocusFile) : null;
     passwordGate.resetForFileChange();
     if (tool.slug === "pdf-forms") setSettings((current) => ({ ...current, values: "" }));
+    if (tool.slug === "redact-pdf") setSettings((current) => ({ ...current, regions: "[]" }));
     setFiles(remaining);
     clearResults();
     setStatus("idle");
@@ -2531,7 +2910,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const compressionReady = tool.slug !== "compress-pdf" || !hasRequiredInput || compressionEstimateAllowsProcessing(activeCompressionEstimate);
   const imageEncoderReady = tool.slug !== "convert-image" || (imageEncoderSupport.state === "ready" && imageEncoderSupport.formats[settings.format] === true);
   const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && status !== "processing";
+  const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -2551,6 +2931,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? organizePlan?.message
     : tool.slug === "pdf-forms" && !pdfFormPlan?.valid
       ? pdfFormPlan?.message
+    : tool.slug === "redact-pdf" && !redactionPlan?.valid
+      ? redactionPlan?.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -2626,6 +3008,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? pdfFormPlan.changeCount
         ? `Fill ${pdfFormPlan.changeCount.toLocaleString()} ${pdfFormPlan.changeCount === 1 ? "field" : "fields"}`
         : "Flatten PDF form"
+    : tool.slug === "redact-pdf" && redactionPlan?.valid
+      ? `Redact ${redactionPlan.regionCount.toLocaleString()} ${redactionPlan.regionCount === 1 ? "area" : "areas"}`
     : tool.name;
 
   const updateSetting = (key, value) => {
@@ -2637,7 +3021,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -2651,7 +3035,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -2768,6 +3152,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <ImageFormatControls settings={settings} onChange={updateSetting} support={imageEncoderSupport} />
             ) : tool.slug === "pdf-forms" ? (
               <PdfFormControls file={files[0]} info={pdfFormInfo} settings={settings} limits={limits} plan={pdfFormPlan} onChange={updateSetting} />
+            ) : tool.slug === "redact-pdf" ? (
+              <RedactPdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={redactionPlan} limits={limits} />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
@@ -2802,6 +3188,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "organize-pdf" && organizePlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{organizePlan.order.length.toLocaleString()} {organizePlan.order.length === 1 ? "page" : "pages"} ready</strong>
+              )}
+              {tool.slug === "redact-pdf" && redactionPlan?.valid && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{redactionPlan.regionCount.toLocaleString()} {redactionPlan.regionCount === 1 ? "area" : "areas"} on {redactionPlan.affectedPageCount.toLocaleString()} {redactionPlan.affectedPageCount === 1 ? "page" : "pages"}</strong>
               )}
               {!(inlineReaderTools.has(tool.slug) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>

@@ -16,6 +16,7 @@ import {
 } from "./file-utils.js";
 import { protectPdf, repairPdf, unlockPdf } from "./libpdf.js";
 import { fillPdfFormFields } from "./pdf-form-fields.js";
+import { createRedactionPlan } from "./pdf-redactions.js";
 import {
   FileLimitError,
   assertExtractedTextLength,
@@ -487,6 +488,7 @@ async function rasterizePdf(file, options, report, mode = "compress") {
   const output = await PDFDocument.create();
   const quality = Math.max(0.25, Math.min(0.95, Number(options.quality || (mode === "redact" ? 90 : 68)) / 100));
   const scale = mode === "compress" ? Number(options.scale || 1.2) : 1.6;
+  const redactionPlan = mode === "redact" ? createRedactionPlan(options.regions, rendered.numPages, limits) : null;
 
   try {
     for (let index = 0; index < rendered.numPages; index += 1) {
@@ -494,12 +496,14 @@ async function rasterizePdf(file, options, report, mode = "compress") {
       const pageImage = await renderPdfPage(rendered, index, { scale, quality, limits, label: `${file.name}, page ${index + 1}` });
       if (mode === "redact") {
         const context = pageImage.canvas.getContext("2d");
-        const x = (Number(options.x || 10) / 100) * pageImage.canvas.width;
-        const y = (Number(options.y || 40) / 100) * pageImage.canvas.height;
-        const width = (Number(options.width || 80) / 100) * pageImage.canvas.width;
-        const height = (Number(options.height || 10) / 100) * pageImage.canvas.height;
         context.fillStyle = options.overlay === "white" ? "#ffffff" : "#111111";
-        context.fillRect(x, y, width, height);
+        for (const region of redactionPlan.byPage[index + 1] || []) {
+          const x = (region.x / 100) * pageImage.canvas.width;
+          const y = (region.y / 100) * pageImage.canvas.height;
+          const width = (region.width / 100) * pageImage.canvas.width;
+          const height = (region.height / 100) * pageImage.canvas.height;
+          context.fillRect(x, y, width, height);
+        }
         pageImage.blob = await canvasToBlob(pageImage.canvas, "image/jpeg", quality);
       }
       const image = await output.embedJpg(await pageImage.blob.arrayBuffer());
@@ -522,7 +526,13 @@ async function rasterizePdf(file, options, report, mode = "compress") {
       }];
     }
     const suffix = mode === "redact" ? "secure-redacted" : "compressed";
-    return [pdfResult(`${safeFileName(baseName(file.name))}-${suffix}.pdf`, outputBytes, mode === "redact" ? "Pages flattened so hidden text is removed" : "Pages re-encoded locally")];
+    return [pdfResult(
+      `${safeFileName(baseName(file.name))}-${suffix}.pdf`,
+      outputBytes,
+      mode === "redact"
+        ? `${redactionPlan.regionCount.toLocaleString()} ${redactionPlan.regionCount === 1 ? "area" : "areas"} redacted across ${redactionPlan.affectedPageCount.toLocaleString()} ${redactionPlan.affectedPageCount === 1 ? "page" : "pages"}; all pages flattened`
+        : "Pages re-encoded locally",
+    )];
   } finally {
     await destroyPdfJsDocument(rendered);
   }

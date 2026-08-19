@@ -100,6 +100,9 @@ test("tool policies expose the intended exact count and byte budgets", () => {
   assert.equal(getToolLimits("compress-image").maxImagePixelsPerFile, 16_000_000);
   assert.equal(getToolLimits("pdf-to-markdown").maxTextPreviewCharacters, 250_000);
   assert.equal(getToolLimits("pdf-to-markdown").maxTextPreviewBlocks, 1_000);
+  assert.equal(getToolLimits("redact-pdf").maxRedactionRegions, 200);
+  assert.equal(getToolLimits("redact-pdf").maxRedactionRegionsPerPage, 50);
+  assert.equal(getToolLimits("redact-pdf").maxRedactionSettingsCharacters, 64 * 1024);
   assert.equal(GLOBAL_OUTPUT_LIMIT_BYTES, 128 * MiB);
   assert.equal(ARCHIVE_INPUT_LIMIT_BYTES, 128 * MiB);
 });
@@ -126,6 +129,11 @@ test("visible limit copy is generated from the same policy as validation", () =>
   const splitCopy = describeToolLimits(split);
   assert.equal(splitCopy.primary, "1 PDF file · 75 MB");
   assert.doesNotMatch(splitCopy.primary, /each|combined/);
+
+  const redact = tool("redact-pdf", { name: "Redact PDF" });
+  const redactCopy = describeToolLimits(redact);
+  assert.match(redactCopy.secondary, /200 redaction areas · 50\/page/);
+  assert.match(redactCopy.secondary, /65,536 characters max in redaction area data/);
 });
 
 test("Convert Image exposes one static PNG/JPG/WebP matrix with central safeguards", () => {
@@ -283,6 +291,7 @@ test("every registered text setting accepts its exact cap and rejects one extra 
     "edit-pdf": { text: 500 },
     "sign-pdf": { name: 200 },
     "pdf-forms": { values: 256 * 1024 },
+    "redact-pdf": { regions: 64 * 1024 },
     "unlock-pdf": { password: 1024 },
     "protect-pdf": { password: 1024 },
     "watermark-image": { text: 500 },

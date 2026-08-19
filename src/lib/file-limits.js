@@ -70,6 +70,7 @@ const TEXT_SETTING_LIMITS = {
   "edit-pdf": { text: 500 },
   "sign-pdf": { name: 200 },
   "pdf-forms": { values: 256 * 1024 },
+  "redact-pdf": { regions: 64 * 1024 },
   "unlock-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS },
   "protect-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS },
   "watermark-image": { text: 500 },
@@ -86,6 +87,7 @@ const TEXT_SETTING_LABELS = {
   "edit-pdf": { text: "annotation text" },
   "sign-pdf": { name: "typed signature" },
   "pdf-forms": { values: "advanced field JSON" },
+  "redact-pdf": { regions: "redaction area data" },
   "unlock-pdf": { password: "current password" },
   "protect-pdf": { password: "new password" },
   "watermark-image": { text: "watermark text" },
@@ -177,6 +179,11 @@ export function getToolLimits(toolOrSlug) {
       ...PDF_RASTER_PROFILES[slug],
       maxRasterPixels: PDF_RASTER_PROFILES[slug].maxRasterPixels || 16 * MEGAPIXEL,
       maxRasterEdge: PDF_RASTER_PROFILES[slug].maxRasterEdge || 8192,
+      ...(slug === "redact-pdf" ? {
+        maxRedactionRegions: 200,
+        maxRedactionRegionsPerPage: 50,
+        maxRedactionSettingsCharacters: 64 * 1024,
+      } : {}),
     });
   }
 
@@ -414,6 +421,7 @@ export function describeToolLimits(tool) {
   if (limits.maxPdfFormFieldNameCharacters) details.push(`${limits.maxPdfFormFieldNameCharacters.toLocaleString()} characters/field name`);
   if (limits.maxPdfFormValueCharacters) details.push(`${limits.maxPdfFormValueCharacters.toLocaleString()} characters/field value`);
   if (limits.maxPdfFormMetadataCharacters) details.push(`${limits.maxPdfFormMetadataCharacters.toLocaleString()} field text/choice characters total`);
+  if (limits.maxRedactionRegions) details.push(`${limits.maxRedactionRegions.toLocaleString()} redaction areas · ${limits.maxRedactionRegionsPerPage.toLocaleString()}/page`);
   if (limits.maxPageSelectionEntries) details.push(`${limits.maxPageSelectionEntries.toLocaleString()} expanded page-selection entries max`);
   if (limits.maxOrganizedPageMultiplier) details.push(`${limits.maxOrganizedPageMultiplier}× source pages max output`);
   if (limits.maxArchiveEntries) details.push(`${limits.maxArchiveEntries.toLocaleString()} internal items`);
