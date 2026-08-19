@@ -4288,8 +4288,200 @@ kbd {
   color: currentColor;
 }
 
+.word-preview-empty,
+.word-preview-loading,
+.word-preview-error {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px;
+  background: var(--surface-soft);
+}
+
+.word-preview-empty > span,
+.word-preview-loading > svg,
+.word-preview-error > svg {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  padding: 7px;
+  background: var(--privacy-soft);
+  color: var(--privacy);
+}
+
+.word-preview-loading > svg {
+  padding: 6px;
+}
+
+.word-preview-error {
+  border-color: #ead3c6;
+  background: var(--coral-soft);
+}
+
+.word-preview-error > svg {
+  background: rgb(255 255 255 / 62%);
+  color: var(--coral-dark);
+}
+
+.word-preview-empty > div,
+.word-preview-loading > div,
+.word-preview-error > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.word-preview-empty strong,
+.word-preview-loading strong,
+.word-preview-error strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.word-preview-empty small,
+.word-preview-loading small,
+.word-preview-error small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.word-document-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.word-document-preview > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.word-document-preview > header > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--privacy-soft);
+  color: var(--privacy);
+}
+
+.word-document-preview > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.word-document-preview > header strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.word-document-preview > header small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.word-preview-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.word-preview-stats > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  text-align: center;
+}
+
+.word-preview-stats > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.word-preview-stats dt {
+  color: var(--muted);
+  font: 700 7px/1.2 var(--mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.word-preview-stats dd {
+  margin: 0;
+  color: var(--ink);
+  font: 750 13px/1.2 var(--sans);
+}
+
+.word-preview-text {
+  max-height: 150px;
+  overflow: auto;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 11px;
+  background: #fffefb;
+  outline: 0;
+}
+
+.word-preview-text:focus {
+  border-color: var(--privacy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--privacy) 16%, transparent);
+}
+
+.word-preview-text pre {
+  margin: 0;
+  color: var(--ink);
+  font: 9px/1.6 var(--mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.word-preview-scope,
+.word-layout-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--privacy-dark);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.word-preview-scope svg,
+.word-layout-note svg {
+  flex: 0 0 auto;
+}
+
+.word-layout-note {
+  border: 1px solid #ead3c6;
+  border-radius: 8px;
+  padding: 9px;
+  background: var(--coral-soft);
+  color: var(--coral-dark);
+}
+
+.word-layout-note strong {
+  color: currentColor;
+}
+
+.word-pdf-workbench .process-action-stack:empty {
+  display: none;
+}
+
 .repair-result-summary,
-.scan-result-summary {
+.scan-result-summary,
+.word-result-summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
@@ -4299,7 +4491,8 @@ kbd {
 }
 
 .repair-result-summary > span,
-.scan-result-summary > span {
+.scan-result-summary > span,
+.word-result-summary > span {
   width: 36px;
   height: 36px;
   display: grid;
@@ -4310,27 +4503,31 @@ kbd {
 }
 
 .repair-result-summary > div,
-.scan-result-summary > div {
+.scan-result-summary > div,
+.word-result-summary > div {
   min-width: 0;
   display: grid;
   gap: 2px;
 }
 
 .repair-result-summary > div strong,
-.scan-result-summary > div strong {
+.scan-result-summary > div strong,
+.word-result-summary > div strong {
   color: var(--ink);
   font-size: 11px;
 }
 
 .repair-result-summary > div small,
-.scan-result-summary > div small {
+.scan-result-summary > div small,
+.word-result-summary > div small {
   color: var(--muted-strong);
   font-size: 9px;
   line-height: 1.4;
 }
 
 .repair-result-summary > p,
-.scan-result-summary > p {
+.scan-result-summary > p,
+.word-result-summary > p {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;

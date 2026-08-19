@@ -688,13 +688,15 @@ function textToPdfDocument(text, title = "Local document", options = {}, toolSlu
 
 async function officeToPdf(slug, file, options, report) {
   let text = "";
+  let wordOutcome = null;
   const limits = getToolLimits(slug);
   const sourceLabel = file?.name || "Pasted HTML";
   report?.({ phase: "Reading document", progress: 0.2 });
 
   if (slug === "word-to-pdf") {
-    const { extractDocxText } = await import("./docx-text.js");
+    const { createDocxTextPreview, extractDocxText } = await import("./docx-text.js");
     text = await extractDocxText(file, limits);
+    wordOutcome = createDocxTextPreview(text);
   } else if (slug === "powerpoint-to-pdf") {
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
@@ -764,7 +766,26 @@ async function officeToPdf(slug, file, options, report) {
 
   report?.({ phase: "Laying out pages", progress: 0.68 });
   const document = await textToPdfDocument(text, baseName(file?.name || "local-html"), options, slug);
-  return [resultFromBlob(`${safeFileName(baseName(file?.name || "local-html"))}.pdf`, document.output("blob"), "Best-effort local document rendering")];
+  const pageCount = document.getNumberOfPages();
+  const result = resultFromBlob(
+    `${safeFileName(baseName(file?.name || "local-html"))}.pdf`,
+    document.output("blob"),
+    wordOutcome
+      ? `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${wordOutcome.characterCount.toLocaleString()} readable characters`
+      : "Best-effort local document rendering",
+  );
+  if (wordOutcome) {
+    result.wordOutcome = {
+      characterCount: wordOutcome.characterCount,
+      wordCount: wordOutcome.wordCount,
+      paragraphCount: wordOutcome.paragraphCount,
+      symbolCount: wordOutcome.symbolCount,
+      truncated: wordOutcome.truncated,
+      previewCharacterCount: wordOutcome.previewCharacterCount,
+      pageCount,
+    };
+  }
+  return [result];
 }
 
 async function pdfToOffice(slug, file, options, report) {

@@ -80,6 +80,7 @@ import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
 import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
+import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
 import { COMPARISON_ROWS_PER_PAGE } from "./lib/pdf-comparison.js";
@@ -663,6 +664,37 @@ function usePdfPageInfo(file, enabled, limits, toolName) {
   }, [enabled, file, limits.maxPdfPagesPerFile, toolName]);
 
   return info;
+}
+
+function useWordDocumentPreview(file, enabled, tool, limits) {
+  const [preview, setPreview] = useState({ state: "idle", file: null, message: "" });
+
+  useEffect(() => {
+    if (!enabled || !file) {
+      setPreview({ state: "idle", file: null, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setPreview({ state: "loading", file, message: "Reading the document locally…" });
+    (async () => {
+      const docxPromise = import("./lib/docx-text.js");
+      await preflightToolFiles(tool, [file], {});
+      const docx = await docxPromise;
+      const text = await docx.extractDocxText(file, limits);
+      if (!cancelled) setPreview({ state: "ready", file, message: "", ...docx.createDocxTextPreview(text) });
+    })().catch((error) => {
+      if (cancelled) return;
+      const friendly = toFriendlyResourceError(error, tool.name);
+      if (!cancelled) setPreview({ state: "error", file, message: friendly?.message || "The readable text could not be inspected." });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, file, limits, tool]);
+
+  return preview;
 }
 
 function usePdfFormInfo(file, enabled, limits) {
@@ -2322,6 +2354,74 @@ function ImagePdfResultSummary({ result }) {
   );
 }
 
+function WordPdfControls({ file, preview }) {
+  if (!file) {
+    return (
+      <section className="word-preview-empty" aria-labelledby="word-preview-title">
+        <span><FileDocIcon size={21} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="word-preview-title">Preview readable text</strong><small>Add one DOCX to check what the clean PDF will contain.</small></div>
+      </section>
+    );
+  }
+
+  if (preview.state === "loading" || preview.file !== file) {
+    return (
+      <section className="word-preview-loading" aria-live="polite">
+        <SpinnerGapIcon size={21} className="spin" aria-hidden="true" />
+        <div><strong>Reading text locally</strong><small>Checking the DOCX structure and extracting readable text.</small></div>
+      </section>
+    );
+  }
+
+  if (preview.state === "error") {
+    return (
+      <section className="word-preview-error" role="alert">
+        <WarningCircleIcon size={21} weight="fill" aria-hidden="true" />
+        <div><strong>Preview unavailable</strong><small>{preview.message}</small></div>
+      </section>
+    );
+  }
+
+  const hasText = preview.characterCount > 0;
+  return (
+    <section className="word-document-preview" aria-labelledby="word-preview-title">
+      <header role="status" aria-live="polite">
+        <span><EyeIcon size={19} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="word-preview-title">{hasText ? "Readable text found" : "No readable text found"}</strong><small>{hasText ? "This is the content that will be reconstructed." : "The output would contain a no-readable-text notice."}</small></div>
+      </header>
+      <dl className="word-preview-stats">
+        <div><dt>Characters</dt><dd>{preview.characterCount.toLocaleString()}</dd></div>
+        <div><dt>Words</dt><dd>{preview.wordCount.toLocaleString()}</dd></div>
+        <div><dt>Paragraphs</dt><dd>{preview.paragraphCount.toLocaleString()}</dd></div>
+      </dl>
+      {hasText && (
+        <div className="word-preview-text" tabIndex="0" aria-label="Extracted DOCX text preview">
+          <pre>{preview.previewText}</pre>
+        </div>
+      )}
+      {hasText && (
+        <p className="word-preview-scope">
+          <CheckCircleIcon size={15} weight="fill" aria-hidden="true" />
+          <span>{preview.truncated ? `Showing the first ${preview.previewCharacterCount.toLocaleString()} of ${preview.characterCount.toLocaleString()} characters. The full readable text will be used.` : "All extracted readable text is shown above."}</span>
+        </p>
+      )}
+      <p className="word-layout-note"><WarningCircleIcon size={15} weight="duotone" aria-hidden="true" /><span><strong>Clean reconstruction, not a Word replica.</strong> Images, columns, styling, and original pagination are not preserved.</span></p>
+    </section>
+  );
+}
+
+function WordPdfResultSummary({ result }) {
+  const outcome = result?.wordOutcome;
+  if (!outcome) return null;
+  return (
+    <div className="word-result-summary" role="status">
+      <span><FileDocIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>Readable text rebuilt across {outcome.pageCount.toLocaleString()} {outcome.pageCount === 1 ? "page" : "pages"}</strong><small>{outcome.characterCount.toLocaleString()} characters from {outcome.paragraphCount.toLocaleString()} {outcome.paragraphCount === 1 ? "paragraph" : "paragraphs"} were placed into a clean PDF.</small></div>
+      <p><EyeIcon size={16} aria-hidden="true" />Preview the PDF to review line wrapping and page breaks before sharing it.</p>
+    </div>
+  );
+}
+
 function RepairPdfControls() {
   return (
     <section className="repair-explainer" aria-labelledby="repair-explainer-title">
@@ -3061,10 +3161,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "word-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
+  const wordPreview = useWordDocumentPreview(files[0], tool.slug === "word-to-pdf", tool, limits);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
@@ -3240,7 +3341,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageEncoderReady = tool.slug !== "convert-image" || (imageEncoderSupport.state === "ready" && imageEncoderSupport.formats[settings.format] === true);
   const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && status !== "processing";
+  const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && wordPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -3262,6 +3364,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? pdfFormPlan?.message
     : tool.slug === "redact-pdf" && !redactionPlan?.valid
       ? redactionPlan?.message
+    : tool.slug === "word-to-pdf" && wordPreview.file === files[0] && wordPreview.state === "loading"
+      ? "Reading and checking the DOCX locally before export."
+    : tool.slug === "word-to-pdf" && wordPreview.file === files[0] && wordPreview.state === "error"
+      ? wordPreview.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3347,6 +3453,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? `Create ${files.length.toLocaleString()}-page PDF`
     : tool.slug === "compare-pdf" && hasRequiredInput
       ? "Compare 2 PDFs"
+    : tool.slug === "word-to-pdf" && hasRequiredInput
+      ? "Create readable PDF"
     : tool.name;
 
   const updateSetting = (key, value) => {
@@ -3368,7 +3476,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "word-to-pdf" ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -3482,6 +3590,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 )}
                 {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && <ImagePdfResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
+                {tool.slug === "word-to-pdf" && <WordPdfResultSummary result={results[0]} />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -3501,7 +3610,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span><SlidersHorizontalIcon size={19} /></span><div><h3>Settings</h3><p>Fine-tune the local output.</p></div></div>
+            <div className="settings-heading"><span>{tool.slug === "word-to-pdf" ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "word-to-pdf" ? "Document preview" : "Settings"}</h3><p>{tool.slug === "word-to-pdf" ? "Check the readable text before export." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -3534,6 +3643,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <ComparePdfControls files={files} result={results[0]} />
             ) : tool.slug === "repair-pdf" ? (
               <RepairPdfControls />
+            ) : tool.slug === "word-to-pdf" ? (
+              <WordPdfControls file={files[0]} preview={wordPreview} />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
@@ -3573,7 +3684,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {tool.slug === "redact-pdf" && redactionPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{redactionPlan.regionCount.toLocaleString()} {redactionPlan.regionCount === 1 ? "area" : "areas"} on {redactionPlan.affectedPageCount.toLocaleString()} {redactionPlan.affectedPageCount === 1 ? "page" : "pages"}</strong>
               )}
-              {!(inlineReaderTools.has(tool.slug) && results.length) && (
+              {!((inlineReaderTools.has(tool.slug) || tool.slug === "word-to-pdf") && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
                   {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
                 </button>
