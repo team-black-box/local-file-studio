@@ -40,6 +40,48 @@ import { createComparisonHtml, createComparisonView } from "./pdf-comparison.js"
 import { destroyPdfJsDocument, getPdfJsEngine } from "./pdfjs-utils.js";
 import { protectGeneratedPdfResults } from "./pdf-output-protection.js";
 
+const WIN_ANSI_EXTRA_CODE_POINTS = new Set([
+  0x0152, 0x0153, 0x0160, 0x0161, 0x0178, 0x017d, 0x017e, 0x0192,
+  0x02c6, 0x02dc, 0x2013, 0x2014, 0x2018, 0x2019, 0x201a, 0x201c,
+  0x201d, 0x201e, 0x2020, 0x2021, 0x2022, 0x2026, 0x2030, 0x2039,
+  0x203a, 0x20ac, 0x2122,
+]);
+
+function isStandardPdfTextCharacter(character) {
+  const codePoint = character.codePointAt(0);
+  return [9, 10, 13].includes(codePoint)
+    || (codePoint >= 0x20 && codePoint <= 0x7e)
+    || (codePoint >= 0xa0 && codePoint <= 0xff)
+    || WIN_ANSI_EXTRA_CODE_POINTS.has(codePoint);
+}
+
+function standardPdfMetadataText(value, fallback) {
+  const sanitized = Array.from(String(value || ""), (character) => (
+    isStandardPdfTextCharacter(character) && !["\t", "\n", "\r"].includes(character) ? character : "?"
+  )).join("").trim();
+  return sanitized || fallback;
+}
+
+export function assertPdfTextFontCompatibility(value, label = "This document") {
+  const unsupported = [];
+  const seen = new Set();
+  for (const character of String(value || "")) {
+    if (isStandardPdfTextCharacter(character) || seen.has(character)) continue;
+    seen.add(character);
+    unsupported.push(character);
+    if (unsupported.length === 5) break;
+  }
+  if (!unsupported.length) return;
+  const examples = unsupported.map((character) => {
+    const labelCharacter = /\s/u.test(character) ? "control character" : `“${character}”`;
+    return `${labelCharacter} (U+${character.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")})`;
+  }).join(", ");
+  throw new FileLimitError(
+    "unsupported-pdf-text-character",
+    `${label} contains text characters the current local PDF font cannot preserve: ${examples}. Replace them with Latin text (for example, use INR instead of the rupee symbol) and try again.`,
+  );
+}
+
 async function openRenderedPdf(file, password = "") {
   const pdfjs = await getPdfJsEngine();
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -649,19 +691,20 @@ export function createOcrReaderResult(fileName, pages) {
 }
 
 export function textToPdfDocument(text, title = "Local document", options = {}, toolSlug = "html-to-pdf") {
+  const limits = getToolLimits(toolSlug);
+  const conversionLabel = `${title || "This document"} conversion`;
+  const pageSize = options.pageSize === "letter" ? "letter" : "a4";
+  const orientation = options.orientation === "landscape" ? "landscape" : "portrait";
+  const sourceText = String(text || "No readable text was found.");
+  assertPdfTextFontCompatibility(sourceText, conversionLabel);
   return import("jspdf").then(({ jsPDF }) => {
-    const limits = getToolLimits(toolSlug);
-    const conversionLabel = `${title || "This document"} conversion`;
-    const pageSize = options.pageSize === "letter" ? "letter" : "a4";
-    const orientation = options.orientation === "landscape" ? "landscape" : "portrait";
     const document = new jsPDF({ unit: "pt", format: pageSize, orientation });
-    document.setProperties({ title, creator: "Local File Studio" });
+    document.setProperties({ title: standardPdfMetadataText(title, "Local document"), creator: "Local File Studio" });
     document.setFont("helvetica", "normal");
     document.setFontSize(11);
     const margin = 48;
     const maxWidth = document.internal.pageSize.getWidth() - margin * 2;
     const pageHeight = document.internal.pageSize.getHeight();
-    const sourceText = String(text || "No readable text was found.");
     const linesPerPage = Math.floor((pageHeight - 52 - 58) / 16) + 1;
     const explicitLinePages = Math.max(1, Math.ceil(countLogicalLines(sourceText) / linesPerPage));
     assertGeneratedPdfPageCount(explicitLinePages, limits, conversionLabel);
@@ -689,6 +732,7 @@ async function officeToPdf(slug, file, options, report) {
   let wordOutcome = null;
   let powerpointOutcome = null;
   let spreadsheetOutcome = null;
+  let htmlOutcome = null;
   const limits = getToolLimits(slug);
   const sourceLabel = file?.name || "Pasted HTML";
   report?.({ phase: "Reading document", progress: 0.2 });
@@ -709,10 +753,10 @@ async function officeToPdf(slug, file, options, report) {
     spreadsheetOutcome = createSpreadsheetTextPreview(extraction);
   } else {
     const html = file ? await file.text() : String(options.html || "");
-    const document = new DOMParser().parseFromString(html, "text/html");
-    document.querySelectorAll("script, iframe, object, embed, form").forEach((node) => node.remove());
-    text = document.body.textContent || "";
-    assertExtractedTextLength(text.length, limits, sourceLabel);
+    const { createHtmlTextPreview, extractHtmlText } = await import("./html-text.js");
+    const extraction = extractHtmlText(html, limits, sourceLabel);
+    text = extraction.text;
+    htmlOutcome = createHtmlTextPreview(extraction, { pageSize: options.pageSize });
   }
 
   report?.({ phase: "Laying out pages", progress: 0.68 });
@@ -727,7 +771,7 @@ async function officeToPdf(slug, file, options, report) {
         ? `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${powerpointOutcome.slideCount.toLocaleString()} ${powerpointOutcome.slideCount === 1 ? "slide" : "slides"} · ${powerpointOutcome.characterCount.toLocaleString()} readable characters`
         : spreadsheetOutcome
           ? `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${spreadsheetOutcome.sheetCount.toLocaleString()} ${spreadsheetOutcome.sheetCount === 1 ? "sheet" : "sheets"} · ${spreadsheetOutcome.usedCellSlots.toLocaleString()} used-range cells`
-        : "Best-effort local document rendering",
+          : `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${htmlOutcome.characterCount.toLocaleString()} readable characters`,
   );
   if (wordOutcome) {
     result.wordOutcome = {
@@ -758,6 +802,15 @@ async function officeToPdf(slug, file, options, report) {
       usedCellSlots: spreadsheetOutcome.usedCellSlots,
       characterCount: spreadsheetOutcome.characterCount,
       orientation: options.orientation === "portrait" ? "portrait" : "landscape",
+      pageCount,
+    };
+  }
+  if (htmlOutcome) {
+    result.htmlOutcome = {
+      characterCount: htmlOutcome.characterCount,
+      wordCount: htmlOutcome.wordCount,
+      paragraphCount: htmlOutcome.paragraphCount,
+      pageSize: options.pageSize === "letter" ? "letter" : "a4",
       pageCount,
     };
   }
