@@ -1917,6 +1917,19 @@ kbd {
   grid-column: 1 / -1;
 }
 
+.image-pdf-margin-picker > div {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.image-pdf-margin-picker button:first-child {
+  grid-column: auto;
+}
+
+.image-pdf-margin-picker button {
+  min-height: 70px;
+  flex-direction: column;
+}
+
 .scan-size-picker button:hover,
 .scan-size-picker button.selected {
   border-color: var(--primary);

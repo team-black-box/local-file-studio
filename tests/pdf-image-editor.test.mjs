@@ -19,6 +19,8 @@ import { createOcrReaderResult, createTextReaderResult, extractiveSummary, proce
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
 import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
+import { runTool } from "../src/lib/processors.js";
+import { tools } from "../src/tools.js";
 
 const MiB = 1024 * 1024;
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -160,8 +162,16 @@ test("JPG to PDF creates a PDF result that is eligible for the shared preview", 
   const [result] = await processPdfTool("jpg-to-pdf", [image], { pageSize: "fit", margin: 0 });
   assert.equal(isPdfPreviewResult(result), true);
   assert.equal(assertPdfPreviewResult(result, result.size), result.blob);
+  assert.equal(result.details, "1 page · Fit each image · No margin");
+  assert.deepEqual(result.imagePdfOutcome, { pageCount: 1, pageSize: "fit", margin: "none" });
   const document = await PDFDocument.load(await result.blob.arrayBuffer());
   assert.equal(document.getPageCount(), 1);
+  assert.deepEqual([document.getPage(0).getWidth(), document.getPage(0).getHeight()], [1, 1]);
+
+  const tool = tools.find((item) => item.slug === "jpg-to-pdf");
+  const response = await runTool(tool, [image], { pageSize: "fit", margin: "none" });
+  const normalizedDocument = await PDFDocument.load(await response.results[0].blob.arrayBuffer());
+  assert.deepEqual([normalizedDocument.getPage(0).getWidth(), normalizedDocument.getPage(0).getHeight()], [1, 1]);
 });
 
 test("Scan to PDF preserves visual image order and reports its page fit", async () => {
