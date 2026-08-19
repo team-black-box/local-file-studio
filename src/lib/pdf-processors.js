@@ -48,6 +48,8 @@ const WIN_ANSI_EXTRA_CODE_POINTS = new Set([
   0x203a, 0x20ac, 0x2122,
 ]);
 
+export const PDF_OFFICE_TEXT_PREVIEW_CHARACTERS = 1600;
+
 function isStandardPdfTextCharacter(character) {
   const codePoint = character.codePointAt(0);
   return [9, 10, 13].includes(codePoint)
@@ -128,7 +130,7 @@ async function renderPdfPage(pdf, index, { scale = 1.45, type = "image/jpeg", qu
   }
 }
 
-async function extractPdfPagesText(file, password = "", report, characterLimit) {
+export async function extractPdfPagesText(file, password = "", report, characterLimit, signal) {
   const pdf = await openRenderedPdf(file, password);
   const pages = [];
   const budget = characterLimit && typeof characterLimit === "object"
@@ -145,6 +147,7 @@ async function extractPdfPagesText(file, password = "", report, characterLimit) 
   };
   try {
     for (let index = 0; index < pdf.numPages; index += 1) {
+      if (signal?.aborted) throw new DOMException("PDF text inspection was cancelled.", "AbortError");
       report?.({ phase: `Reading page ${index + 1} of ${pdf.numPages}`, progress: (index + 1) / (pdf.numPages + 1) });
       const page = await pdf.getPage(index + 1);
       try {
@@ -156,6 +159,7 @@ async function extractPdfPagesText(file, password = "", report, characterLimit) 
         const reader = page.streamTextContent({ includeMarkedContent: false }).getReader();
         try {
           while (true) {
+            if (signal?.aborted) throw new DOMException("PDF text inspection was cancelled.", "AbortError");
             const { value: chunk, done } = await reader.read();
             if (done) break;
             for (const item of chunk?.items || []) {
@@ -197,6 +201,56 @@ async function extractPdfPagesText(file, password = "", report, characterLimit) 
   } finally {
     await destroyPdfJsDocument(pdf);
   }
+}
+
+export function createPdfOfficeTextPreview(pages, maxPreviewCharacters = PDF_OFFICE_TEXT_PREVIEW_CHARACTERS) {
+  if (!Array.isArray(pages) || !pages.length || pages.some((page) => typeof page !== "string")) {
+    throw new FileLimitError("invalid-pdf-text-pages", "The extracted PDF text could not be used to plan this Office export. Choose the PDF again.");
+  }
+  const previewLimit = Number.isInteger(Number(maxPreviewCharacters)) && Number(maxPreviewCharacters) > 0
+    ? Number(maxPreviewCharacters)
+    : PDF_OFFICE_TEXT_PREVIEW_CHARACTERS;
+  const pageStats = pages.map((text, index) => {
+    const trimmed = text.trim();
+    return {
+      pageNumber: index + 1,
+      characterCount: text.length,
+      wordCount: trimmed ? trimmed.split(/\s+/u).length : 0,
+      hasText: Boolean(trimmed),
+      previewText: text.slice(0, previewLimit),
+      truncated: text.length > previewLimit,
+    };
+  });
+  return {
+    pageCount: pageStats.length,
+    pagesWithText: pageStats.filter((page) => page.hasText).length,
+    emptyPageCount: pageStats.filter((page) => !page.hasText).length,
+    characterCount: pageStats.reduce((sum, page) => sum + page.characterCount, 0),
+    wordCount: pageStats.reduce((sum, page) => sum + page.wordCount, 0),
+    pageStats,
+  };
+}
+
+function validatePdfOfficeTextPages(pages, file, limits) {
+  const preview = createPdfOfficeTextPreview(pages);
+  if (preview.pageCount > limits.maxPdfPagesPerFile) {
+    throw new FileLimitError(
+      "too-many-pages",
+      `${file.name} has ${preview.pageCount.toLocaleString()} pages; this conversion supports ${limits.maxPdfPagesPerFile.toLocaleString()} per file. Split it first.`,
+    );
+  }
+  if (preview.characterCount > limits.maxExtractedCharactersTotal) {
+    throw new FileLimitError(
+      "extracted-text-limit",
+      `${file.name} contains more than ${limits.maxExtractedCharactersTotal.toLocaleString()} selectable characters for this tool. Choose fewer pages or split the PDF first.`,
+    );
+  }
+  return preview;
+}
+
+export async function inspectPdfOfficeText(file, password = "", limits = getToolLimits("pdf-to-word"), report, signal) {
+  const pages = await extractPdfPagesText(file, password, report, limits.maxExtractedCharactersTotal, signal);
+  return { pages, ...validatePdfOfficeTextPages(pages, file, limits) };
 }
 
 async function loadPdfLib(file) {
@@ -819,19 +873,35 @@ async function officeToPdf(slug, file, options, report) {
 
 async function pdfToOffice(slug, file, options, report) {
   const limits = getToolLimits(slug);
-  const pages = await extractPdfPagesText(file, options.inputPassword, report, limits.maxExtractedCharactersTotal);
+  const pages = Array.isArray(options.pdfOfficeTextPages)
+    ? options.pdfOfficeTextPages
+    : await extractPdfPagesText(file, options.inputPassword, report, limits.maxExtractedCharactersTotal);
+  const textPreview = validatePdfOfficeTextPages(pages, file, limits);
   const cleanName = safeFileName(baseName(file.name));
 
   if (slug === "pdf-to-word") {
-    const { Document, Packer, Paragraph, PageBreak, TextRun } = await import("docx");
-    const children = [];
-    pages.forEach((text, index) => {
-      if (index) children.push(new Paragraph({ children: [new PageBreak()] }));
-      children.push(new Paragraph({ children: [new TextRun({ text: `Page ${index + 1}`, bold: true, size: 30 })] }));
-      text.split(/\n+/).forEach((line) => children.push(new Paragraph(line)));
-    });
-    const blob = await Packer.toBlob(new Document({ sections: [{ children }] }));
-    return [resultFromBlob(`${cleanName}.docx`, blob, "Editable text reconstruction")];
+    const { Document, Packer, Paragraph, TextRun } = await import("docx");
+    const sections = pages.map((text, index) => ({
+      children: [
+        new Paragraph({ children: [new TextRun({ text: `Page ${index + 1}`, bold: true, size: 30 })] }),
+        ...text.split(/\n+/).map((line) => new Paragraph(line)),
+      ],
+    }));
+    const blob = await Packer.toBlob(new Document({ sections }));
+    const result = resultFromBlob(
+      `${cleanName}.docx`,
+      blob,
+      `${textPreview.pageCount.toLocaleString()} editable ${textPreview.pageCount === 1 ? "section" : "sections"} · ${textPreview.characterCount.toLocaleString()} characters`,
+    );
+    result.pdfOfficeTextOutcome = {
+      pageCount: textPreview.pageCount,
+      pagesWithText: textPreview.pagesWithText,
+      emptyPageCount: textPreview.emptyPageCount,
+      characterCount: textPreview.characterCount,
+      wordCount: textPreview.wordCount,
+      format: "docx",
+    };
+    return [result];
   }
 
   if (slug === "pdf-to-powerpoint") {
