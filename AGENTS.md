@@ -36,6 +36,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/processors.js`: tool dispatch and shared processing paths.
 - `src/lib/pdf-processors.js`, `src/lib/image-processors.js`, `src/lib/libpdf.js`: format-specific engines.
 - `src/lib/docx-text.js`: bounded, local DOCX text extraction for Word-to-PDF.
+- `src/lib/pptx-text.js`: bounded, ordered local PPTX slide-text extraction and preview.
 - `src/lib/pptx-writer.js`: dependency-light text reconstruction for PDF-to-PPTX output.
 - `src/lib/pdfjs-utils.js`: version-compatible PDF.js document cleanup.
 - `src/lib/pdf-passwords.js`: protected-PDF access modes, permission checks, and in-memory unlock adapter.

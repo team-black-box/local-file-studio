@@ -27,7 +27,6 @@ import {
   assertOcrCharacterCount,
   assertOrganizedPageCount,
   assertPdfOverlayImageDimensions,
-  assertPresentationSlideCount,
   assertRasterDimensions,
   assertSpreadsheetComplexity,
   countLogicalLines,
@@ -689,6 +688,7 @@ function textToPdfDocument(text, title = "Local document", options = {}, toolSlu
 async function officeToPdf(slug, file, options, report) {
   let text = "";
   let wordOutcome = null;
+  let powerpointOutcome = null;
   const limits = getToolLimits(slug);
   const sourceLabel = file?.name || "Pasted HTML";
   report?.({ phase: "Reading document", progress: 0.2 });
@@ -698,22 +698,10 @@ async function officeToPdf(slug, file, options, report) {
     text = await extractDocxText(file, limits);
     wordOutcome = createDocxTextPreview(text);
   } else if (slug === "powerpoint-to-pdf") {
-    const JSZip = (await import("jszip")).default;
-    const zip = await JSZip.loadAsync(await file.arrayBuffer());
-    const slideNames = Object.keys(zip.files).filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    assertPresentationSlideCount(slideNames.length, limits, sourceLabel);
-    const slides = [];
-    let extractedCharacters = 0;
-    for (const name of slideNames) {
-      const xml = await zip.file(name).async("text");
-      const document = new DOMParser().parseFromString(xml, "application/xml");
-      const slideText = [...document.getElementsByTagNameNS("*", "t")].map((node) => node.textContent).join(" ");
-      const section = `SLIDE ${slides.length + 1}\n${slideText}`;
-      extractedCharacters += section.length + (slides.length ? 2 : 0);
-      assertExtractedTextLength(extractedCharacters, limits, sourceLabel);
-      slides.push(section);
-    }
-    text = slides.join("\n\n");
+    const { createPptxTextPreview, extractPptxText } = await import("./pptx-text.js");
+    const extraction = await extractPptxText(file, limits);
+    text = extraction.text;
+    powerpointOutcome = createPptxTextPreview(extraction);
   } else if (slug === "excel-to-pdf") {
     const XLSX = await import("xlsx");
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
@@ -772,7 +760,9 @@ async function officeToPdf(slug, file, options, report) {
     document.output("blob"),
     wordOutcome
       ? `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${wordOutcome.characterCount.toLocaleString()} readable characters`
-      : "Best-effort local document rendering",
+      : powerpointOutcome
+        ? `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${powerpointOutcome.slideCount.toLocaleString()} ${powerpointOutcome.slideCount === 1 ? "slide" : "slides"} · ${powerpointOutcome.characterCount.toLocaleString()} readable characters`
+        : "Best-effort local document rendering",
   );
   if (wordOutcome) {
     result.wordOutcome = {
@@ -782,6 +772,17 @@ async function officeToPdf(slug, file, options, report) {
       symbolCount: wordOutcome.symbolCount,
       truncated: wordOutcome.truncated,
       previewCharacterCount: wordOutcome.previewCharacterCount,
+      pageCount,
+    };
+  }
+  if (powerpointOutcome) {
+    result.powerpointOutcome = {
+      slideCount: powerpointOutcome.slideCount,
+      slidesWithText: powerpointOutcome.slidesWithText,
+      characterCount: powerpointOutcome.characterCount,
+      firstSlideCharacterCount: powerpointOutcome.firstSlideCharacterCount,
+      firstSlideTruncated: powerpointOutcome.firstSlideTruncated,
+      firstSlidePreviewCharacterCount: powerpointOutcome.firstSlidePreviewCharacterCount,
       pageCount,
     };
   }

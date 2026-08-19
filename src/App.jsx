@@ -697,6 +697,37 @@ function useWordDocumentPreview(file, enabled, tool, limits) {
   return preview;
 }
 
+function usePowerPointDocumentPreview(file, enabled, tool, limits) {
+  const [preview, setPreview] = useState({ state: "idle", file: null, message: "" });
+
+  useEffect(() => {
+    if (!enabled || !file) {
+      setPreview({ state: "idle", file: null, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setPreview({ state: "loading", file, message: "Reading the slides locally…" });
+    (async () => {
+      const pptxPromise = import("./lib/pptx-text.js");
+      await preflightToolFiles(tool, [file], {});
+      const pptx = await pptxPromise;
+      const extraction = await pptx.extractPptxText(file, limits);
+      if (!cancelled) setPreview({ state: "ready", file, message: "", ...pptx.createPptxTextPreview(extraction) });
+    })().catch((error) => {
+      if (cancelled) return;
+      const friendly = toFriendlyResourceError(error, tool.name);
+      if (!cancelled) setPreview({ state: "error", file, message: friendly?.message || "The slide text could not be inspected." });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, file, limits, tool]);
+
+  return preview;
+}
+
 function usePdfFormInfo(file, enabled, limits) {
   const [info, setInfo] = useState({ state: "idle", fieldCount: 0, fields: [], message: "" });
 
@@ -2422,6 +2453,82 @@ function WordPdfResultSummary({ result }) {
   );
 }
 
+function PowerPointPdfControls({ file, preview }) {
+  if (!file) {
+    return (
+      <section className="word-preview-empty ppt-preview-empty" aria-labelledby="powerpoint-preview-title">
+        <span><FilePptIcon size={21} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="powerpoint-preview-title">Preview the first slide</strong><small>Add one PPTX to check its slide count, order, and readable text.</small></div>
+      </section>
+    );
+  }
+
+  if (preview.state === "loading" || preview.file !== file) {
+    return (
+      <section className="word-preview-loading ppt-preview-loading" aria-live="polite">
+        <SpinnerGapIcon size={21} className="spin" aria-hidden="true" />
+        <div><strong>Reading slides locally</strong><small>Checking the PPTX structure and extracting text in presentation order.</small></div>
+      </section>
+    );
+  }
+
+  if (preview.state === "error") {
+    return (
+      <section className="word-preview-error ppt-preview-error" role="alert">
+        <WarningCircleIcon size={21} weight="fill" aria-hidden="true" />
+        <div><strong>Preview unavailable</strong><small>{preview.message}</small></div>
+      </section>
+    );
+  }
+
+  const hasSlides = preview.slideCount > 0;
+  const firstSlideHasText = preview.firstSlideCharacterCount > 0;
+  return (
+    <section className="word-document-preview ppt-document-preview" aria-labelledby="powerpoint-preview-title">
+      <header role="status" aria-live="polite">
+        <span><EyeIcon size={19} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="powerpoint-preview-title">{hasSlides ? `${preview.slideCount.toLocaleString()} ${preview.slideCount === 1 ? "slide" : "slides"} found` : "No slides found"}</strong><small>{hasSlides ? "The slide order below will be used for the clean PDF." : "The output would contain a no-readable-text notice."}</small></div>
+      </header>
+      <dl className="word-preview-stats">
+        <div><dt>Slides</dt><dd>{preview.slideCount.toLocaleString()}</dd></div>
+        <div><dt>With text</dt><dd>{preview.slidesWithText.toLocaleString()}</dd></div>
+        <div><dt>Characters</dt><dd>{preview.characterCount.toLocaleString()}</dd></div>
+      </dl>
+      {hasSlides && (
+        <div className="ppt-first-slide">
+          <div className="ppt-first-slide-heading"><span>First in order</span><strong>Slide 1</strong></div>
+          {firstSlideHasText ? (
+            <div className="word-preview-text ppt-slide-text" tabIndex="0" aria-label="Extracted text preview for PowerPoint slide 1">
+              <pre>{preview.firstSlidePreview}</pre>
+            </div>
+          ) : (
+            <div className="ppt-slide-empty"><FilePptIcon size={20} weight="duotone" aria-hidden="true" /><span><strong>No readable text on Slide 1</strong><small>Other slides with text will still be included in order.</small></span></div>
+          )}
+        </div>
+      )}
+      {firstSlideHasText && (
+        <p className="word-preview-scope">
+          <CheckCircleIcon size={15} weight="fill" aria-hidden="true" />
+          <span>{preview.firstSlideTruncated ? `Showing the first ${preview.firstSlidePreviewCharacterCount.toLocaleString()} of ${preview.firstSlideCharacterCount.toLocaleString()} characters on Slide 1. All readable text from every slide will be used.` : "All readable text from Slide 1 is shown. Text from every slide will be used in order."}</span>
+        </p>
+      )}
+      <p className="word-layout-note"><WarningCircleIcon size={15} weight="duotone" aria-hidden="true" /><span><strong>Text reconstruction, not a slide replica.</strong> Images, charts, themes, animations, and original placement are not preserved.</span></p>
+    </section>
+  );
+}
+
+function PowerPointPdfResultSummary({ result }) {
+  const outcome = result?.powerpointOutcome;
+  if (!outcome) return null;
+  return (
+    <div className="ppt-result-summary" role="status">
+      <span><FilePptIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.slideCount.toLocaleString()} {outcome.slideCount === 1 ? "slide" : "slides"} rebuilt across {outcome.pageCount.toLocaleString()} PDF {outcome.pageCount === 1 ? "page" : "pages"}</strong><small>{outcome.characterCount.toLocaleString()} readable characters from {outcome.slidesWithText.toLocaleString()} {outcome.slidesWithText === 1 ? "slide" : "slides"} were placed in presentation order.</small></div>
+      <p><EyeIcon size={16} aria-hidden="true" />Preview the PDF to review slide labels, line wrapping, and page breaks before sharing it.</p>
+    </div>
+  );
+}
+
 function RepairPdfControls() {
   return (
     <section className="repair-explainer" aria-labelledby="repair-explainer-title">
@@ -3161,11 +3268,12 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "word-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "word-to-pdf", "powerpoint-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
   const wordPreview = useWordDocumentPreview(files[0], tool.slug === "word-to-pdf", tool, limits);
+  const powerpointPreview = usePowerPointDocumentPreview(files[0], tool.slug === "powerpoint-to-pdf", tool, limits);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
@@ -3342,7 +3450,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && wordPreviewReady && status !== "processing";
+  const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && wordPreviewReady && powerpointPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -3368,6 +3477,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Reading and checking the DOCX locally before export."
     : tool.slug === "word-to-pdf" && wordPreview.file === files[0] && wordPreview.state === "error"
       ? wordPreview.message
+    : tool.slug === "powerpoint-to-pdf" && powerpointPreview.file === files[0] && powerpointPreview.state === "loading"
+      ? "Reading and checking the PPTX locally before export."
+    : tool.slug === "powerpoint-to-pdf" && powerpointPreview.file === files[0] && powerpointPreview.state === "error"
+      ? powerpointPreview.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3455,6 +3568,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Compare 2 PDFs"
     : tool.slug === "word-to-pdf" && hasRequiredInput
       ? "Create readable PDF"
+    : tool.slug === "powerpoint-to-pdf" && hasRequiredInput
+      ? "Create slide-text PDF"
     : tool.name;
 
   const updateSetting = (key, value) => {
@@ -3476,7 +3591,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "word-to-pdf" ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : ["word-to-pdf", "powerpoint-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -3591,6 +3706,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && <ImagePdfResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {tool.slug === "word-to-pdf" && <WordPdfResultSummary result={results[0]} />}
+                {tool.slug === "powerpoint-to-pdf" && <PowerPointPdfResultSummary result={results[0]} />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -3610,7 +3726,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{tool.slug === "word-to-pdf" ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "word-to-pdf" ? "Document preview" : "Settings"}</h3><p>{tool.slug === "word-to-pdf" ? "Check the readable text before export." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["word-to-pdf", "powerpoint-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : "Settings"}</h3><p>{tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -3645,6 +3761,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <RepairPdfControls />
             ) : tool.slug === "word-to-pdf" ? (
               <WordPdfControls file={files[0]} preview={wordPreview} />
+            ) : tool.slug === "powerpoint-to-pdf" ? (
+              <PowerPointPdfControls file={files[0]} preview={powerpointPreview} />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
@@ -3684,7 +3802,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {tool.slug === "redact-pdf" && redactionPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{redactionPlan.regionCount.toLocaleString()} {redactionPlan.regionCount === 1 ? "area" : "areas"} on {redactionPlan.affectedPageCount.toLocaleString()} {redactionPlan.affectedPageCount === 1 ? "page" : "pages"}</strong>
               )}
-              {!((inlineReaderTools.has(tool.slug) || tool.slug === "word-to-pdf") && results.length) && (
+              {!((inlineReaderTools.has(tool.slug) || ["word-to-pdf", "powerpoint-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
                   {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
                 </button>
