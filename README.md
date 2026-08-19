@@ -95,6 +95,7 @@ The hardened private-repository controls were re-audited on 2026-08-13. GitHub p
 
 Release and deployment evidence is tracked in:
 
+- [47-tool UX audit and enhancement waves](docs/TOOL_UX_AUDIT.md)
 - [Production tool QA matrix](docs/PRODUCTION_QA.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [GitHub and Vercel operations](docs/RELEASE_OPERATIONS.md)

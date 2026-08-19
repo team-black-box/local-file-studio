@@ -328,8 +328,16 @@ async function mutatePdf(slug, file, options) {
     if (slug === "edit-pdf") {
       const text = String(options.text || "Reviewed locally");
       const size = Number(options.fontSize || 16);
-      const x = Math.max(12, Math.min(width - 12, (Number(options.x || 10) / 100) * width));
-      const y = Math.max(12, Math.min(height - 12, height - (Number(options.y || 10) / 100) * height));
+      const positionMap = {
+        "top-left": [10, 10],
+        "top-right": [70, 10],
+        center: [35, 50],
+        "bottom-left": [10, 90],
+        "bottom-right": [70, 90],
+      };
+      const [positionX, positionY] = positionMap[options.position] || [Number(options.x || 10), Number(options.y || 10)];
+      const x = Math.max(12, Math.min(width - 12, (positionX / 100) * width));
+      const y = Math.max(12, Math.min(height - 12, height - (positionY / 100) * height));
       page.drawText(text, { x, y, size, font, color: rgb(0.12, 0.12, 0.16), maxWidth: width - x - 18 });
     }
 

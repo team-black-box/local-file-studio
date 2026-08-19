@@ -39,7 +39,7 @@ import {
 } from "../src/lib/file-limits.js";
 import { runBoundedLineDiff } from "../src/lib/diff-worker-client.js";
 import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
-import { createExtractPagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, isToolSearchShortcut, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
+import { createExtractPagePlan, createOrganizePagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, getAutomaticDownloadResult, isToolSearchShortcut, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { matchesImageSignature } from "../src/lib/image-processors.js";
 import { preflightToolFiles } from "../src/lib/file-preflight.js";
@@ -56,6 +56,27 @@ test("tool search uses Command or Control K without taking browser tab shortcuts
   assert.equal(isToolSearchShortcut({ ctrlKey: true, key: "9" }), false);
   assert.equal(isToolSearchShortcut({ metaKey: true, shiftKey: true, key: "k" }), false);
   assert.equal(isToolSearchShortcut({ key: "k" }), false);
+});
+
+test("automatic downloads are limited to one real generated result", () => {
+  const first = { id: "one", name: "one.pdf", blob: new Blob(["one"], { type: "application/pdf" }) };
+  const second = { id: "two", name: "two.pdf", blob: new Blob(["two"], { type: "application/pdf" }) };
+  assert.strictEqual(getAutomaticDownloadResult([first]), first);
+  assert.equal(getAutomaticDownloadResult([first], false), null);
+  assert.equal(getAutomaticDownloadResult([first, second]), null);
+  assert.equal(getAutomaticDownloadResult([{ ...first, noNewFile: true }]), null);
+  assert.equal(getAutomaticDownloadResult([]), null);
+});
+
+test("Organize PDF preserves visual order, copies, omissions, and the central multiplier", () => {
+  assert.deepEqual(createOrganizePagePlan("3,1,2,2", 4), {
+    order: [2, 0, 1, 1],
+    copiedPages: 1,
+    omittedPages: 1,
+  });
+  assert.deepEqual(createOrganizePagePlan("all", 3).order, [0, 1, 2]);
+  assert.throws(() => createOrganizePagePlan("", 0), /valid page count/);
+  assert.throws(() => createOrganizePagePlan("1,1,1,1,1", 2), /2× the source page count \(4 here\)/);
 });
 
 function tool(slug, { name = slug, kind = "pdf", accepts = [".pdf"], batch = false } = {}) {
@@ -130,7 +151,19 @@ test("JPG to GIF remains a distinct animation tool instead of an overlapping sta
   assert.equal(gif.name, "JPG to GIF");
   assert.deepEqual(gif.accepts, [".jpg", ".jpeg"]);
   assert.deepEqual(gif.output, [".gif"]);
-  assert.equal(gif.settings.length, 0);
+  assert.deepEqual(gif.settings.map(({ key, type }) => [key, type]), [["delay", "range"], ["loop", "toggle"]]);
+  assert.deepEqual(gif.settings.find(({ key }) => key === "delay"), {
+    key: "delay",
+    type: "range",
+    label: "Time per image",
+    default: 900,
+    min: 100,
+    max: 3000,
+    step: 100,
+    suffix: "ms",
+    minLabel: "Faster",
+    maxLabel: "Slower",
+  });
   assert.equal(getToolLimits(gif).maxGifFrames, 20);
 });
 

@@ -8,6 +8,7 @@ import {
   MAX_GENERATED_RESULTS,
   MAX_PAGE_SELECTION_CHARACTERS,
   MAX_PAGE_SELECTION_ENTRIES,
+  assertOrganizedPageCount,
   assertOutputSize,
   formatLimitBytes,
   FileLimitError,
@@ -299,6 +300,12 @@ export function downloadResult(result) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+export function getAutomaticDownloadResult(results, enabled = true) {
+  if (!enabled) return null;
+  const downloadable = (results || []).filter((result) => result?.blob && !result.noNewFile);
+  return downloadable.length === 1 ? downloadable[0] : null;
+}
+
 export function parsePageSelection(value, pageCount, fallback = "all", preserveDuplicates = false) {
   if (!pageCount) return [];
   const raw = String(value || "").trim().toLowerCase();
@@ -329,6 +336,21 @@ export function parsePageSelection(value, pageCount, fallback = "all", preserveD
     }
   }
   return preserveDuplicates ? pages : [...new Set(pages)];
+}
+
+export function createOrganizePagePlan(value, pageCount, limitsOrTool = "organize-pdf") {
+  if (!Number.isInteger(pageCount) || pageCount < 1) {
+    throw new FileLimitError("invalid-page-count", "This PDF did not report a valid page count.");
+  }
+  const order = parsePageSelection(value, pageCount, "all", true);
+  if (!order.length) throw new FileLimitError("empty-page-order", "Keep at least one page in the output PDF.");
+  assertOrganizedPageCount(order.length, pageCount, limitsOrTool);
+  const distinctPages = new Set(order);
+  return {
+    order,
+    copiedPages: order.length - distinctPages.size,
+    omittedPages: pageCount - distinctPages.size,
+  };
 }
 
 export function parseSplitPageSelection(value, pageCount) {
