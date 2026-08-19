@@ -28,7 +28,6 @@ import {
   assertOrganizedPageCount,
   assertPdfOverlayImageDimensions,
   assertRasterDimensions,
-  assertSpreadsheetComplexity,
   countLogicalLines,
   formatLimitBytes,
   getPdfOverlayImagePolicy,
@@ -649,7 +648,7 @@ export function createOcrReaderResult(fileName, pages) {
   };
 }
 
-function textToPdfDocument(text, title = "Local document", options = {}, toolSlug = "html-to-pdf") {
+export function textToPdfDocument(text, title = "Local document", options = {}, toolSlug = "html-to-pdf") {
   return import("jspdf").then(({ jsPDF }) => {
     const limits = getToolLimits(toolSlug);
     const conversionLabel = `${title || "This document"} conversion`;
@@ -689,6 +688,7 @@ async function officeToPdf(slug, file, options, report) {
   let text = "";
   let wordOutcome = null;
   let powerpointOutcome = null;
+  let spreadsheetOutcome = null;
   const limits = getToolLimits(slug);
   const sourceLabel = file?.name || "Pasted HTML";
   report?.({ phase: "Reading document", progress: 0.2 });
@@ -703,47 +703,10 @@ async function officeToPdf(slug, file, options, report) {
     text = extraction.text;
     powerpointOutcome = createPptxTextPreview(extraction);
   } else if (slug === "excel-to-pdf") {
-    const XLSX = await import("xlsx");
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-    assertSpreadsheetComplexity(workbook.SheetNames.length, 0, limits, sourceLabel);
-    let usedCellSlots = 0;
-    for (const name of workbook.SheetNames) {
-      const reference = workbook.Sheets[name]?.["!ref"];
-      if (!reference) continue;
-      let range;
-      try {
-        range = XLSX.utils.decode_range(reference);
-      } catch {
-        throw new FileLimitError("invalid-cell-range", `${sourceLabel} contains an invalid used range in sheet "${name}". Clear that sheet's used range and save a fresh copy.`);
-      }
-      const rows = range.e.r - range.s.r + 1;
-      const columns = range.e.c - range.s.c + 1;
-      const slots = rows * columns;
-      if (!Number.isSafeInteger(slots) || slots < 0 || !Number.isSafeInteger(usedCellSlots + slots)) {
-        throw new FileLimitError("invalid-cell-range", `${sourceLabel} contains an unsafe used range in sheet "${name}". Clear unused rows or columns and save a fresh copy.`);
-      }
-      usedCellSlots += slots;
-      assertSpreadsheetComplexity(workbook.SheetNames.length, usedCellSlots, limits, sourceLabel);
-    }
-
-    const sheets = [];
-    let extractedCharacters = 0;
-    for (const name of workbook.SheetNames) {
-      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, raw: false });
-      const lines = [name];
-      let sectionLength = name.length;
-      for (const row of rows) {
-        const line = row.join("  |  ");
-        sectionLength += 1 + line.length;
-        assertExtractedTextLength(extractedCharacters + (sheets.length ? 2 : 0) + sectionLength, limits, sourceLabel);
-        lines.push(line);
-      }
-      const section = lines.join("\n");
-      extractedCharacters += section.length + (sheets.length ? 2 : 0);
-      assertExtractedTextLength(extractedCharacters, limits, sourceLabel);
-      sheets.push(section);
-    }
-    text = sheets.join("\n\n");
+    const { createSpreadsheetTextPreview, extractSpreadsheetText } = await import("./spreadsheet-text.js");
+    const extraction = await extractSpreadsheetText(file, limits);
+    text = extraction.text;
+    spreadsheetOutcome = createSpreadsheetTextPreview(extraction);
   } else {
     const html = file ? await file.text() : String(options.html || "");
     const document = new DOMParser().parseFromString(html, "text/html");
@@ -762,6 +725,8 @@ async function officeToPdf(slug, file, options, report) {
       ? `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${wordOutcome.characterCount.toLocaleString()} readable characters`
       : powerpointOutcome
         ? `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${powerpointOutcome.slideCount.toLocaleString()} ${powerpointOutcome.slideCount === 1 ? "slide" : "slides"} · ${powerpointOutcome.characterCount.toLocaleString()} readable characters`
+        : spreadsheetOutcome
+          ? `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · ${spreadsheetOutcome.sheetCount.toLocaleString()} ${spreadsheetOutcome.sheetCount === 1 ? "sheet" : "sheets"} · ${spreadsheetOutcome.usedCellSlots.toLocaleString()} used-range cells`
         : "Best-effort local document rendering",
   );
   if (wordOutcome) {
@@ -783,6 +748,16 @@ async function officeToPdf(slug, file, options, report) {
       firstSlideCharacterCount: powerpointOutcome.firstSlideCharacterCount,
       firstSlideTruncated: powerpointOutcome.firstSlideTruncated,
       firstSlidePreviewCharacterCount: powerpointOutcome.firstSlidePreviewCharacterCount,
+      pageCount,
+    };
+  }
+  if (spreadsheetOutcome) {
+    result.spreadsheetOutcome = {
+      sheetCount: spreadsheetOutcome.sheetCount,
+      sheetsWithValues: spreadsheetOutcome.sheetsWithValues,
+      usedCellSlots: spreadsheetOutcome.usedCellSlots,
+      characterCount: spreadsheetOutcome.characterCount,
+      orientation: options.orientation === "portrait" ? "portrait" : "landscape",
       pageCount,
     };
   }

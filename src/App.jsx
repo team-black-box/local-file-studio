@@ -728,6 +728,87 @@ function usePowerPointDocumentPreview(file, enabled, tool, limits) {
   return preview;
 }
 
+function useSpreadsheetDocumentPreview(file, enabled, tool, limits, orientation) {
+  const [inspection, setInspection] = useState({ state: "idle", file: null, message: "", extraction: null, preview: null });
+  const [layout, setLayout] = useState({ state: "idle", file: null, orientation: "", pageCount: 0, message: "" });
+
+  useEffect(() => {
+    if (!enabled || !file) {
+      setInspection({ state: "idle", file: null, message: "", extraction: null, preview: null });
+      setLayout({ state: "idle", file: null, orientation: "", pageCount: 0, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setInspection({ state: "loading", file, message: "Reading the workbook locally…", extraction: null, preview: null });
+    setLayout({ state: "idle", file, orientation: "", pageCount: 0, message: "" });
+    (async () => {
+      const spreadsheetPromise = import("./lib/spreadsheet-text.js");
+      await preflightToolFiles(tool, [file], {});
+      const spreadsheet = await spreadsheetPromise;
+      const extraction = await spreadsheet.extractSpreadsheetText(file, limits);
+      if (!cancelled) {
+        setInspection({
+          state: "ready",
+          file,
+          message: "",
+          extraction,
+          preview: spreadsheet.createSpreadsheetTextPreview(extraction),
+        });
+      }
+    })().catch((error) => {
+      if (cancelled) return;
+      const friendly = toFriendlyResourceError(error, tool.name);
+      setInspection({ state: "error", file, message: friendly?.message || "The workbook could not be inspected.", extraction: null, preview: null });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, file, limits, tool]);
+
+  useEffect(() => {
+    if (!enabled || !file || inspection.state !== "ready" || inspection.file !== file || !inspection.extraction) return undefined;
+    const normalizedOrientation = orientation === "portrait" ? "portrait" : "landscape";
+    let cancelled = false;
+    setLayout({ state: "loading", file, orientation: normalizedOrientation, pageCount: 0, message: "Calculating PDF pages…" });
+    (async () => {
+      const [{ textToPdfDocument }, spreadsheet] = await Promise.all([
+        import("./lib/pdf-processors.js"),
+        import("./lib/spreadsheet-text.js"),
+      ]);
+      const pdf = await textToPdfDocument(inspection.extraction.text, file.name, { orientation: normalizedOrientation }, "excel-to-pdf");
+      const pageCount = pdf.getNumberOfPages();
+      if (!cancelled) {
+        setLayout({
+          state: "ready",
+          file,
+          orientation: normalizedOrientation,
+          pageCount,
+          message: "",
+          preview: spreadsheet.createSpreadsheetTextPreview(inspection.extraction, { pageCount, orientation: normalizedOrientation }),
+        });
+      }
+    })().catch((error) => {
+      if (cancelled) return;
+      const friendly = toFriendlyResourceError(error, tool.name);
+      setLayout({ state: "error", file, orientation: normalizedOrientation, pageCount: 0, message: friendly?.message || "The PDF page layout could not be calculated." });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, file, inspection.extraction, inspection.file, inspection.state, orientation, tool.name]);
+
+  if (!enabled || !file) return { state: "idle", file: null, message: "" };
+  if (inspection.state !== "ready") return inspection;
+  if (layout.state === "error") return { ...inspection.preview, state: "error", file, message: layout.message };
+  if (layout.state !== "ready" || layout.file !== file || layout.orientation !== (orientation === "portrait" ? "portrait" : "landscape")) {
+    return { ...inspection.preview, state: "layout-loading", file, message: "Calculating the PDF page count locally…" };
+  }
+  return { ...layout.preview, state: "ready", file, message: "" };
+}
+
 function usePdfFormInfo(file, enabled, limits) {
   const [info, setInfo] = useState({ state: "idle", fieldCount: 0, fields: [], message: "" });
 
@@ -2529,6 +2610,102 @@ function PowerPointPdfResultSummary({ result }) {
   );
 }
 
+function spreadsheetColumnLabel(columnIndex) {
+  let remaining = Number(columnIndex) + 1;
+  let label = "";
+  while (remaining > 0) {
+    const character = (remaining - 1) % 26;
+    label = String.fromCharCode(65 + character) + label;
+    remaining = Math.floor((remaining - 1) / 26);
+  }
+  return label;
+}
+
+function SpreadsheetPdfControls({ file, preview, orientationSetting, orientation, onOrientationChange }) {
+  const firstSheet = preview.firstSheet;
+  const previewColumnCount = firstSheet?.previewRows?.reduce((maximum, row) => Math.max(maximum, row.length), 0) || 0;
+
+  return (
+    <div className="spreadsheet-pdf-controls">
+      <SettingControl setting={orientationSetting} value={orientation} onChange={onOrientationChange} />
+
+      {!file ? (
+        <section className="word-preview-empty spreadsheet-preview-empty" aria-labelledby="spreadsheet-preview-title">
+          <span><FileXlsIcon size={21} weight="duotone" aria-hidden="true" /></span>
+          <div><strong id="spreadsheet-preview-title">Preview workbook values</strong><small>Add one XLS or XLSX to check its sheets, used cells, and PDF page count.</small></div>
+        </section>
+      ) : preview.state === "loading" || preview.file !== file ? (
+        <section className="word-preview-loading spreadsheet-preview-loading" aria-live="polite">
+          <SpinnerGapIcon size={21} className="spin" aria-hidden="true" />
+          <div><strong>Reading workbook locally</strong><small>Checking worksheet ranges and readable saved values.</small></div>
+        </section>
+      ) : preview.state === "layout-loading" ? (
+        <section className="word-preview-loading spreadsheet-preview-loading" aria-live="polite">
+          <SpinnerGapIcon size={21} className="spin" aria-hidden="true" />
+          <div><strong>{preview.sheetCount.toLocaleString()} {preview.sheetCount === 1 ? "sheet" : "sheets"} found</strong><small>Calculating the exact PDF page count for {orientation === "portrait" ? "portrait" : "landscape"} pages.</small></div>
+        </section>
+      ) : preview.state === "error" ? (
+        <section className="word-preview-error spreadsheet-preview-error" role="alert">
+          <WarningCircleIcon size={21} weight="fill" aria-hidden="true" />
+          <div><strong>Preview unavailable</strong><small>{preview.message}</small></div>
+        </section>
+      ) : (
+        <section className="word-document-preview spreadsheet-document-preview" aria-labelledby="spreadsheet-preview-title">
+          <header role="status" aria-live="polite">
+            <span><EyeIcon size={19} weight="duotone" aria-hidden="true" /></span>
+            <div><strong id="spreadsheet-preview-title">{preview.sheetCount.toLocaleString()} {preview.sheetCount === 1 ? "sheet" : "sheets"} · {preview.pageCount.toLocaleString()} PDF {preview.pageCount === 1 ? "page" : "pages"}</strong><small>The count updates when you change page orientation.</small></div>
+          </header>
+          <dl className="word-preview-stats spreadsheet-preview-stats">
+            <div><dt>Sheets</dt><dd>{preview.sheetCount.toLocaleString()}</dd></div>
+            <div><dt>Range cells</dt><dd>{preview.usedCellSlots.toLocaleString()}</dd></div>
+            <div><dt>PDF pages</dt><dd>{preview.pageCount.toLocaleString()}</dd></div>
+          </dl>
+
+          {firstSheet && (
+            <div className="spreadsheet-first-sheet">
+              <div className="ppt-first-slide-heading"><span>First worksheet</span><strong title={firstSheet.name}>{firstSheet.name}</strong></div>
+              {firstSheet.previewRows.length && previewColumnCount ? (
+                <div className="spreadsheet-table-wrap" tabIndex="0" aria-label={`Value preview for worksheet ${firstSheet.name}`}>
+                  <table>
+                    <thead><tr><th aria-label="Row number" />{Array.from({ length: previewColumnCount }, (_, index) => <th key={index} scope="col">{spreadsheetColumnLabel((firstSheet.startColumn || 0) + index)}</th>)}</tr></thead>
+                    <tbody>
+                      {firstSheet.previewRows.map((row, rowIndex) => (
+                        <tr key={rowIndex}><th scope="row">{(firstSheet.startRow || 1) + rowIndex}</th>{Array.from({ length: previewColumnCount }, (_, columnIndex) => <td key={columnIndex} title={row[columnIndex] || undefined}>{row[columnIndex] || ""}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="ppt-slide-empty spreadsheet-sheet-empty"><FileXlsIcon size={20} weight="duotone" aria-hidden="true" /><span><strong>No saved values on the first sheet</strong><small>Other worksheets with saved values will still be included.</small></span></div>
+              )}
+            </div>
+          )}
+
+          {firstSheet?.previewRows.length > 0 && (
+            <p className="word-preview-scope">
+              <CheckCircleIcon size={15} weight="fill" aria-hidden="true" />
+              <span>{firstSheet.previewTruncatedRows || firstSheet.previewTruncatedColumns ? `Showing up to the first 8 rows and 6 columns of ${firstSheet.name}. All bounded worksheet values will be used.` : `All saved values from the used range of ${firstSheet.name} are shown.`}</span>
+            </p>
+          )}
+          <p className="word-layout-note"><WarningCircleIcon size={15} weight="duotone" aria-hidden="true" /><span><strong>Readable values, not an Excel replica.</strong> Styling, charts, merged-cell layout, formulas without saved results, and print settings are not preserved.</span></p>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function SpreadsheetPdfResultSummary({ result }) {
+  const outcome = result?.spreadsheetOutcome;
+  if (!outcome) return null;
+  return (
+    <div className="spreadsheet-result-summary" role="status">
+      <span><FileXlsIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.sheetCount.toLocaleString()} {outcome.sheetCount === 1 ? "sheet" : "sheets"} rebuilt across {outcome.pageCount.toLocaleString()} PDF {outcome.pageCount === 1 ? "page" : "pages"}</strong><small>{outcome.usedCellSlots.toLocaleString()} used-range cells were laid out on {outcome.orientation} pages.</small></div>
+      <p><EyeIcon size={16} aria-hidden="true" />Preview the PDF to review table wrapping and page breaks before sharing it.</p>
+    </div>
+  );
+}
+
 function RepairPdfControls() {
   return (
     <section className="repair-explainer" aria-labelledby="repair-explainer-title">
@@ -3268,12 +3445,13 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "word-to-pdf", "powerpoint-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
   const wordPreview = useWordDocumentPreview(files[0], tool.slug === "word-to-pdf", tool, limits);
   const powerpointPreview = usePowerPointDocumentPreview(files[0], tool.slug === "powerpoint-to-pdf", tool, limits);
+  const spreadsheetPreview = useSpreadsheetDocumentPreview(files[0], tool.slug === "excel-to-pdf", tool, limits, settings.orientation);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
@@ -3451,7 +3629,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && wordPreviewReady && powerpointPreviewReady && status !== "processing";
+  const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -3481,6 +3660,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Reading and checking the PPTX locally before export."
     : tool.slug === "powerpoint-to-pdf" && powerpointPreview.file === files[0] && powerpointPreview.state === "error"
       ? powerpointPreview.message
+    : tool.slug === "excel-to-pdf" && spreadsheetPreview.file === files[0] && ["loading", "layout-loading"].includes(spreadsheetPreview.state)
+      ? spreadsheetPreview.state === "loading" ? "Reading and checking the workbook locally before export." : "Calculating the PDF page count for this orientation."
+    : tool.slug === "excel-to-pdf" && spreadsheetPreview.file === files[0] && spreadsheetPreview.state === "error"
+      ? spreadsheetPreview.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3538,6 +3721,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Create summary"
     : tool.slug === "repair-pdf" && hasRequiredInput
       ? "Rebuild PDF"
+    : tool.slug === "excel-to-pdf" && spreadsheetPreview.state === "ready"
+      ? `Create ${spreadsheetPreview.pageCount.toLocaleString()}-page PDF`
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3707,6 +3892,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {tool.slug === "word-to-pdf" && <WordPdfResultSummary result={results[0]} />}
                 {tool.slug === "powerpoint-to-pdf" && <PowerPointPdfResultSummary result={results[0]} />}
+                {tool.slug === "excel-to-pdf" && <SpreadsheetPdfResultSummary result={results[0]} />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -3726,7 +3912,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["word-to-pdf", "powerpoint-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : "Settings"}</h3><p>{tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : "Settings"}</h3><p>{tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -3763,6 +3949,14 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <WordPdfControls file={files[0]} preview={wordPreview} />
             ) : tool.slug === "powerpoint-to-pdf" ? (
               <PowerPointPdfControls file={files[0]} preview={powerpointPreview} />
+            ) : tool.slug === "excel-to-pdf" ? (
+              <SpreadsheetPdfControls
+                file={files[0]}
+                preview={spreadsheetPreview}
+                orientationSetting={settingsList.find((setting) => setting.key === "orientation")}
+                orientation={settings.orientation}
+                onOrientationChange={(value) => updateSetting("orientation", value)}
+              />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
@@ -3802,7 +3996,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {tool.slug === "redact-pdf" && redactionPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{redactionPlan.regionCount.toLocaleString()} {redactionPlan.regionCount === 1 ? "area" : "areas"} on {redactionPlan.affectedPageCount.toLocaleString()} {redactionPlan.affectedPageCount === 1 ? "page" : "pages"}</strong>
               )}
-              {!((inlineReaderTools.has(tool.slug) || ["word-to-pdf", "powerpoint-to-pdf"].includes(tool.slug)) && results.length) && (
+              {!((inlineReaderTools.has(tool.slug) || ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
                   {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
                 </button>
