@@ -9863,6 +9863,39 @@ body {
   margin-top: 1px;
 }
 
+.pdf-office-sheet-preview {
+  max-height: 190px;
+}
+
+.pdf-office-sheet-rule {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #cfe2d9;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--privacy-soft);
+  color: var(--privacy);
+}
+
+.pdf-office-sheet-rule > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.pdf-office-sheet-rule strong {
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.pdf-office-sheet-rule small {
+  color: var(--muted-strong);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
 @media (min-width: 801px) and (max-width: 1100px) {
   .workbench-body.pdf-office-text-preview-body {
     grid-template-columns: minmax(0, 1fr) 360px;
