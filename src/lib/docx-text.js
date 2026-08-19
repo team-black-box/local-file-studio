@@ -24,6 +24,8 @@ const OFFICE_DOCUMENT_RELATIONSHIP_TYPES = new Set([
   "http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument",
 ]);
 
+export const DOCX_TEXT_PREVIEW_CHARACTERS = 1600;
+
 function invalidDocx(code, label, message, cause) {
   return new FileLimitError(code, `${label} ${message}`, cause ? { name: label, cause } : { name: label });
 }
@@ -241,6 +243,32 @@ export function extractWordDocumentXmlText(
   const output = [];
   for (const child of elementChildren(bodies[0])) readNode(child, output, false);
   return output.join("");
+}
+
+export function createDocxTextPreview(text, maxPreviewCharacters = DOCX_TEXT_PREVIEW_CHARACTERS) {
+  const source = String(text || "");
+  const paragraphs = source
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const symbolMarkers = source.match(/\[symbol(?: [^\]]+)?\]/g) || [];
+  const words = source
+    .replace(/\[symbol(?: [^\]]+)?\]/g, " ")
+    .match(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu) || [];
+  const previewLimit = Number.isSafeInteger(maxPreviewCharacters) && maxPreviewCharacters > 0
+    ? maxPreviewCharacters
+    : DOCX_TEXT_PREVIEW_CHARACTERS;
+  const previewText = source.slice(0, previewLimit).trimEnd();
+
+  return {
+    previewText,
+    characterCount: source.length,
+    wordCount: words.length,
+    paragraphCount: paragraphs.length,
+    symbolCount: symbolMarkers.length,
+    truncated: source.length > previewLimit,
+    previewCharacterCount: previewText.length,
+  };
 }
 
 function readMainDocumentContentTypes(source, label) {

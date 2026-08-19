@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import JSZip from "jszip";
-import { extractDocxText, extractWordDocumentXmlText } from "../src/lib/docx-text.js";
+import { createDocxTextPreview, extractDocxText, extractWordDocumentXmlText } from "../src/lib/docx-text.js";
 import { FileLimitError } from "../src/lib/file-limits.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -94,6 +94,40 @@ test("DOCX extraction preserves document order and explicit text boundaries", as
     await extractDocxText(file),
     "Hello & private\tworld\nnext\n\nCell‑text[symbol Wingdings F0B7]\n\nFinal­line",
   );
+});
+
+test("DOCX preview reports bounded, honest text statistics", () => {
+  const preview = createDocxTextPreview("Alpha beta\n\nGamma [symbol Wingdings F0B7]", 5);
+  assert.deepEqual(
+    {
+      previewText: preview.previewText,
+      characterCount: preview.characterCount,
+      wordCount: preview.wordCount,
+      paragraphCount: preview.paragraphCount,
+      symbolCount: preview.symbolCount,
+      truncated: preview.truncated,
+      previewCharacterCount: preview.previewCharacterCount,
+    },
+    {
+      previewText: "Alpha",
+      characterCount: 41,
+      wordCount: 3,
+      paragraphCount: 2,
+      symbolCount: 1,
+      truncated: true,
+      previewCharacterCount: 5,
+    },
+  );
+
+  assert.deepEqual(createDocxTextPreview(""), {
+    previewText: "",
+    characterCount: 0,
+    wordCount: 0,
+    paragraphCount: 0,
+    symbolCount: 0,
+    truncated: false,
+    previewCharacterCount: 0,
+  });
 });
 
 test("DOCX extraction accepts namespace-prefix variation and strict WordprocessingML", () => {
@@ -282,6 +316,16 @@ test("Word to PDF still produces a readable PDF through the shared processor", a
   assert.equal(result.blob.type, "application/pdf");
   assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
   assert.ok(bytes.byteLength > 500);
+  assert.deepEqual(result.wordOutcome, {
+    characterCount: 17,
+    wordCount: 3,
+    paragraphCount: 1,
+    symbolCount: 0,
+    truncated: false,
+    previewCharacterCount: 17,
+    pageCount: 1,
+  });
+  assert.match(result.details, /1 page · 17 readable characters/);
 });
 
 test("Word to PDF rejects excessive archive expansion through shared preflight", async () => {
