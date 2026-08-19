@@ -3870,6 +3870,146 @@ kbd {
   padding-top: 6px;
 }
 
+.repair-explainer {
+  display: grid;
+  gap: 12px;
+}
+
+.repair-explainer > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.repair-explainer > header > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--coral-soft);
+  color: var(--coral-dark);
+}
+
+.repair-explainer > header > div,
+.repair-explainer li > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.repair-explainer strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.repair-explainer small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.repair-explainer ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repair-explainer li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--surface-soft);
+}
+
+.repair-explainer li > span {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--privacy-dark);
+  font: 780 8px/1 var(--mono);
+}
+
+.repair-explainer > p {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  border: 1px solid #ead3c6;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--coral-soft);
+  color: var(--coral-dark);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.repair-explainer > p svg {
+  flex: 0 0 auto;
+}
+
+.repair-explainer > p strong {
+  color: currentColor;
+}
+
+.repair-result-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  border-bottom: 1px solid #cfe5de;
+  padding: 13px 16px;
+  background: var(--privacy-soft);
+}
+
+.repair-result-summary > span {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 72%);
+  color: var(--privacy);
+}
+
+.repair-result-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.repair-result-summary > div strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.repair-result-summary > div small {
+  color: var(--muted-strong);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.repair-result-summary > p {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  border-top: 1px solid rgb(48 128 101 / 14%);
+  padding-top: 9px;
+  color: var(--privacy-dark);
+  font-size: 8px;
+}
+
 .markdown-preview-panel {
   padding: 12px;
 }

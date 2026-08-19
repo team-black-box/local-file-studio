@@ -31,7 +31,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Organize PDF | Visual page rail with reorder, copy, remove, restore, reset, and exact-entry fallback | Keep; add direct drag-and-drop only if testing shows the buttons are slower |
 | Scan to PDF | Ordered files; page size was a dropdown | Use visual page-size cards and show a page-frame preview |
 | Compress PDF | Strong visual modes, local estimate, and actual result delta | Keep; improve scan/image-heavy explanation only if testing finds confusion |
-| Repair PDF | Simple one-action tool | Add a concise “what can be recovered” result summary |
+| Repair PDF | One clear rebuild action with honest recovery limits, original-file reassurance, and a review-before-replace result summary | Keep; continue malformed, protected, browser, and boundary QA |
 | OCR Reader | Strong page-by-page copyable reader | Keep; add page navigation/search only after core QA |
 | JPG to PDF | Ordered images; page size and margin were dropdowns | Use visual cards and show one representative page frame |
 | Word to PDF | Honest text-reconstruction conversion | Add a short extracted-text preview before export |
