@@ -33,7 +33,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Compress PDF | Strong visual modes, local estimate, and actual result delta | Keep; improve scan/image-heavy explanation only if testing finds confusion |
 | Repair PDF | One clear rebuild action with honest recovery limits, original-file reassurance, and a review-before-replace result summary | Keep; continue malformed, protected, browser, and boundary QA |
 | OCR Reader | Strong page-by-page copyable reader | Keep; add page navigation/search only after core QA |
-| JPG to PDF | Ordered images; page size and margin were dropdowns | Use visual cards and show one representative page frame |
+| JPG to PDF | Numbered thumbnail order strip, accessible earlier/later controls, visual page and margin cards, real first-page fit preview, exact page-count action, and post-run review summary | Keep; validate 30-image mobile batches and mixed image aspect ratios |
 | Word to PDF | Honest text-reconstruction conversion | Add a short extracted-text preview before export |
 | PowerPoint to PDF | Honest text-reconstruction conversion | Add slide count and first-slide text preview |
 | Excel to PDF | Orientation was a dropdown | Use visual orientation cards and show sheet/page count |

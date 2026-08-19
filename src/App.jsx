@@ -1421,7 +1421,7 @@ function useLocalImageUrl(file) {
   return url;
 }
 
-function ScanFileQueue({ files, getFileId, moveFile, removeFile, reorderButtonsRef, removeButtonsRef }) {
+function ImagePdfFileQueue({ files, getFileId, moveFile, removeFile, reorderButtonsRef, removeButtonsRef }) {
   const [urls, setUrls] = useState(new Map());
 
   useEffect(() => {
@@ -1436,7 +1436,7 @@ function ScanFileQueue({ files, getFileId, moveFile, removeFile, reorderButtonsR
         <span><strong id="scan-order-title">PDF page order</strong><small>Each image becomes one page. Use the arrows to arrange the final PDF.</small></span>
         <b>{files.length.toLocaleString()} {files.length === 1 ? "page" : "pages"}</b>
       </div>
-      <div className="scan-order-strip" role="list" aria-label={`${files.length} scan pages in output order`}>
+      <div className="scan-order-strip" role="list" aria-label={`${files.length} image pages in output order`}>
         {files.map((file, index) => {
           const fileId = getFileId(file);
           return (
@@ -1479,20 +1479,27 @@ function ScanFileQueue({ files, getFileId, moveFile, removeFile, reorderButtonsR
   );
 }
 
-function ScanPdfControls({ files, setting, value, onChange }) {
+function ImagePdfPageControls({ files, pageSizeSetting, pageSizeValue, onPageSizeChange, marginSetting, marginValue, onMarginChange }) {
   const previewUrl = useLocalImageUrl(files[0]);
   const [measuredImage, setMeasuredImage] = useState({ file: null, ratio: 0.75 });
-  const options = setting?.options || [];
-  const pageSize = options.some((option) => option.value === value) ? value : "auto";
+  const options = pageSizeSetting?.options || [];
+  const pageSize = options.some((option) => option.value === pageSizeValue) ? pageSizeValue : options[0]?.value || "auto";
+  const followsImageShape = pageSize === "auto" || pageSize === "fit";
   const imageRatio = measuredImage.file === files[0] ? measuredImage.ratio : 0.75;
   const pageAspect = pageSize === "a4" ? 595.28 / 841.89 : pageSize === "letter" ? 612 / 792 : imageRatio;
   const boundedPageAspect = Math.max(0.45, Math.min(2.2, pageAspect));
   const previewWidth = Math.min(176, 126 * boundedPageAspect);
   const previewHeight = previewWidth / boundedPageAspect;
   const selectedLabel = options.find((option) => option.value === pageSize)?.label || "Match image";
-  const previewCopy = pageSize === "auto"
-    ? "Each page follows its image shape, with a small white edge."
-    : `Every image is contained on portrait ${selectedLabel} paper with white margins.`;
+  const marginOptions = marginSetting?.options || [];
+  const selectedMargin = marginOptions.some((option) => option.value === marginValue) ? marginValue : marginOptions[0]?.value || "small";
+  const previewPadding = selectedMargin === "none" ? 0 : selectedMargin === "large" ? 16 : 7;
+  const marginCopy = marginSetting
+    ? selectedMargin === "none" ? "No outer margin is added." : `${marginOptions.find((option) => option.value === selectedMargin)?.label || "Small"} white margins are added.`
+    : "A small white edge is added.";
+  const previewCopy = followsImageShape
+    ? "Each page follows its image shape."
+    : `Every image is contained on portrait ${selectedLabel} paper.`;
 
   return (
     <section className="scan-controls" aria-labelledby="scan-page-size-title">
@@ -1503,7 +1510,7 @@ function ScanPdfControls({ files, setting, value, onChange }) {
             const selected = pageSize === option.value;
             const Icon = option.value === "auto" ? ImageSquareIcon : FilePdfIcon;
             return (
-              <button key={option.value} type="button" className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange(option.value)}>
+              <button key={option.value} type="button" className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onPageSizeChange(option.value)}>
                 <span><Icon size={19} weight="duotone" aria-hidden="true" /></span>
                 <span><strong>{option.label}</strong><small>{option.hint}</small></span>
               </button>
@@ -1512,14 +1519,32 @@ function ScanPdfControls({ files, setting, value, onChange }) {
         </div>
       </fieldset>
 
+      {marginSetting && (
+        <fieldset className="scan-size-picker image-pdf-margin-picker">
+          <legend>Choose the white margin</legend>
+          <div>
+            {marginOptions.map((option) => {
+              const selected = selectedMargin === option.value;
+              const Icon = option.value === "none" ? ArrowsOutIcon : option.value === "large" ? ArrowsInIcon : ImageSquareIcon;
+              return (
+                <button key={option.value} type="button" className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onMarginChange(option.value)}>
+                  <span><Icon size={19} weight="duotone" aria-hidden="true" /></span>
+                  <span><strong>{option.label}</strong><small>{option.hint}</small></span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+
       <div className="scan-page-preview" aria-live="polite">
         <div className="scan-page-preview-heading"><span><strong>First-page preview</strong><small>{files.length ? `${files.length.toLocaleString()} ${files.length === 1 ? "page" : "pages"} will follow this fit rule` : "Add an image to preview its fit"}</small></span><EyeIcon size={17} aria-hidden="true" /></div>
         <div className="scan-page-preview-stage">
-          <div className="scan-page-preview-paper" style={{ width: `${previewWidth}px`, height: `${previewHeight}px` }}>
+          <div className="scan-page-preview-paper" style={{ width: `${previewWidth}px`, height: `${previewHeight}px`, padding: `${previewPadding}px` }}>
             {previewUrl ? <img src={previewUrl} alt={`Preview of ${files[0].name} on ${selectedLabel} PDF paper`} onLoad={(event) => setMeasuredImage({ file: files[0], ratio: event.currentTarget.naturalWidth / event.currentTarget.naturalHeight })} /> : <ImageSquareIcon size={28} weight="duotone" aria-hidden="true" />}
           </div>
         </div>
-        <p><CheckCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Nothing is cropped or stretched.</strong>{previewCopy}</span></p>
+        <p><CheckCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Nothing is cropped or stretched.</strong>{previewCopy} {marginCopy}</span></p>
       </div>
     </section>
   );
@@ -2285,8 +2310,8 @@ function SummaryPlan({ settings }) {
   );
 }
 
-function ScanResultSummary({ result }) {
-  const outcome = result?.scanOutcome;
+function ImagePdfResultSummary({ result }) {
+  const outcome = result?.scanOutcome || result?.imagePdfOutcome;
   if (!outcome) return null;
   return (
     <div className="scan-result-summary" role="status">
@@ -3036,7 +3061,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
@@ -3318,7 +3343,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         : "Flatten PDF form"
     : tool.slug === "redact-pdf" && redactionPlan?.valid
       ? `Redact ${redactionPlan.regionCount.toLocaleString()} ${redactionPlan.regionCount === 1 ? "area" : "areas"}`
-    : tool.slug === "scan-to-pdf" && hasRequiredInput
+    : ["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && hasRequiredInput
       ? `Create ${files.length.toLocaleString()}-page PDF`
     : tool.slug === "compare-pdf" && hasRequiredInput
       ? "Compare 2 PDFs"
@@ -3398,8 +3423,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             {files.length > 0 && (
               <div className="file-queue">
                 <div className="queue-heading"><strong>{files.length} {files.length === 1 ? "file" : "files"}</strong><span>{formatBytes(files.reduce((sum, file) => sum + file.size, 0))} total</span></div>
-                {tool.slug === "scan-to-pdf" ? (
-                  <ScanFileQueue
+                {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) ? (
+                  <ImagePdfFileQueue
                     files={files}
                     getFileId={getFileId}
                     moveFile={moveFile}
@@ -3455,7 +3480,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "compress-pdf" && files[0] && results[0] && (
                   <CompressionResultSummary inputSize={files[0].size} result={results[0]} />
                 )}
-                {tool.slug === "scan-to-pdf" && <ScanResultSummary result={results[0]} />}
+                {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && <ImagePdfResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
@@ -3486,7 +3511,17 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             ) : tool.slug === "organize-pdf" ? (
               <OrganizePdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={organizePlan} limits={limits} />
             ) : tool.slug === "scan-to-pdf" ? (
-              <ScanPdfControls files={files} setting={settingsList.find((setting) => setting.key === "pageSize")} value={settings.pageSize} onChange={(value) => updateSetting("pageSize", value)} />
+              <ImagePdfPageControls files={files} pageSizeSetting={settingsList.find((setting) => setting.key === "pageSize")} pageSizeValue={settings.pageSize} onPageSizeChange={(value) => updateSetting("pageSize", value)} />
+            ) : tool.slug === "jpg-to-pdf" ? (
+              <ImagePdfPageControls
+                files={files}
+                pageSizeSetting={settingsList.find((setting) => setting.key === "pageSize")}
+                pageSizeValue={settings.pageSize}
+                onPageSizeChange={(value) => updateSetting("pageSize", value)}
+                marginSetting={settingsList.find((setting) => setting.key === "margin")}
+                marginValue={settings.margin}
+                onMarginChange={(value) => updateSetting("margin", value)}
+              />
             ) : tool.slug === "compress-pdf" ? (
               <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
             ) : tool.slug === "convert-image" ? (

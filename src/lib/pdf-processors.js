@@ -469,7 +469,8 @@ async function imageFilesToPdf(slug, files, options, report) {
     assertImageDimensions(image.width, image.height, limits, file.name);
     totalDecodedPixels += image.width * image.height;
     assertImagePixelTotal(totalDecodedPixels, limits, `${file.name} and the images before it`);
-    const margin = Number(options.margin || 20);
+    const requestedMargin = Number(options.margin ?? 20);
+    const margin = [0, 18, 20, 42].includes(requestedMargin) ? requestedMargin : 20;
     const pagePreset = options.pageSize === "a4" ? [595.28, 841.89] : options.pageSize === "letter" ? [612, 792] : null;
     const pageWidth = pagePreset?.[0] || image.width + margin * 2;
     const pageHeight = pagePreset?.[1] || image.height + margin * 2;
@@ -488,7 +489,15 @@ async function imageFilesToPdf(slug, files, options, report) {
       scanOutcome: { pageCount: files.length, pageSize },
     }];
   }
-  return [pdfResult(options.outputName ? `${safeFileName(options.outputName)}.pdf` : "images-local.pdf", bytes, `${files.length} images converted`)];
+  const pageSize = options.pageSize === "a4" ? "a4" : options.pageSize === "letter" ? "letter" : "fit";
+  const pageSizeLabel = pageSize === "a4" ? "A4" : pageSize === "letter" ? "US Letter" : "Fit each image";
+  const requestedMargin = Number(options.margin ?? 20);
+  const margin = requestedMargin === 0 ? "none" : requestedMargin >= 40 ? "large" : "small";
+  const marginLabel = margin === "none" ? "No margin" : margin === "large" ? "Large margin" : "Small margin";
+  return [{
+    ...pdfResult(options.outputName ? `${safeFileName(options.outputName)}.pdf` : "images-local.pdf", bytes, `${files.length} ${files.length === 1 ? "page" : "pages"} · ${pageSizeLabel} · ${marginLabel}`),
+    imagePdfOutcome: { pageCount: files.length, pageSize, margin },
+  }];
 }
 
 async function rasterizePdf(file, options, report, mode = "compress") {
