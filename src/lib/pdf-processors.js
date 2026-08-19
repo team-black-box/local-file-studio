@@ -782,14 +782,27 @@ async function pdfToOffice(slug, file, options, report) {
   return [resultFromBlob(`${cleanName}.xlsx`, new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "Coordinate-light table reconstruction")];
 }
 
-function extractiveSummary(text, targetSentences = 5) {
-  const sentences = String(text).replace(/\s+/g, " ").match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+export function extractiveSummary(text, targetSentences = 5) {
+  const sentences = String(text)
+    .replace(/\r\n?/g, "\n")
+    .split(/\n+/)
+    .flatMap((line) => line.trim().match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [])
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const uniqueSentences = [];
+  const seen = new Set();
+  sentences.forEach((sentence) => {
+    const key = sentence.toLocaleLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    uniqueSentences.push(sentence);
+  });
   const stop = new Set("about after again also and are because been before being between both but can could did does doing down during each few for from further had has have having her here hers herself him himself his how into its itself just more most other our ours ourselves out over own same she should some such than that the their theirs them themselves then there these they this those through too under until very was were what when where which while who whom why will with you your yours yourself yourselves".split(" "));
   const counts = {};
   String(text).toLowerCase().match(/[a-z][a-z'-]{3,}/g)?.forEach((word) => {
     if (!stop.has(word)) counts[word] = (counts[word] || 0) + 1;
   });
-  const ranked = sentences.map((sentence, index) => ({
+  const ranked = uniqueSentences.map((sentence, index) => ({
     sentence: sentence.trim(),
     index,
     score: (sentence.toLowerCase().match(/[a-z][a-z'-]{3,}/g) || []).reduce((sum, word) => sum + (counts[word] || 0), 0) / Math.max(8, sentence.length ** 0.5),
@@ -811,6 +824,9 @@ function markdownFromPages(pages, pageBreaks = false) {
 
 export function createTextReaderResult(name, text, viewer) {
   const safeName = safeFileName(baseName(name));
+  if (viewer === "summary") {
+    return resultFromText(`${safeName}-summary.txt`, text, "text/plain", "Local extractive summary", viewer);
+  }
   if (viewer === "translation") {
     return resultFromText(`${safeName}-translation.txt`, text, "text/plain", "Device-local text translation", viewer);
   }
@@ -861,7 +877,8 @@ async function intelligenceTool(slug, file, options, report) {
     const extracted = extractiveSummary(text, count);
     const formatted = options.format === "prose" ? extracted.replace(/^•\s*/gm, "").replace(/\n+/g, " ") : extracted;
     const summary = `LOCAL EXTRACTIVE SUMMARY\n\n${formatted}\n\nGenerated without uploading the document.`;
-    return [resultFromBlob(`${name}-summary.txt`, new Blob([summary], { type: "text/plain" }), "Local extractive summary")];
+    const selectedSentences = extracted ? extracted.split("\n").length : 0;
+    return [{ ...createTextReaderResult(name, summary, "summary"), details: `${selectedSentences.toLocaleString()} source ${selectedSentences === 1 ? "sentence" : "sentences"} selected locally` }];
   }
   if (slug === "translate-pdf") {
     const translated = await translateLocally(text, options.language || options.targetLanguage || "es", report);

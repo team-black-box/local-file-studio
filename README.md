@@ -41,6 +41,8 @@ Redact PDF shows the actual document pages and lets users draw, move, resize, re
 
 Compare PDF presents the bounded selectable-text difference directly in the workbench, with original/revised line numbers, changes-only and all-lines views, and local pagination. The optional HTML report is self-contained, scriptless, and generated locally. This is a text comparison: scans, images, fonts, layout, and visual movement are not compared.
 
+Local Summarizer selects up to 3, 5, or 9 source sentences and shows the extractive result in a copyable in-tab reader. It does not generate new claims or rewrite the document. An optional TXT download contains the same complete text shown in the reader.
+
 ## Visible local safety limits
 
 Every workbench shows its exact file-count, per-file, combined-size, page/pixel, and result limits next to the file picker. These deterministic limits protect browsers with roughly a 4 GB device-memory budget; files are validated before local engines allocate large canvases, page buffers, or ZIP archives.
