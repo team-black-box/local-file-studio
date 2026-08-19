@@ -69,7 +69,7 @@ const TEXT_SETTING_LIMITS = {
   "watermark-pdf": { text: 200 },
   "edit-pdf": { text: 500 },
   "sign-pdf": { name: 200 },
-  "pdf-forms": { values: 256 * 1024, value: 10_000 },
+  "pdf-forms": { values: 256 * 1024 },
   "unlock-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS },
   "protect-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS },
   "watermark-image": { text: 500 },
@@ -85,7 +85,7 @@ const TEXT_SETTING_LABELS = {
   "watermark-pdf": { text: "watermark text" },
   "edit-pdf": { text: "annotation text" },
   "sign-pdf": { name: "typed signature" },
-  "pdf-forms": { values: "field-value JSON", value: "fallback value" },
+  "pdf-forms": { values: "advanced field JSON" },
   "unlock-pdf": { password: "current password" },
   "protect-pdf": { password: "new password" },
   "watermark-image": { text: "watermark text" },
@@ -330,6 +330,11 @@ export function getToolLimits(toolOrSlug) {
     return withDefaults({
       maxPdfPagesPerFile: 500,
       maxPdfFormFields: 1_000,
+      maxPdfFormOptionsPerField: 500,
+      maxPdfFormOptionsTotal: 5_000,
+      maxPdfFormFieldNameCharacters: 2_048,
+      maxPdfFormValueCharacters: 10_000,
+      maxPdfFormMetadataCharacters: 512_000,
     });
   }
 
@@ -404,6 +409,11 @@ export function describeToolLimits(tool) {
   if (limits.maxSpreadsheetCellSlots) details.push(`${limits.maxSpreadsheetCellSlots.toLocaleString()} used-range cells`);
   if (limits.maxGeneratedPdfPages) details.push(`${limits.maxGeneratedPdfPages.toLocaleString()} generated PDF pages`);
   if (limits.maxPdfFormFields) details.push(`${limits.maxPdfFormFields.toLocaleString()} form fields`);
+  if (limits.maxPdfFormOptionsPerField) details.push(`${limits.maxPdfFormOptionsPerField.toLocaleString()} choices/field`);
+  if (limits.maxPdfFormOptionsTotal) details.push(`${limits.maxPdfFormOptionsTotal.toLocaleString()} field choices total`);
+  if (limits.maxPdfFormFieldNameCharacters) details.push(`${limits.maxPdfFormFieldNameCharacters.toLocaleString()} characters/field name`);
+  if (limits.maxPdfFormValueCharacters) details.push(`${limits.maxPdfFormValueCharacters.toLocaleString()} characters/field value`);
+  if (limits.maxPdfFormMetadataCharacters) details.push(`${limits.maxPdfFormMetadataCharacters.toLocaleString()} field text/choice characters total`);
   if (limits.maxPageSelectionEntries) details.push(`${limits.maxPageSelectionEntries.toLocaleString()} expanded page-selection entries max`);
   if (limits.maxOrganizedPageMultiplier) details.push(`${limits.maxOrganizedPageMultiplier}× source pages max output`);
   if (limits.maxArchiveEntries) details.push(`${limits.maxArchiveEntries.toLocaleString()} internal items`);
@@ -716,6 +726,53 @@ export function assertPdfFormFieldCount(count, limitsOrTool = "pdf-forms", label
     throw new FileLimitError(
       "pdf-form-field-limit",
       `${label} contains ${count.toLocaleString()} form fields; PDF Forms supports ${limits.maxPdfFormFields.toLocaleString()}. Fill a smaller form or remove unused fields first.`,
+    );
+  }
+}
+
+export function assertPdfFormMetadata(stats, limitsOrTool = "pdf-forms", label = "This PDF") {
+  const limits = resolveLimits(limitsOrTool);
+  const values = [
+    stats?.optionCount,
+    stats?.metadataCharacters,
+    stats?.maxFieldNameCharacters,
+    stats?.maxFieldValueCharacters,
+    stats?.maxOptionsPerField,
+  ];
+  if (!values.every((value) => Number.isInteger(value) && value >= 0)) {
+    throw new FileLimitError(
+      "invalid-pdf-form-metadata",
+      `${label} reported invalid form metadata. Save a fresh copy and try again.`,
+    );
+  }
+  if (stats.maxOptionsPerField > limits.maxPdfFormOptionsPerField) {
+    throw new FileLimitError(
+      "pdf-form-options-per-field-limit",
+      `${label} contains a field with ${stats.maxOptionsPerField.toLocaleString()} choices; PDF Forms supports ${limits.maxPdfFormOptionsPerField.toLocaleString()} choices per field. Simplify that field and try again.`,
+    );
+  }
+  if (stats.optionCount > limits.maxPdfFormOptionsTotal) {
+    throw new FileLimitError(
+      "pdf-form-option-limit",
+      `${label} contains ${stats.optionCount.toLocaleString()} field choices; PDF Forms supports ${limits.maxPdfFormOptionsTotal.toLocaleString()} choices in one PDF. Simplify the form and try again.`,
+    );
+  }
+  if (stats.maxFieldNameCharacters > limits.maxPdfFormFieldNameCharacters) {
+    throw new FileLimitError(
+      "pdf-form-field-name-limit",
+      `${label} contains a ${stats.maxFieldNameCharacters.toLocaleString()}-character field name; PDF Forms supports ${limits.maxPdfFormFieldNameCharacters.toLocaleString()} characters per field name. Rename that field and try again.`,
+    );
+  }
+  if (stats.maxFieldValueCharacters > limits.maxPdfFormValueCharacters) {
+    throw new FileLimitError(
+      "pdf-form-field-value-limit",
+      `${label} contains a ${stats.maxFieldValueCharacters.toLocaleString()}-character field value; PDF Forms supports ${limits.maxPdfFormValueCharacters.toLocaleString()} characters per value. Shorten that field and try again.`,
+    );
+  }
+  if (stats.metadataCharacters > limits.maxPdfFormMetadataCharacters) {
+    throw new FileLimitError(
+      "pdf-form-metadata-limit",
+      `${label} contains ${stats.metadataCharacters.toLocaleString()} field-name, value, and choice characters; PDF Forms supports ${limits.maxPdfFormMetadataCharacters.toLocaleString()} in one PDF. Simplify the form and try again.`,
     );
   }
 }

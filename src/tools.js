@@ -659,7 +659,7 @@ export const tools = withPhosphorExports([
   {
     slug: "pdf-forms",
     name: "PDF Forms",
-    description: "Fill existing interactive PDF fields from local values.",
+    description: "See and fill existing interactive PDF fields with familiar controls.",
     kind: "pdf",
     category: "edit",
     accepts: [".pdf"],
@@ -670,6 +670,13 @@ export const tools = withPhosphorExports([
     featured: false,
     maturity: "beta",
     settings: [
+      {
+        key: "values",
+        type: "textarea",
+        label: "Advanced field JSON",
+        default: "",
+        hidden: true,
+      },
       {
         key: "flatten",
         type: "toggle",

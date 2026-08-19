@@ -39,6 +39,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/pptx-writer.js`: dependency-light text reconstruction for PDF-to-PPTX output.
 - `src/lib/pdfjs-utils.js`: version-compatible PDF.js document cleanup.
 - `src/lib/pdf-passwords.js`: protected-PDF access modes, permission checks, and in-memory unlock adapter.
+- `src/lib/pdf-form-fields.js`: bounded AcroForm inspection, visual field descriptors, validation, and fill/flatten behavior.
 - `src/lib/pdf-output-protection.js`: opt-in fresh protection for generated PDF results.
 - `src/lib/tool-settings.js`: shared cleanup for memory-only sensitive tool settings.
 - `src/lib/tiff-utils.js`: bounded TIFF metadata normalization shared by preflight and decoding.
@@ -124,6 +125,7 @@ Use the pinned Bun toolchain and frozen lockfile:
 bun install --frozen-lockfile
 bun run dev
 bun run test:limits
+bun run test:forms
 bun run verify:ocr
 bun run verify:third-party
 bun run test:docx

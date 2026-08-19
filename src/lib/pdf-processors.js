@@ -15,6 +15,7 @@ import {
   zipResults,
 } from "./file-utils.js";
 import { protectPdf, repairPdf, unlockPdf } from "./libpdf.js";
+import { fillPdfFormFields } from "./pdf-form-fields.js";
 import {
   FileLimitError,
   assertExtractedTextLength,
@@ -25,7 +26,6 @@ import {
   assertOcrCharacterCount,
   assertOrganizedPageCount,
   assertPdfOverlayImageDimensions,
-  assertPdfFormFieldCount,
   assertPresentationSlideCount,
   assertRasterDimensions,
   assertSpreadsheetComplexity,
@@ -885,29 +885,18 @@ async function comparePdfs(files, options, report) {
 }
 
 async function fillForm(file, options) {
-  const pdf = await loadPdfLib(file);
-  const form = pdf.getForm();
-  const fields = form.getFields();
-  if (!fields.length) throw new Error("No fillable fields were found in this PDF.");
-  assertPdfFormFieldCount(fields.length, "pdf-forms", file.name);
-  let supplied = {};
-  try {
-    supplied = options.values ? JSON.parse(options.values) : {};
-  } catch {
-    throw new Error("Form values must be valid JSON, for example {\"Name\":\"Asha\"}.");
-  }
-  for (const field of fields) {
-    const name = field.getName();
-    const value = supplied[name] ?? options.value ?? "Completed locally";
-    const kind = field.constructor.name;
-    if (/TextField/.test(kind)) field.setText(String(value));
-    else if (/CheckBox/.test(kind)) value ? field.check() : field.uncheck();
-    else if (/Dropdown|OptionList|RadioGroup/.test(kind)) {
-      try { field.select(String(value)); } catch { /* Leave incompatible values unchanged. */ }
-    }
-  }
-  if (options.flatten) form.flatten();
-  return [pdfResult(`${safeFileName(baseName(file.name))}-filled.pdf`, await pdf.save(), `${fields.length} form fields processed`)];
+  const result = await fillPdfFormFields(file, options.values, {
+    flatten: options.flatten === true || options.flatten === "true",
+    label: file.name,
+  });
+  const changeCopy = result.changeCount
+    ? `${result.changeCount.toLocaleString()} ${result.changeCount === 1 ? "field" : "fields"} updated`
+    : `${result.fieldCount.toLocaleString()} ${result.fieldCount === 1 ? "field" : "fields"} preserved`;
+  return [pdfResult(
+    `${safeFileName(baseName(file.name))}-filled.pdf`,
+    result.bytes,
+    `${changeCopy}${result.flattened ? " and flattened" : "; form remains editable"}`,
+  )];
 }
 
 async function archiveNormalize(file, options) {

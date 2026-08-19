@@ -49,7 +49,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Crop PDF | Visible trim control and representative page-edge preview | Keep; continue boundary QA |
 | Edit PDF | Visible text, position, size, and representative first-page preview | Build direct drag placement only if the preset positions test poorly |
 | Add Image to PDF | Strong page canvas, placement, resize, and rotation | Keep; continue browser and touch QA |
-| PDF Forms | Hidden fallback values; no field-aware form | Build a dynamic field list from the loaded PDF before public launch |
+| PDF Forms | Dynamic field-aware editor with search, paging, exact controls, change count, editable/flattened export choice, and optional advanced JSON | Keep; continue protected-form, browser, and unusual-widget QA |
 | Unlock PDF | Clear password gate and previewable result | Keep |
 | Protect PDF | Clear memory-only password control and previewable result | Keep |
 | Sign PDF | Typed signature, date choice, and representative placement preview | Build final-page drag placement only if preset placement tests poorly |
@@ -75,7 +75,7 @@ Native text or number entry remains available when precision matters. Numeric li
 ## Delivery waves
 
 1. **Shared foundation:** visual choice cards, number steppers/presets, meaningful range endpoints, and safe single-result automatic download.
-2. **PDF page editors:** Organize and representative single-operation previews are complete; next build a field-aware Forms panel and per-page multi-region redaction.
+2. **PDF page editors:** Organize, representative single-operation previews, and the field-aware Forms panel are complete; next build per-page multi-region redaction.
 3. **PDF conversions and readers:** pre-export page/text/output feedback plus inline Compare and Summary results.
 4. **Image canvas tools:** Resize, Crop, Photo Editor, Remove Background, Watermark, Meme, Rotate, and Blur Face live previews.
 5. **Final QA:** keyboard, screen-reader names, mobile reflow, large/boundary files, repeated runs, preview, automatic download, offline reload, and browser coverage.

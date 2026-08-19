@@ -81,6 +81,7 @@ import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.j
 import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
+import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
 import { clearSensitiveToolSettings } from "./lib/tool-settings.js";
@@ -172,10 +173,6 @@ const contextualSettings = {
   ],
   "organize-pdf": [
     { key: "order", type: "text", label: "New page order", default: "all", hint: "Example: 3,1,2,4-8" },
-  ],
-  "pdf-forms": [
-    { key: "values", type: "textarea", label: "Field values (JSON)", default: "", placeholder: "{\"Full name\": \"Asha Rao\"}" },
-    { key: "value", type: "text", label: "Fallback value", default: "Completed locally" },
   ],
   "redact-pdf": [
     { key: "x", type: "range", label: "Horizontal position", default: 10, min: 0, max: 90, step: 1, suffix: "%", minLabel: "Left", maxLabel: "Right" },
@@ -668,6 +665,40 @@ function usePdfPageInfo(file, enabled, limits, toolName) {
       void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
     };
   }, [enabled, file, limits.maxPdfPagesPerFile, toolName]);
+
+  return info;
+}
+
+function usePdfFormInfo(file, enabled, limits) {
+  const [info, setInfo] = useState({ state: "idle", fieldCount: 0, fields: [], message: "" });
+
+  useEffect(() => {
+    if (!enabled || !file) {
+      setInfo({ state: "idle", fieldCount: 0, fields: [], message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setInfo({ state: "loading", fieldCount: 0, fields: [], message: "Reading form fields locally…" });
+    inspectPdfForm(file, limits, file.name)
+      .then((result) => {
+        if (!cancelled) {
+          setInfo({
+            state: "ready",
+            fieldCount: result.fieldCount,
+            fields: result.fields,
+            message: `${result.fieldCount.toLocaleString()} ${result.fieldCount === 1 ? "field" : "fields"} found locally`,
+          });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setInfo({ state: "error", fieldCount: 0, fields: [], message: error?.message || "The form fields could not be read." });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, file, limits]);
 
   return info;
 }
@@ -2038,6 +2069,258 @@ function ImageFormatControls({ settings, onChange, support }) {
   );
 }
 
+const PDF_FORM_FIELDS_PER_PAGE = 10;
+
+function readablePdfFormFieldName(name) {
+  const leaf = String(name).split(/[./]/).filter(Boolean).at(-1) || String(name);
+  const spaced = leaf.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").trim();
+  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : "Form field";
+}
+
+function samePdfFormValue(left, right) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((value, index) => value === right[index]);
+  }
+  return left === right;
+}
+
+function PdfFormFieldControl({ field, value, modified, disabled, limits, onChange, onReset }) {
+  const id = `pdf-form-field-${field.index}`;
+  const displayName = readablePdfFormFieldName(field.name);
+  const showExactName = displayName.toLocaleLowerCase() !== field.name.toLocaleLowerCase();
+  const inputMaxLength = Math.min(field.maxLength || limits.maxPdfFormValueCharacters, limits.maxPdfFormValueCharacters);
+  const selectedOptions = new Set(Array.isArray(value) ? value : value == null ? [] : [value]);
+  const selectionIndex = typeof value === "string" ? field.options.indexOf(value) : -1;
+  const controlsDisabled = disabled || field.readOnly || !field.supported;
+
+  const fieldControl = field.type === "text"
+    ? field.multiline
+      ? <textarea id={id} rows={3} maxLength={inputMaxLength} aria-labelledby={`${id}-label`} aria-required={field.required} value={String(value ?? "")} disabled={controlsDisabled} onChange={(event) => onChange(event.target.value)} />
+      : <input id={id} type="text" maxLength={inputMaxLength} aria-labelledby={`${id}-label`} aria-required={field.required} value={String(value ?? "")} disabled={controlsDisabled} onChange={(event) => onChange(event.target.value)} />
+    : field.type === "checkbox"
+      ? (
+        <label className="pdf-form-checkbox" htmlFor={id}>
+          <input id={id} type="checkbox" aria-labelledby={`${id}-label`} aria-required={field.required} checked={Boolean(value)} disabled={controlsDisabled} onChange={(event) => onChange(event.target.checked)} />
+          <span><strong>{value ? "Checked" : "Unchecked"}</strong><small>Tap to change this field.</small></span>
+        </label>
+      )
+      : ["dropdown", "radio"].includes(field.type)
+        ? (
+          <select id={id} aria-labelledby={`${id}-label`} aria-required={field.required} value={selectionIndex < 0 ? "" : String(selectionIndex)} disabled={controlsDisabled} onChange={(event) => onChange(event.target.value === "" ? null : field.options[Number(event.target.value)])}>
+            <option value="">No selection</option>
+            {field.options.map((option, index) => <option key={`${index}-${option}`} value={index}>{option || "(blank choice)"}</option>)}
+          </select>
+        )
+        : field.type === "option-list"
+          ? field.options.length <= 8
+            ? (
+              <div className="pdf-form-option-list" role="group" aria-labelledby={`${id}-label`}>
+                {field.options.map((option, index) => (
+                  <label key={`${index}-${option}`}>
+                    <input
+                      type="checkbox"
+                      checked={selectedOptions.has(option)}
+                      disabled={controlsDisabled}
+                      onChange={(event) => {
+                        const next = new Set(selectedOptions);
+                        if (event.target.checked) next.add(option);
+                        else next.delete(option);
+                        onChange([...next]);
+                      }}
+                    />
+                    <span>{option || "(blank choice)"}</span>
+                  </label>
+                ))}
+              </div>
+            )
+            : (
+              <select
+                id={id}
+                multiple
+                size={Math.min(6, field.options.length)}
+                aria-labelledby={`${id}-label`}
+                aria-required={field.required}
+                value={field.options.map((option, index) => selectedOptions.has(option) ? String(index) : null).filter(Boolean)}
+                disabled={controlsDisabled}
+                onChange={(event) => onChange([...event.target.selectedOptions].map((option) => field.options[Number(option.value)]))}
+              >
+                {field.options.map((option, index) => <option key={`${index}-${option}`} value={index}>{option || "(blank choice)"}</option>)}
+              </select>
+            )
+          : null;
+
+  return (
+    <article className={`pdf-form-field ${modified ? "modified" : ""} ${controlsDisabled ? "disabled" : ""}`}>
+      <header>
+        <span>
+          <strong id={`${id}-label`}>{displayName}{field.required && <b aria-label="required">Required</b>}</strong>
+          {showExactName && <small title={field.name}>{field.name}</small>}
+        </span>
+        <span className="pdf-form-field-meta"><b>{field.typeLabel}</b>{modified && <em>Edited</em>}</span>
+      </header>
+      {fieldControl}
+      {!field.supported && <p>This field stays untouched. Buttons and signature widgets are not fillable here.</p>}
+      {field.readOnly && <p>This field is read-only in the source PDF and stays untouched.</p>}
+      {modified && <button className="pdf-form-reset-field" type="button" onClick={onReset}>Reset to original</button>}
+    </article>
+  );
+}
+
+function PdfFormControls({ file, info, settings, limits, plan, onChange }) {
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [editError, setEditError] = useState("");
+  const parsed = useMemo(() => {
+    try {
+      return { values: parsePdfFormValues(settings.values, limits), error: "" };
+    } catch (error) {
+      return { values: {}, error: error?.message || "Advanced field JSON is not valid." };
+    }
+  }, [limits, settings.values]);
+
+  useEffect(() => {
+    setQuery("");
+    setPage(0);
+    setEditError("");
+  }, [file]);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const matchingFields = info.fields.filter((field) => !normalizedQuery
+    || field.name.toLocaleLowerCase().includes(normalizedQuery)
+    || field.typeLabel.toLocaleLowerCase().includes(normalizedQuery)
+    || readablePdfFormFieldName(field.name).toLocaleLowerCase().includes(normalizedQuery));
+  const pageCount = Math.max(1, Math.ceil(matchingFields.length / PDF_FORM_FIELDS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleFields = matchingFields.slice(currentPage * PDF_FORM_FIELDS_PER_PAGE, (currentPage + 1) * PDF_FORM_FIELDS_PER_PAGE);
+  const changedNames = new Set(Object.keys(parsed.values));
+
+  useEffect(() => {
+    if (page > pageCount - 1) setPage(Math.max(0, pageCount - 1));
+  }, [page, pageCount]);
+
+  const replaceValues = (next) => {
+    const serialized = Object.keys(next).length ? JSON.stringify(next, null, 2) : "";
+    try {
+      parsePdfFormValues(serialized, limits);
+      setEditError("");
+      onChange("values", serialized);
+    } catch (error) {
+      setEditError(error?.message || "That field value is too large to keep safely.");
+    }
+  };
+
+  const updateField = (field, value) => {
+    if (parsed.error) return;
+    const next = { ...parsed.values };
+    if (samePdfFormValue(value, field.currentValue)) delete next[field.name];
+    else next[field.name] = value;
+    replaceValues(next);
+  };
+
+  const resetField = (name) => {
+    const next = { ...parsed.values };
+    delete next[name];
+    replaceValues(next);
+  };
+
+  if (!file || info.state === "idle") {
+    return (
+      <div className="pdf-form-empty-state">
+        <span><TextboxIcon size={22} weight="duotone" aria-hidden="true" /></span>
+        <strong>Choose a fillable PDF</strong>
+        <p>Its text fields, checkboxes, and choices will appear here automatically. No field names or JSON needed.</p>
+      </div>
+    );
+  }
+
+  if (info.state === "loading") {
+    return <div className="pdf-form-source-status loading" role="status"><SpinnerGapIcon size={18} className="spin" aria-hidden="true" /><span><strong>Reading form fields</strong><small>Everything stays in this tab.</small></span></div>;
+  }
+
+  if (info.state === "error") {
+    return <div className="pdf-form-source-status error" role="alert"><WarningCircleIcon size={18} weight="fill" aria-hidden="true" /><span><strong>Form fields could not be opened</strong><small>{info.message}</small></span></div>;
+  }
+
+  return (
+    <section className="pdf-form-controls" aria-labelledby="pdf-form-fields-title">
+      <div className="pdf-form-summary">
+        <span><CheckCircleIcon size={18} weight="fill" aria-hidden="true" /><span><strong id="pdf-form-fields-title">{info.fieldCount.toLocaleString()} {info.fieldCount === 1 ? "field" : "fields"} ready</strong><small>Fill only what you want to change.</small></span></span>
+        <b aria-live="polite">{changedNames.size.toLocaleString()} edited</b>
+      </div>
+
+      {info.fieldCount > PDF_FORM_FIELDS_PER_PAGE && (
+        <label className="pdf-form-search" htmlFor="pdf-form-field-search">
+          <MagnifyingGlassIcon size={15} aria-hidden="true" />
+          <input id="pdf-form-field-search" type="search" value={query} placeholder="Find a field" onChange={(event) => { setQuery(event.target.value); setPage(0); }} />
+        </label>
+      )}
+
+      {parsed.error && (
+        <div className="pdf-form-inline-error" role="alert"><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span>{parsed.error}</span><button type="button" onClick={() => onChange("values", "")}>Reset JSON</button></div>
+      )}
+      {editError && <div className="pdf-form-inline-error" role="alert"><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span>{editError}</span></div>}
+
+      <div className="pdf-form-field-list">
+        {visibleFields.map((field) => {
+          const modified = changedNames.has(field.name);
+          return (
+            <PdfFormFieldControl
+              key={field.name}
+              field={field}
+              value={modified ? parsed.values[field.name] : field.currentValue}
+              modified={modified}
+              disabled={Boolean(parsed.error)}
+              limits={limits}
+              onChange={(value) => updateField(field, value)}
+              onReset={() => resetField(field.name)}
+            />
+          );
+        })}
+        {!visibleFields.length && <p className="pdf-form-no-match">No fields match “{query}”.</p>}
+      </div>
+
+      {pageCount > 1 && (
+        <div className="pdf-form-pagination" aria-label="Form field pages">
+          <button type="button" disabled={currentPage === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}><ArrowLeftIcon size={14} aria-hidden="true" />Previous</button>
+          <span>Fields {(currentPage * PDF_FORM_FIELDS_PER_PAGE) + 1}–{Math.min((currentPage + 1) * PDF_FORM_FIELDS_PER_PAGE, matchingFields.length)} of {matchingFields.length}</span>
+          <button type="button" disabled={currentPage >= pageCount - 1} onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}>Next<ArrowRightIcon size={14} aria-hidden="true" /></button>
+        </div>
+      )}
+
+      <fieldset className="pdf-form-export-mode">
+        <legend>How should the form export?</legend>
+        <div>
+          <button type="button" className={!settings.flatten ? "selected" : ""} aria-pressed={!settings.flatten} onClick={() => onChange("flatten", false)}><strong>Keep it editable</strong><small>Recipients can change the fields later.</small></button>
+          <button type="button" className={settings.flatten ? "selected" : ""} aria-pressed={Boolean(settings.flatten)} onClick={() => onChange("flatten", true)}><strong>Flatten fields</strong><small>Values become part of the page.</small></button>
+        </div>
+      </fieldset>
+
+      <details className="pdf-form-advanced">
+        <summary><KeyboardIcon size={15} aria-hidden="true" /><span>Advanced field JSON</span><CaretRightIcon size={13} aria-hidden="true" /></summary>
+        <p>Optional. It contains only your edits and uses the exact PDF field names.</p>
+        <textarea
+          aria-label="Advanced field JSON"
+          aria-invalid={Boolean(parsed.error)}
+          rows={6}
+          maxLength={getTextSettingLimit("pdf-forms", "values")}
+          value={settings.values}
+          placeholder={'{"Full name": "Asha Rao", "Agree": true}'}
+          onChange={(event) => onChange("values", event.target.value)}
+        />
+        <button type="button" disabled={!settings.values} onClick={() => onChange("values", "")}>Clear all edits</button>
+      </details>
+
+      <div className={`pdf-form-plan ${plan.valid ? "ready" : "waiting"}`} role="status" aria-live="polite">
+        {plan.valid ? <CheckCircleIcon size={17} weight="fill" aria-hidden="true" /> : <WarningCircleIcon size={17} aria-hidden="true" />}
+        <span>{plan.message}</span>
+      </div>
+      <div className="pdf-form-private-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span>Field names and values are read and edited only in this tab.</span></div>
+    </section>
+  );
+}
+
 function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const dialogRef = useRef(null);
   const titleRef = useRef(null);
@@ -2073,13 +2356,22 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || tool.slug === "pdf-forms";
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
+  const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
   const extractPlan = useMemo(() => tool.slug === "extract-pdf-pages" ? getExtractPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
   const organizePlan = useMemo(() => tool.slug === "organize-pdf" ? getOrganizePlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
+  const pdfFormPlan = useMemo(() => {
+    if (tool.slug !== "pdf-forms") return null;
+    if (pdfFormInfo.state === "idle") return { valid: false, values: {}, changeCount: 0, message: "Add one fillable PDF to continue." };
+    if (pdfFormInfo.state === "loading") return { valid: false, values: {}, changeCount: 0, message: "Reading form fields locally…" };
+    if (pdfFormInfo.state === "error") return { valid: false, values: {}, changeCount: 0, message: pdfFormInfo.message };
+    return createPdfFormPlan(settings.values, pdfFormInfo.fields, settings.flatten, limits);
+  }, [limits, pdfFormInfo, settings.flatten, settings.values, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
@@ -2156,6 +2448,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
     if (validation.accepted.length) {
       passwordGate.resetForFileChange();
+      if (tool.slug === "pdf-forms") setSettings((current) => ({ ...current, values: "" }));
       setFiles(validation.nextFiles);
       clearResults();
       setStatus("idle");
@@ -2208,6 +2501,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     const nextFocusFile = remaining[Math.min(index, remaining.length - 1)];
     const nextFocusId = nextFocusFile ? getFileId(nextFocusFile) : null;
     passwordGate.resetForFileChange();
+    if (tool.slug === "pdf-forms") setSettings((current) => ({ ...current, values: "" }));
     setFiles(remaining);
     clearResults();
     setStatus("idle");
@@ -2236,7 +2530,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         : true;
   const compressionReady = tool.slug !== "compress-pdf" || !hasRequiredInput || compressionEstimateAllowsProcessing(activeCompressionEstimate);
   const imageEncoderReady = tool.slug !== "convert-image" || (imageEncoderSupport.state === "ready" && imageEncoderSupport.formats[settings.format] === true);
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && status !== "processing";
+  const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -2254,6 +2549,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? extractPlan?.message
     : tool.slug === "organize-pdf" && !organizePlan?.valid
       ? organizePlan?.message
+    : tool.slug === "pdf-forms" && !pdfFormPlan?.valid
+      ? pdfFormPlan?.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -2325,6 +2622,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Checking browser support"
     : tool.slug === "convert-image"
       ? `Convert to ${String(settings.format || "webp").toUpperCase()}`
+    : tool.slug === "pdf-forms" && pdfFormPlan?.valid
+      ? pdfFormPlan.changeCount
+        ? `Fill ${pdfFormPlan.changeCount.toLocaleString()} ${pdfFormPlan.changeCount === 1 ? "field" : "fields"}`
+        : "Flatten PDF form"
     : tool.name;
 
   const updateSetting = (key, value) => {
@@ -2450,7 +2751,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             )}
           </section>
 
-          <aside className={`settings-panel ${usesPagePicker ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
+          <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
             <div className="settings-heading"><span><SlidersHorizontalIcon size={19} /></span><div><h3>Settings</h3><p>Fine-tune the local output.</p></div></div>
             {tool.slug === "split-pdf" ? (
@@ -2465,6 +2766,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
             ) : tool.slug === "convert-image" ? (
               <ImageFormatControls settings={settings} onChange={updateSetting} support={imageEncoderSupport} />
+            ) : tool.slug === "pdf-forms" ? (
+              <PdfFormControls file={files[0]} info={pdfFormInfo} settings={settings} limits={limits} plan={pdfFormPlan} onChange={updateSetting} />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
