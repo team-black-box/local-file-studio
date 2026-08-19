@@ -814,7 +814,7 @@ export const tools = withPhosphorExports([
     kind: "pdf",
     category: "intelligence",
     accepts: [".pdf"],
-    output: [".txt"],
+    output: ["text reader", ".txt"],
     batch: false,
     tags: ["summary", "extractive", "notes", "key points"],
     icon: "Sparkle",

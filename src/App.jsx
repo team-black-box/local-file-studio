@@ -163,7 +163,7 @@ function updatePageMetadata(tool) {
 }
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
-const inlineReaderTools = new Set(["ocr-pdf", "translate-pdf", "pdf-to-markdown", "compare-pdf"]);
+const inlineReaderTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "compare-pdf"]);
 const pdfSettingPreviewTools = new Set(["rotate-pdf", "add-pdf-page-numbers", "watermark-pdf", "crop-pdf", "edit-pdf", "sign-pdf"]);
 const TOOL_SLUG_ALIASES = Object.freeze({ "convert-to-jpg": "convert-image" });
 const contextualSettings = {
@@ -2098,6 +2098,7 @@ function MarkdownPreview({ text, limits }) {
 
 function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
   const markdown = tool.slug === "pdf-to-markdown";
+  const summary = tool.slug === "summarize-pdf";
   const text = String(result?.textContent || "");
   const [activeTab, setActiveTab] = useState("text");
   const [copyState, setCopyState] = useState({ kind: "idle", message: "" });
@@ -2107,18 +2108,18 @@ function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
   const copy = async () => {
     try {
       await copyOcrText(text);
-      setCopyState({ kind: "success", message: markdown ? "Markdown copied." : "Translation copied." });
+      setCopyState({ kind: "success", message: markdown ? "Markdown copied." : summary ? "Summary copied." : "Translation copied." });
     } catch (error) {
       setCopyState({ kind: "error", message: error?.message || "Text could not be copied." });
     }
   };
 
   return (
-    <section className="ocr-reader-card text-reader-card" aria-labelledby={`${tool.slug}-reader-title`}>
+    <section className={`ocr-reader-card text-reader-card ${summary ? "summary-reader-card" : ""}`} aria-labelledby={`${tool.slug}-reader-title`}>
       <header className="ocr-reader-header text-reader-header">
-        <span>{markdown ? <MarkdownLogoIcon size={24} weight="duotone" aria-hidden="true" /> : <TranslateIcon size={24} weight="duotone" aria-hidden="true" />}</span>
-        <div><h3 id={`${tool.slug}-reader-title`} ref={headingRef} tabIndex="-1">{markdown ? "Markdown result" : "Translated text"}</h3><p>{result.details} · held only in this tab</p></div>
-        <b>{markdown ? "MARKDOWN" : "LOCAL"}</b>
+        <span>{markdown ? <MarkdownLogoIcon size={24} weight="duotone" aria-hidden="true" /> : summary ? <SparkleIcon size={24} weight="duotone" aria-hidden="true" /> : <TranslateIcon size={24} weight="duotone" aria-hidden="true" />}</span>
+        <div><h3 id={`${tool.slug}-reader-title`} ref={headingRef} tabIndex="-1">{markdown ? "Markdown result" : summary ? "Extractive summary" : "Translated text"}</h3><p>{result.details} · held only in this tab</p></div>
+        <b>{markdown ? "MARKDOWN" : summary ? "EXTRACTIVE" : "LOCAL"}</b>
       </header>
 
       {markdown && (
@@ -2130,7 +2131,7 @@ function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
 
       {(!markdown || activeTab === "text") && (
         <div className="ocr-text-panel" id={textPanelId} role={markdown ? "tabpanel" : undefined} aria-labelledby={markdown ? `${textPanelId}-tab` : undefined}>
-          <label htmlFor={`${tool.slug}-result-value`}>{markdown ? "Markdown text" : "Translated text"}</label>
+          <label htmlFor={`${tool.slug}-result-value`}>{markdown ? "Markdown text" : summary ? "Summary text" : "Translated text"}</label>
           <textarea id={`${tool.slug}-result-value`} readOnly value={text} spellCheck="false" />
         </div>
       )}
@@ -2141,10 +2142,26 @@ function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
       <footer className="ocr-reader-actions text-reader-actions">
         <span className={`ocr-copy-status ${copyState.kind}`} role="status" aria-live="polite">{copyState.message || "Text stays local until you copy or download it."}</span>
         <button type="button" onClick={() => downloadResult(result)}><DownloadSimpleIcon size={16} aria-hidden="true" />Download {markdown ? ".md" : ".txt"}</button>
-        <button type="button" className="primary" onClick={copy} disabled={!text}><FilesIcon size={16} aria-hidden="true" />Copy {markdown ? "Markdown" : "translation"}</button>
+        <button type="button" className="primary" onClick={copy} disabled={!text}><FilesIcon size={16} aria-hidden="true" />Copy {markdown ? "Markdown" : summary ? "summary" : "translation"}</button>
       </footer>
-      <button className="start-another ocr-start-another" onClick={onReset}>{markdown ? "Convert another PDF" : "Translate another PDF"}</button>
+      <button className="start-another ocr-start-another" onClick={onReset}>{markdown ? "Convert another PDF" : summary ? "Summarize another PDF" : "Translate another PDF"}</button>
     </section>
+  );
+}
+
+function SummaryPlan({ settings }) {
+  const sentenceCounts = { short: 3, medium: 5, long: 9 };
+  const sentenceCount = sentenceCounts[settings.length] || sentenceCounts.medium;
+  const prose = settings.format === "prose";
+  return (
+    <div className="summary-plan" role="note">
+      <span><SparkleIcon size={17} weight="duotone" aria-hidden="true" /></span>
+      <div>
+        <strong>Up to {sentenceCount} source {sentenceCount === 1 ? "sentence" : "sentences"}</strong>
+        <small>{prose ? "Presented as one readable paragraph." : "Presented as scannable key points."}</small>
+        <p>This is extractive: it selects existing PDF sentences instead of inventing or rewriting claims.</p>
+      </div>
+    </div>
   );
 }
 
@@ -3114,6 +3131,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     : "Drop files here or choose files";
   const processButtonLabel = tool.slug === "ocr-pdf" && hasRequiredInput
     ? "Recognize text"
+    : tool.slug === "summarize-pdf" && hasRequiredInput
+      ? "Create summary"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3248,7 +3267,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <OcrReaderResult result={results[0]} headingRef={resultHeadingRef} onReset={resetWorkbenchState} />
             )}
 
-            {results.length > 0 && ["translate-pdf", "pdf-to-markdown"].includes(tool.slug) && (
+            {results.length > 0 && ["summarize-pdf", "translate-pdf", "pdf-to-markdown"].includes(tool.slug) && (
               <TextReaderResult tool={tool} result={results[0]} limits={limits} headingRef={resultHeadingRef} onReset={resetWorkbenchState} />
             )}
 
@@ -3304,6 +3323,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
                 {settingsList.map((setting) => <SettingControl key={setting.key} setting={setting} value={settings[setting.key]} onChange={(value) => updateSetting(setting.key, value)} />)}
+                {tool.slug === "summarize-pdf" && <SummaryPlan settings={settings} />}
               </>
             ) : <div className="no-settings"><CheckCircleIcon size={20} /><span><strong>Nothing to configure</strong>This tool uses sensible local defaults.</span></div>}
 
@@ -3313,7 +3333,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
             <div className="output-summary">
               <span>Output</span>
-              <strong>{tool.slug === "convert-image" ? `.${String(settings.format || "webp").toUpperCase()}` : tool.slug === "compare-pdf" ? "INLINE + .HTML" : tool.output.join(" · ").toUpperCase()}</strong>
+              <strong>{tool.slug === "convert-image" ? `.${String(settings.format || "webp").toUpperCase()}` : tool.slug === "compare-pdf" ? "INLINE + .HTML" : tool.slug === "summarize-pdf" ? "INLINE + .TXT" : tool.output.join(" · ").toUpperCase()}</strong>
             </div>
             </div>
             <div className="process-action-stack">

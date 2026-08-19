@@ -15,7 +15,7 @@ import {
   validatePdfOverlayPlacements,
 } from "../src/lib/file-limits.js";
 import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
-import { createOcrReaderResult, createTextReaderResult, processPdfTool } from "../src/lib/pdf-processors.js";
+import { createOcrReaderResult, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
 import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
@@ -82,7 +82,14 @@ test("OCR reader results keep bounded page text in memory without a download blo
   assert.equal(buildOcrCopyText(result.ocrPages), "PAGE 1\nFirst page\n\nPAGE 2\n[No text recognized]");
 });
 
-test("Translate and Markdown results expose complete copyable text beside optional downloads", async () => {
+test("Summary, Translate, and Markdown results expose complete copyable text beside optional downloads", async () => {
+  const summary = createTextReaderResult("local-notes.pdf", "LOCAL EXTRACTIVE SUMMARY\n\n• Private files stay local.", "summary");
+  assert.equal(summary.viewer, "summary");
+  assert.equal(summary.name, "local-notes-summary.txt");
+  assert.equal(summary.type, "text/plain");
+  assert.match(summary.textContent, /Private files stay local/);
+  assert.equal(await summary.blob.text(), summary.textContent);
+
   const translation = createTextReaderResult("local-notes.pdf", "[Limited glossary]\n\ndocumento privado", "translation");
   assert.equal(translation.viewer, "translation");
   assert.equal(translation.type, "text/plain");
@@ -96,6 +103,14 @@ test("Translate and Markdown results expose complete copyable text beside option
   assert.match(markdown.textContent, /^# Page 1/m);
   assert.match(markdown.textContent, /^## PRIVATE DOCUMENT/m);
   assert.equal(await markdown.blob.text(), markdown.textContent);
+});
+
+test("extractive summaries treat PDF lines as candidates and do not repeat identical source sentences", () => {
+  assert.equal(
+    extractiveSummary("Project title\nPrivate files stay on this device.\nPrivate files stay on this device.\nNo uploads are required.", 5),
+    "• Project title\n• Private files stay on this device.\n• No uploads are required.",
+  );
+  assert.equal(extractiveSummary("One\nTwo\nThree", 2).split("\n").length, 2);
 });
 
 test("Markdown preview parsing stays structural and caps only the visual preview", () => {
