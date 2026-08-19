@@ -4301,6 +4301,15 @@ kbd {
   background: var(--surface-soft);
 }
 
+.spreadsheet-pdf-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.spreadsheet-pdf-controls .visual-choice-setting {
+  margin: 0;
+}
+
 .word-preview-empty > span,
 .word-preview-loading > svg,
 .word-preview-error > svg {
@@ -4468,6 +4477,99 @@ kbd {
   gap: 7px;
 }
 
+.spreadsheet-first-sheet {
+  display: grid;
+  gap: 7px;
+}
+
+.spreadsheet-first-sheet .ppt-first-slide-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--privacy-dark);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spreadsheet-table-wrap {
+  max-height: 188px;
+  overflow: auto;
+  border: 1px solid var(--control-border);
+  border-left: 3px solid var(--privacy);
+  border-radius: 8px;
+  background: #fffefb;
+  outline: 0;
+}
+
+.spreadsheet-table-wrap:focus {
+  border-color: var(--privacy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--privacy) 16%, transparent);
+}
+
+.spreadsheet-table-wrap table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--ink);
+  font: 8px/1.45 var(--mono);
+  table-layout: fixed;
+}
+
+.spreadsheet-table-wrap th,
+.spreadsheet-table-wrap td {
+  min-width: 72px;
+  max-width: 132px;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 7px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spreadsheet-table-wrap thead th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  min-width: 72px;
+  background: #f1f4ef;
+  color: var(--privacy-dark);
+  font-weight: 800;
+  text-align: center;
+}
+
+.spreadsheet-table-wrap thead th:first-child,
+.spreadsheet-table-wrap tbody th {
+  position: sticky;
+  z-index: 2;
+  left: 0;
+  min-width: 28px;
+  width: 28px;
+  max-width: 28px;
+  background: #f1f4ef;
+  color: var(--muted);
+  font-weight: 750;
+  text-align: center;
+}
+
+.spreadsheet-table-wrap thead th:first-child {
+  z-index: 3;
+}
+
+.spreadsheet-table-wrap tr:last-child > * {
+  border-bottom: 0;
+}
+
+.spreadsheet-table-wrap tr > *:last-child {
+  border-right: 0;
+}
+
+.spreadsheet-sheet-empty {
+  border-left-color: var(--privacy);
+  color: var(--privacy-dark);
+}
+
 .ppt-first-slide-heading {
   display: flex;
   align-items: center;
@@ -4538,7 +4640,8 @@ kbd {
 .repair-result-summary,
 .scan-result-summary,
 .word-result-summary,
-.ppt-result-summary {
+.ppt-result-summary,
+.spreadsheet-result-summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
@@ -4550,7 +4653,8 @@ kbd {
 .repair-result-summary > span,
 .scan-result-summary > span,
 .word-result-summary > span,
-.ppt-result-summary > span {
+.ppt-result-summary > span,
+.spreadsheet-result-summary > span {
   width: 36px;
   height: 36px;
   display: grid;
@@ -4563,7 +4667,8 @@ kbd {
 .repair-result-summary > div,
 .scan-result-summary > div,
 .word-result-summary > div,
-.ppt-result-summary > div {
+.ppt-result-summary > div,
+.spreadsheet-result-summary > div {
   min-width: 0;
   display: grid;
   gap: 2px;
@@ -4572,7 +4677,8 @@ kbd {
 .repair-result-summary > div strong,
 .scan-result-summary > div strong,
 .word-result-summary > div strong,
-.ppt-result-summary > div strong {
+.ppt-result-summary > div strong,
+.spreadsheet-result-summary > div strong {
   color: var(--ink);
   font-size: 11px;
 }
@@ -4580,7 +4686,8 @@ kbd {
 .repair-result-summary > div small,
 .scan-result-summary > div small,
 .word-result-summary > div small,
-.ppt-result-summary > div small {
+.ppt-result-summary > div small,
+.spreadsheet-result-summary > div small {
   color: var(--muted-strong);
   font-size: 9px;
   line-height: 1.4;
@@ -4589,7 +4696,8 @@ kbd {
 .repair-result-summary > p,
 .scan-result-summary > p,
 .word-result-summary > p,
-.ppt-result-summary > p {
+.ppt-result-summary > p,
+.spreadsheet-result-summary > p {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
