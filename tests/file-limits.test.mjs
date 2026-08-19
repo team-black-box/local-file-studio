@@ -25,6 +25,7 @@ import {
   assertOutputDimensions,
   assertOutputSize,
   assertPdfFormFieldCount,
+  assertPdfFormMetadata,
   assertPresentationSlideCount,
   assertRasterDimensions,
   assertSpreadsheetComplexity,
@@ -281,7 +282,7 @@ test("every registered text setting accepts its exact cap and rejects one extra 
     "watermark-pdf": { text: 200 },
     "edit-pdf": { text: 500 },
     "sign-pdf": { name: 200 },
-    "pdf-forms": { values: 256 * 1024, value: 10_000 },
+    "pdf-forms": { values: 256 * 1024 },
     "unlock-pdf": { password: 1024 },
     "protect-pdf": { password: 1024 },
     "watermark-image": { text: 500 },
@@ -348,6 +349,11 @@ test("processor-amplification budgets are exact and visible from the shared poli
   assert.equal(getToolLimits(excel).maxSpreadsheetSheets, 100);
   assert.equal(getToolLimits(excel).maxSpreadsheetCellSlots, 500_000);
   assert.equal(getToolLimits(forms).maxPdfFormFields, 1_000);
+  assert.equal(getToolLimits(forms).maxPdfFormOptionsPerField, 500);
+  assert.equal(getToolLimits(forms).maxPdfFormOptionsTotal, 5_000);
+  assert.equal(getToolLimits(forms).maxPdfFormFieldNameCharacters, 2_048);
+  assert.equal(getToolLimits(forms).maxPdfFormValueCharacters, 10_000);
+  assert.equal(getToolLimits(forms).maxPdfFormMetadataCharacters, 512_000);
   assert.equal(getToolLimits(organize).maxOrganizedPageMultiplier, 2);
   assert.deepEqual(
     Object.fromEntries(Object.entries(getToolLimits(compare)).filter(([key]) => ["maxExtractedLinesPerFile", "maxExtractedLinesTotal", "maxDiffEditLength", "maxDiffMilliseconds", "maxDiffHardMilliseconds"].includes(key))),
@@ -356,7 +362,7 @@ test("processor-amplification budgets are exact and visible from the shared poli
 
   assert.match(describeToolLimits(powerpoint).secondary, /1,000,000 extracted characters.*250 slides.*500 generated PDF pages/s);
   assert.match(describeToolLimits(excel).secondary, /100 sheets.*500,000 used-range cells.*500 generated PDF pages/s);
-  assert.match(describeToolLimits(forms).secondary, /1,000 form fields/);
+  assert.match(describeToolLimits(forms).secondary, /1,000 form fields.*500 choices\/field.*5,000 field choices total.*2,048 characters\/field name.*10,000 characters\/field value.*512,000 field text\/choice characters total/);
   assert.match(describeToolLimits(organize).secondary, /2× source pages max output/);
   assert.match(describeToolLimits(compare).secondary, /25,000 extracted lines\/file.*40,000 extracted lines combined.*2,000 line edits max.*3 s diff budget.*4 s hard stop/s);
 });
@@ -379,6 +385,22 @@ test("central processor guards accept each exact boundary and reject one-unit ov
   assert.throws(() => assertOcrCharacterCount(16_801, 1), /16,801 characters.*16,800/s);
   assert.doesNotThrow(() => assertImagePixelTotal(240_000_000, "jpg-to-pdf"));
   assert.throws(() => assertImagePixelTotal(240_000_001, "jpg-to-pdf"), /240\.000001 MP.*240 MP/s);
+});
+
+test("PDF form metadata budgets accept exact limits and reject one extra", () => {
+  const exact = {
+    optionCount: 5_000,
+    metadataCharacters: 512_000,
+    maxFieldNameCharacters: 2_048,
+    maxFieldValueCharacters: 10_000,
+    maxOptionsPerField: 500,
+  };
+  assert.doesNotThrow(() => assertPdfFormMetadata(exact));
+  assert.throws(() => assertPdfFormMetadata({ ...exact, optionCount: 5_001 }), /5,001 field choices.*5,000/);
+  assert.throws(() => assertPdfFormMetadata({ ...exact, metadataCharacters: 512_001 }), /512,001 field-name, value, and choice characters.*512,000/);
+  assert.throws(() => assertPdfFormMetadata({ ...exact, maxFieldNameCharacters: 2_049 }), /2,049-character field name.*2,048/);
+  assert.throws(() => assertPdfFormMetadata({ ...exact, maxFieldValueCharacters: 10_001 }), /10,001-character field value.*10,000/);
+  assert.throws(() => assertPdfFormMetadata({ ...exact, maxOptionsPerField: 501 }), /501 choices.*500 choices per field/);
 });
 
 test("Compare line counting matches jsdiff tokens and enforces per-file plus combined caps", () => {

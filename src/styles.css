@@ -8731,6 +8731,511 @@ body {
   font-size: 9px;
 }
 
+.pdf-form-empty-state {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  padding: 26px 20px;
+  background: var(--surface-soft);
+  text-align: center;
+}
+
+.pdf-form-empty-state > span {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--privacy-soft);
+  color: var(--privacy);
+}
+
+.pdf-form-empty-state strong {
+  font-size: 13px;
+}
+
+.pdf-form-empty-state p {
+  max-width: 260px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.pdf-form-source-status,
+.pdf-form-summary,
+.pdf-form-private-note,
+.pdf-form-plan,
+.pdf-form-inline-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px;
+}
+
+.pdf-form-source-status {
+  margin-top: 14px;
+  background: var(--surface-soft);
+  color: var(--privacy-dark);
+}
+
+.pdf-form-source-status.error,
+.pdf-form-inline-error {
+  border-color: #efc9c1;
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.pdf-form-source-status span,
+.pdf-form-summary > span > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-form-source-status strong,
+.pdf-form-summary strong {
+  font-size: 11px;
+}
+
+.pdf-form-source-status small,
+.pdf-form-summary small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.pdf-form-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.pdf-form-summary {
+  align-items: center;
+  justify-content: space-between;
+  border-color: #bcd9cf;
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+}
+
+.pdf-form-summary > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-form-summary > b {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: var(--surface);
+  color: var(--privacy-dark);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.pdf-form-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.pdf-form-search:focus-within {
+  border-color: var(--privacy);
+  box-shadow: 0 0 0 3px rgba(37, 128, 95, 0.1);
+}
+
+.pdf-form-search input {
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.pdf-form-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pdf-form-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px;
+  background: var(--surface);
+}
+
+.pdf-form-field.modified {
+  border-color: #82bda8;
+  box-shadow: inset 3px 0 0 var(--privacy);
+}
+
+.pdf-form-field > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pdf-form-field > header > span:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-form-field > header strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.pdf-form-field > header strong b {
+  border-radius: 999px;
+  padding: 2px 5px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font-size: 7px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pdf-form-field > header small {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-form-field-meta {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-form-field-meta b,
+.pdf-form-field-meta em {
+  border-radius: 999px;
+  padding: 3px 6px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pdf-form-field-meta em {
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+}
+
+.pdf-form-field > input,
+.pdf-form-field > select,
+.pdf-form-field > textarea,
+.pdf-form-advanced textarea {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 8px 9px;
+  outline: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: 12px/1.4 var(--sans);
+}
+
+.pdf-form-field > input:focus,
+.pdf-form-field > select:focus,
+.pdf-form-field > textarea:focus,
+.pdf-form-advanced textarea:focus {
+  border-color: var(--privacy);
+  box-shadow: 0 0 0 3px rgba(37, 128, 95, 0.1);
+}
+
+.pdf-form-field > textarea,
+.pdf-form-advanced textarea {
+  resize: vertical;
+}
+
+.pdf-form-field > select[multiple] {
+  min-height: 116px;
+}
+
+.pdf-form-field > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.pdf-form-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 9px;
+  cursor: pointer;
+}
+
+.pdf-form-checkbox input,
+.pdf-form-option-list input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--privacy);
+}
+
+.pdf-form-checkbox span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pdf-form-checkbox strong {
+  font-size: 10px;
+}
+
+.pdf-form-checkbox small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.pdf-form-option-list {
+  max-height: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.pdf-form-option-list label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+}
+
+.pdf-form-field.disabled > input,
+.pdf-form-field.disabled > select,
+.pdf-form-field.disabled > textarea,
+.pdf-form-field.disabled .pdf-form-checkbox,
+.pdf-form-field.disabled .pdf-form-option-list {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.pdf-form-reset-field,
+.pdf-form-pagination button,
+.pdf-form-advanced button,
+.pdf-form-inline-error button {
+  min-height: 28px;
+  border: 1px solid var(--control-border);
+  border-radius: 7px;
+  padding: 0 8px;
+  background: var(--surface);
+  color: var(--privacy-dark);
+  font-size: 9px;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.pdf-form-reset-field {
+  align-self: flex-start;
+}
+
+.pdf-form-pagination {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-form-pagination button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-form-pagination button:disabled,
+.pdf-form-advanced button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.pdf-form-pagination span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  text-align: center;
+}
+
+.pdf-form-export-mode {
+  margin: 2px 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 13px 0 0;
+}
+
+.pdf-form-export-mode legend {
+  padding: 0;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pdf-form-export-mode > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.pdf-form-export-mode button {
+  min-height: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pdf-form-export-mode button.selected {
+  border-color: var(--privacy);
+  background: var(--privacy-soft);
+  box-shadow: inset 3px 0 0 var(--privacy);
+}
+
+.pdf-form-export-mode strong {
+  font-size: 10px;
+}
+
+.pdf-form-export-mode small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.pdf-form-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.pdf-form-advanced summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 760;
+  cursor: pointer;
+  list-style: none;
+}
+
+.pdf-form-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.pdf-form-advanced summary svg:last-child {
+  transition: transform 120ms ease;
+}
+
+.pdf-form-advanced[open] summary svg:last-child {
+  transform: rotate(90deg);
+}
+
+.pdf-form-advanced p {
+  margin: 8px 0 6px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.pdf-form-advanced textarea[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.pdf-form-advanced button {
+  margin-top: 6px;
+}
+
+.pdf-form-inline-error {
+  align-items: center;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.pdf-form-inline-error span {
+  flex: 1;
+}
+
+.pdf-form-no-match {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.pdf-form-plan {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.pdf-form-plan.ready {
+  border-color: #bcd9cf;
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+}
+
+.pdf-form-private-note {
+  border: 0;
+  padding: 3px 1px;
+  color: var(--privacy-dark);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
 @media (max-width: 560px) {
   .visual-choice-grid {
     grid-template-columns: 1fr;
@@ -8743,5 +9248,18 @@ body {
 
   .visual-choice-setting.compact.columns-3 .visual-choice-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .pdf-form-export-mode > div {
+    grid-template-columns: 1fr;
+  }
+
+  .pdf-form-pagination {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pdf-form-pagination span {
+    grid-column: 1 / -1;
+    grid-row: 1;
   }
 }
