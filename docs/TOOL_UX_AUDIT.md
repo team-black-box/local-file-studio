@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Tool UX audit
 
-This is the working interaction audit for all 47 tools as of 2026-08-19. It evaluates task clarity, visible control of the transformation, result feedback, and whether the user can understand the output before running. It does not replace the production QA matrix.
+This is the working interaction audit for all 47 tools as of 2026-08-20. It evaluates task clarity, visible control of the transformation, result feedback, and whether the user can understand the output before running. It does not replace the production QA matrix.
 
 ## Shared interaction standard
 
@@ -39,7 +39,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Excel to PDF | Visual orientation cards, bounded first-sheet value preview, and exact sheet/used-cell/PDF-page feedback | Keep; continue real-workbook, malformed-file, formula-cache, and mobile QA |
 | HTML to PDF | Visual A4/US Letter choices, bounded sanitized text preview, exact readable-text/page feedback, and explicit no-fetch reconstruction scope | Keep; continue malformed-markup, remote-reference, mobile, and offline QA |
 | PDF to JPG | Bounded page-thumbnail rail, exact JPG/ZIP output plan, and an actual encoded sample-page quality preview with per-page dimensions and size | Keep; continue protected-input, long-document, mobile, and boundary QA |
-| PDF to Word | One-action conversion | Show extracted page/text count before export |
+| PDF to Word | Bounded page-by-page selectable-text preview, exact page/text counts, and one-section-per-page DOCX plan | Keep; continue protected-input, empty-page, long-document, mobile, and boundary QA |
 | PDF to PowerPoint | One-action conversion | Show slide count before export |
 | PDF to Excel | One-action conversion | Show sheet count before export |
 | Archive PDF Rewrite | One-action conversion with accurate caveat | Keep; make the non-certified PDF/A caveat visible beside the action |

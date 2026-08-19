@@ -15,7 +15,7 @@ import {
   validatePdfOverlayPlacements,
 } from "../src/lib/file-limits.js";
 import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
-import { createOcrReaderResult, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
+import { createOcrReaderResult, createPdfOfficeTextPreview, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
@@ -89,6 +89,49 @@ test("PDF to JPG plans one direct image or an exact multi-page ZIP", () => {
   });
   assert.throws(() => createPdfJpgOutputPlan(0, 100), (error) => error instanceof FileLimitError && error.code === "invalid-pdf-page-count");
   assert.throws(() => createPdfJpgOutputPlan(101, 100), (error) => error instanceof FileLimitError && error.code === "result-count-limit" && /101 JPG files/.test(error.message));
+});
+
+test("PDF to Word previews exact page text and reuses the checked extraction", async () => {
+  assert.deepEqual(createPdfOfficeTextPreview(["Alpha beta\nGamma", "", "Delta"], 5), {
+    pageCount: 3,
+    pagesWithText: 2,
+    emptyPageCount: 1,
+    characterCount: 21,
+    wordCount: 4,
+    pageStats: [
+      { pageNumber: 1, characterCount: 16, wordCount: 3, hasText: true, previewText: "Alpha", truncated: true },
+      { pageNumber: 2, characterCount: 0, wordCount: 0, hasText: false, previewText: "", truncated: false },
+      { pageNumber: 3, characterCount: 5, wordCount: 1, hasText: true, previewText: "Delta", truncated: false },
+    ],
+  });
+  assert.throws(() => createPdfOfficeTextPreview([]), (error) => error instanceof FileLimitError && error.code === "invalid-pdf-text-pages");
+
+  const source = await PDFDocument.create();
+  source.addPage([300, 400]);
+  source.addPage([300, 400]);
+  const file = namedBlob(await source.save(), "checked-text.pdf", "application/pdf");
+  const [result] = await processPdfTool("pdf-to-word", [file], { pdfOfficeTextPages: ["Alpha beta", ""] });
+  assert.equal(result.name, "checked-text.docx");
+  assert.equal(result.details, "2 editable sections · 10 characters");
+  assert.deepEqual(result.pdfOfficeTextOutcome, {
+    pageCount: 2,
+    pagesWithText: 1,
+    emptyPageCount: 1,
+    characterCount: 10,
+    wordCount: 2,
+    format: "docx",
+  });
+  const archive = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const documentXml = await archive.file("word/document.xml").async("string");
+  assert.match(documentXml, /Page 1/);
+  assert.match(documentXml, /Alpha beta/);
+  assert.match(documentXml, /Page 2/);
+  assert.equal((documentXml.match(/<w:sectPr>/g) || []).length, 2, "one DOCX section is created for every checked PDF page");
+
+  await assert.rejects(
+    () => processPdfTool("pdf-to-word", [file], { pdfOfficeTextPages: ["x".repeat(5_000_001)] }),
+    (error) => error instanceof FileLimitError && error.code === "extracted-text-limit",
+  );
 });
 
 test("OCR reader results keep bounded page text in memory without a download blob", () => {
