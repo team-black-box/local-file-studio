@@ -795,7 +795,7 @@ export const tools = withPhosphorExports([
   {
     slug: "compare-pdf",
     name: "Compare PDF",
-    description: "Compare selectable text from two PDFs and export an HTML change report.",
+    description: "Review selectable-text changes inline and optionally save a local HTML report.",
     kind: "pdf",
     category: "security",
     accepts: [".pdf"],

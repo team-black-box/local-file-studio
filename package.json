@@ -27,6 +27,7 @@
     "test:passwords": "node --test tests/pdf-passwords.test.mjs",
     "test:forms": "node --test tests/pdf-form-fields.test.mjs",
     "test:redactions": "node --test tests/pdf-redactions.test.mjs",
+    "test:comparisons": "node --test tests/pdf-comparison.test.mjs",
     "test:docx": "node --test tests/docx-text.test.mjs",
     "test:pptx": "node --test tests/pptx-writer.test.mjs",
     "test:offline": "node --test tests/offline-build.test.mjs",
@@ -36,7 +37,7 @@
     "verify:repo": "node scripts/audit-repository.mjs",
     "verify:ocr": "node scripts/verify-ocr-assets.mjs",
     "verify:third-party": "node scripts/verify-third-party-assets.mjs",
-    "verify": "bun run verify:history && bun run verify:repo && bun run verify:qa && bun run verify:ocr && bun run verify:third-party && bun run test:limits && bun run test:editor && bun run test:passwords && bun run test:forms && bun run test:redactions && bun run test:docx && bun run test:pptx && bun run build && bun run test:seo && node scripts/verify-third-party-assets.mjs --production && bun run test:offline"
+    "verify": "bun run verify:history && bun run verify:repo && bun run verify:qa && bun run verify:ocr && bun run verify:third-party && bun run test:limits && bun run test:editor && bun run test:passwords && bun run test:forms && bun run test:redactions && bun run test:comparisons && bun run test:docx && bun run test:pptx && bun run build && bun run test:seo && node scripts/verify-third-party-assets.mjs --production && bun run test:offline"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",

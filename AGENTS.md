@@ -41,6 +41,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/pdf-passwords.js`: protected-PDF access modes, permission checks, and in-memory unlock adapter.
 - `src/lib/pdf-form-fields.js`: bounded AcroForm inspection, visual field descriptors, validation, and fill/flatten behavior.
 - `src/lib/pdf-redactions.js`: bounded per-page redaction geometry, serialization, and execution planning.
+- `src/lib/pdf-comparison.js`: bounded line-view construction and scriptless local HTML comparison export.
 - `src/lib/pdf-output-protection.js`: opt-in fresh protection for generated PDF results.
 - `src/lib/tool-settings.js`: shared cleanup for memory-only sensitive tool settings.
 - `src/lib/tiff-utils.js`: bounded TIFF metadata normalization shared by preflight and decoding.
@@ -128,6 +129,7 @@ bun run dev
 bun run test:limits
 bun run test:forms
 bun run test:redactions
+bun run test:comparisons
 bun run verify:ocr
 bun run verify:third-party
 bun run test:docx
