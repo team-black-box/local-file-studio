@@ -1473,9 +1473,13 @@ function PdfJpgControls({ setting, value, onChange, info, limits }) {
 
 const PDF_OFFICE_PAGE_WINDOW = 6;
 
-function PdfToWordControls({ file, preview }) {
+function PdfOfficeTextControls({ file, preview, format }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [pageWindowStart, setPageWindowStart] = useState(0);
+  const isPresentation = format === "pptx";
+  const OutputIcon = isPresentation ? FilePptIcon : FileDocIcon;
+  const outputLabel = isPresentation ? "PPTX" : "DOCX";
+  const unit = isPresentation ? "slide" : "section";
 
   useEffect(() => {
     setPageIndex(0);
@@ -1484,9 +1488,9 @@ function PdfToWordControls({ file, preview }) {
 
   if (!file) {
     return (
-      <section className="word-preview-empty pdf-office-preview-empty" aria-labelledby="pdf-word-preview-title">
-        <span><FileDocIcon size={21} weight="duotone" aria-hidden="true" /></span>
-        <div><strong id="pdf-word-preview-title">Preview selectable text</strong><small>Add one PDF to see the editable DOCX sections before export.</small></div>
+      <section className="word-preview-empty pdf-office-preview-empty" aria-labelledby="pdf-office-preview-title">
+        <span><OutputIcon size={21} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="pdf-office-preview-title">Preview selectable text</strong><small>Add one PDF to see the editable {outputLabel} {isPresentation ? "slides" : "sections"} before export.</small></div>
       </section>
     );
   }
@@ -1529,11 +1533,11 @@ function PdfToWordControls({ file, preview }) {
   };
 
   return (
-    <section className="pdf-office-text-preview" aria-labelledby="pdf-word-preview-title">
+    <section className="pdf-office-text-preview" aria-labelledby="pdf-office-preview-title">
       <div className="pdf-office-output-plan" role="status" aria-live="polite">
-        <span><FileDocIcon size={19} weight="duotone" aria-hidden="true" /></span>
-        <span><strong id="pdf-word-preview-title">{pageCount.toLocaleString()} editable {pageCount === 1 ? "section" : "sections"}</strong><small>One DOCX section will be created for every PDF page.</small></span>
-        <b>DOCX</b>
+        <span><OutputIcon size={19} weight="duotone" aria-hidden="true" /></span>
+        <span><strong id="pdf-office-preview-title">{pageCount.toLocaleString()} editable {pageCount === 1 ? unit : `${unit}s`}</strong><small>One {outputLabel} {unit} will be created for every PDF page.</small></span>
+        <b>{outputLabel}</b>
       </div>
 
       <dl className="word-preview-stats pdf-office-preview-stats">
@@ -1553,7 +1557,7 @@ function PdfToWordControls({ file, preview }) {
               <pre>{selectedPage.previewText}</pre>
             </div>
           ) : (
-            <div className="pdf-office-empty-page" role="status"><FilePdfIcon size={18} weight="duotone" aria-hidden="true" /><span><strong>No selectable text on this page</strong><small>Its DOCX section will keep the page position but contain no extracted body text.</small></span></div>
+            <div className="pdf-office-empty-page" role="status"><FilePdfIcon size={18} weight="duotone" aria-hidden="true" /><span><strong>No selectable text on this page</strong><small>{isPresentation ? "Its PPTX slide will keep the page order and show a clear no-text placeholder." : "Its DOCX section will keep the page position but contain no extracted body text."}</small></span></div>
           )}
           {selectedPage.hasText && (
             <p className="word-preview-scope"><CheckCircleIcon size={15} weight="fill" aria-hidden="true" /><span>{selectedPage.truncated ? `Showing the first ${selectedPage.previewText.length.toLocaleString()} of ${selectedPage.characterCount.toLocaleString()} characters from this page. All checked text will be exported.` : "All selectable text from this page is shown above."}</span></p>
@@ -1576,7 +1580,7 @@ function PdfToWordControls({ file, preview }) {
           <div className="pdf-office-page-strip" role="group" aria-label={`Choose one of ${pageCount.toLocaleString()} PDF pages for selectable text preview`} onWheel={movePageRail}>
             {visiblePages.map((page) => (
               <button type="button" key={page.pageNumber} className={page.pageNumber - 1 === pageIndex ? "selected" : ""} aria-pressed={page.pageNumber - 1 === pageIndex} onClick={() => setPageIndex(page.pageNumber - 1)} aria-label={`Preview selectable text from PDF page ${page.pageNumber}`}>
-                <span><FileDocIcon size={16} weight="duotone" aria-hidden="true" /><strong>Page {page.pageNumber}</strong></span>
+                <span><OutputIcon size={16} weight="duotone" aria-hidden="true" /><strong>Page {page.pageNumber}</strong></span>
                 <small>{page.hasText ? `${page.characterCount.toLocaleString()} chars` : "No text"}</small>
               </button>
             ))}
@@ -1584,19 +1588,22 @@ function PdfToWordControls({ file, preview }) {
         </>
       )}
 
-      <p className="word-layout-note pdf-office-layout-note"><WarningCircleIcon size={15} weight="duotone" aria-hidden="true" /><span><strong>Editable text reconstruction, not a layout copy.</strong> Images, page geometry, tables, columns, fonts, and original placement are not preserved.</span></p>
+      <p className="word-layout-note pdf-office-layout-note"><WarningCircleIcon size={15} weight="duotone" aria-hidden="true" /><span><strong>Editable text reconstruction, not a layout copy.</strong> {isPresentation ? "Graphics, page geometry, tables, columns, fonts, and original placement are not preserved." : "Images, page geometry, tables, columns, fonts, and original placement are not preserved."}</span></p>
     </section>
   );
 }
 
-function PdfToWordResultSummary({ result }) {
+function PdfOfficeTextResultSummary({ result }) {
   const outcome = result?.pdfOfficeTextOutcome;
   if (!outcome) return null;
+  const isPresentation = outcome.format === "pptx";
+  const OutputIcon = isPresentation ? FilePptIcon : FileDocIcon;
+  const unit = isPresentation ? "slide" : "section";
   return (
     <div className="word-result-summary pdf-office-result-summary" role="status">
-      <span><FileDocIcon size={23} weight="duotone" aria-hidden="true" /></span>
-      <div><strong>{outcome.pageCount.toLocaleString()} editable {outcome.pageCount === 1 ? "section" : "sections"} created</strong><small>{outcome.pagesWithText.toLocaleString()} {outcome.pagesWithText === 1 ? "page has" : "pages have"} selectable text · {outcome.characterCount.toLocaleString()} characters</small></div>
-      <p><CheckCircleIcon size={16} weight="fill" aria-hidden="true" />The checked page text was reused for this DOCX without uploading or re-reading the PDF.</p>
+      <span><OutputIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.pageCount.toLocaleString()} editable {outcome.pageCount === 1 ? unit : `${unit}s`} created</strong><small>{outcome.pagesWithText.toLocaleString()} {outcome.pagesWithText === 1 ? "page has" : "pages have"} selectable text · {outcome.characterCount.toLocaleString()} characters</small></div>
+      <p><CheckCircleIcon size={16} weight="fill" aria-hidden="true" />The checked page text was reused for this {isPresentation ? "PPTX" : "DOCX"} without uploading or re-reading the PDF.</p>
     </div>
   );
 }
@@ -3985,7 +3992,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -4015,7 +4023,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   }, [limits, pdfFormInfo, settings.flatten, settings.values, tool.slug]);
   const redactionPlan = useMemo(() => tool.slug === "redact-pdf" ? getRedactionPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
-  const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], tool.slug === "pdf-to-word" && passwordGate.ready && status !== "processing" && !results.length, limits);
+  const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits);
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
     : compressionEstimate;
@@ -4178,7 +4186,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
   const pdfJpgReady = tool.slug !== "pdf-to-jpg" || !hasRequiredInput || Boolean(pdfJpgPlan);
-  const pdfOfficeTextReady = tool.slug !== "pdf-to-word" || !hasRequiredInput || (pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]);
+  const pdfOfficeTextReady = !usesPdfOfficeTextPreview || !hasRequiredInput || (pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]);
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
@@ -4209,9 +4217,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Reading the PDF page count before JPG conversion."
     : tool.slug === "pdf-to-jpg" && pageInfo.state === "error"
       ? pageInfo.message
-    : tool.slug === "pdf-to-word" && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "loading"
+    : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "loading"
       ? "Reading selectable text from every PDF page locally."
-    : tool.slug === "pdf-to-word" && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "error"
+    : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "error"
       ? pdfOfficeTextPreview.message
     : tool.slug === "word-to-pdf" && wordPreview.file === files[0] && wordPreview.state === "loading"
       ? "Reading and checking the DOCX locally before export."
@@ -4253,7 +4261,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         inputPasswords: passwordGate.inputPasswords,
         outputPassword: passwordGate.outputPassword,
       };
-      if (tool.slug === "pdf-to-word" && pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]) {
+      if (usesPdfOfficeTextPreview && pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]) {
         processOptions.pdfOfficeTextPages = pdfOfficeTextPreview.pages;
       }
       setSettings((current) => clearSensitiveToolSettings(current, settingsList));
@@ -4297,6 +4305,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? pdfJpgPlan.actionLabel
     : tool.slug === "pdf-to-word" && pdfOfficeTextPreview.state === "ready"
       ? `Create DOCX · ${pdfOfficeTextPreview.pageCount.toLocaleString()} ${pdfOfficeTextPreview.pageCount === 1 ? "section" : "sections"}`
+    : tool.slug === "pdf-to-powerpoint" && pdfOfficeTextPreview.state === "ready"
+      ? `Create PPTX · ${pdfOfficeTextPreview.pageCount.toLocaleString()} ${pdfOfficeTextPreview.pageCount === 1 ? "slide" : "slides"}`
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -4350,7 +4360,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "pdf-to-word" ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -4364,7 +4374,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "pdf-to-word" ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -4465,7 +4475,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && <ImagePdfResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {tool.slug === "word-to-pdf" && <WordPdfResultSummary result={results[0]} />}
-                {tool.slug === "pdf-to-word" && <PdfToWordResultSummary result={results[0]} />}
+                {usesPdfOfficeTextPreview && <PdfOfficeTextResultSummary result={results[0]} />}
                 {tool.slug === "powerpoint-to-pdf" && <PowerPointPdfResultSummary result={results[0]} />}
                 {tool.slug === "excel-to-pdf" && <SpreadsheetPdfResultSummary result={results[0]} />}
                 {tool.slug === "html-to-pdf" && <HtmlPdfResultSummary result={results[0]} />}
@@ -4488,7 +4498,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -4514,7 +4524,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             ) : tool.slug === "pdf-to-jpg" ? (
               <PdfJpgControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} info={pageInfo} limits={limits} />
             ) : tool.slug === "pdf-to-word" ? (
-              <PdfToWordControls file={files[0]} preview={pdfOfficeTextPreview} />
+              <PdfOfficeTextControls file={files[0]} preview={pdfOfficeTextPreview} format="docx" />
+            ) : tool.slug === "pdf-to-powerpoint" ? (
+              <PdfOfficeTextControls file={files[0]} preview={pdfOfficeTextPreview} format="pptx" />
             ) : tool.slug === "convert-image" ? (
               <ImageFormatControls settings={settings} onChange={updateSetting} support={imageEncoderSupport} />
             ) : tool.slug === "pdf-forms" ? (
@@ -4593,7 +4605,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {tool.slug === "pdf-to-word" && pdfOfficeTextPreview.state === "ready" && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{pdfOfficeTextPreview.pageCount.toLocaleString()} {pdfOfficeTextPreview.pageCount === 1 ? "section" : "sections"} ready</strong>
               )}
-              {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
+              {tool.slug === "pdf-to-powerpoint" && pdfOfficeTextPreview.state === "ready" && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{pdfOfficeTextPreview.pageCount.toLocaleString()} {pdfOfficeTextPreview.pageCount === 1 ? "slide" : "slides"} ready</strong>
+              )}
+              {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "pdf-to-powerpoint", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
                   {status === "processing" ? <><SpinnerGapIcon size={19} className="spin" />Processing locally</> : <><LightningIcon size={19} weight="fill" />{processButtonLabel}</>}
                 </button>
