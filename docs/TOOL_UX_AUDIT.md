@@ -54,7 +54,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Protect PDF | Clear memory-only password control and previewable result | Keep |
 | Sign PDF | Typed signature, date choice, and representative placement preview | Build final-page drag placement only if preset placement tests poorly |
 | Redact PDF | Real per-page canvas with drag-to-draw, multiple movable/resizable areas, page counts, black/white preview, exact controls, undo, page/all reset, and flattened-result preview | Keep; continue touch, protected-input, and large-document QA |
-| Compare PDF | Produces an HTML file only | Show the local diff inline, with HTML download as a secondary action |
+| Compare PDF | Inline paginated text diff with original/revised order, changes/all views, exact counts, and optional scriptless HTML export | Keep; continue protected-input, mobile, and boundary QA |
 | Local Summarizer | Length/format dropdowns and TXT download | Use visual choices and show the summary in the shared copyable reader |
 | Translate PDF | Visual language choice and copyable reader | Keep; improve model/glossary status clarity |
 | PDF to Markdown | Copyable text/preview tabs | Keep |

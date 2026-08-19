@@ -38,6 +38,7 @@ import {
   validatePdfOverlayPlacements,
 } from "./file-limits.js";
 import { runBoundedLineDiff } from "./diff-worker-client.js";
+import { createComparisonHtml, createComparisonView } from "./pdf-comparison.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./pdfjs-utils.js";
 import { protectGeneratedPdfResults } from "./pdf-output-protection.js";
 
@@ -870,10 +871,6 @@ async function intelligenceTool(slug, file, options, report) {
   return [createTextReaderResult(name, markdown, "markdown")];
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
-}
-
 async function comparePdfs(files, options, report) {
   if (files.length < 2) throw new Error("Compare PDF needs two documents.");
   const limits = getToolLimits("compare-pdf");
@@ -889,9 +886,13 @@ async function comparePdfs(files, options, report) {
   const rightText = rightPages.join("\n");
   report?.({ phase: "Comparing extracted lines", progress: 0.78 });
   const changes = await runBoundedLineDiff(leftText, rightText, limits);
-  const content = changes.map((part) => `<span class="${part.added ? "added" : part.removed ? "removed" : "same"}">${escapeHtml(part.value)}</span>`).join("");
-  const html = `<!doctype html><meta charset="utf-8"><title>Local PDF comparison</title><style>body{font:15px/1.6 system-ui;margin:40px;max-width:1000px;color:#24242a}.added{background:#d9fbe8;color:#075b34}.removed{background:#ffe0dc;color:#8f251b;text-decoration:line-through}.same{color:#62626c}span{white-space:pre-wrap}</style><h1>PDF text comparison</h1><p>${escapeHtml(files[0].name)} ↔ ${escapeHtml(files[1].name)}</p><main>${content}</main>`;
-  return [resultFromBlob("local-pdf-comparison.html", new Blob([html], { type: "text/html" }), `${changes.filter((part) => part.added || part.removed).length} changed blocks`)];
+  const comparison = createComparisonView(changes, files[0].name, files[1].name, limits);
+  const html = createComparisonHtml(comparison);
+  const details = comparison.stats.identical
+    ? "No selectable-text differences found"
+    : `${comparison.stats.changedLines.toLocaleString()} changed ${comparison.stats.changedLines === 1 ? "line" : "lines"} in ${comparison.stats.changedBlocks.toLocaleString()} ${comparison.stats.changedBlocks === 1 ? "block" : "blocks"}`;
+  const result = resultFromBlob("local-pdf-comparison.html", new Blob([html], { type: "text/html" }), details);
+  return [{ ...result, viewer: "comparison", comparison }];
 }
 
 async function fillForm(file, options) {

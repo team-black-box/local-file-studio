@@ -82,6 +82,7 @@ import { assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProc
 import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
+import { COMPARISON_ROWS_PER_PAGE } from "./lib/pdf-comparison.js";
 import { MIN_REDACTION_REGION_PERCENT, clampRedactionRegion, createRedactionPlan, parseRedactionRegions, serializeRedactionRegions } from "./lib/pdf-redactions.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
@@ -162,7 +163,7 @@ function updatePageMetadata(tool) {
 }
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
-const inlineReaderTools = new Set(["ocr-pdf", "translate-pdf", "pdf-to-markdown"]);
+const inlineReaderTools = new Set(["ocr-pdf", "translate-pdf", "pdf-to-markdown", "compare-pdf"]);
 const pdfSettingPreviewTools = new Set(["rotate-pdf", "add-pdf-page-numbers", "watermark-pdf", "crop-pdf", "edit-pdf", "sign-pdf"]);
 const TOOL_SLUG_ALIASES = Object.freeze({ "convert-to-jpg": "convert-image" });
 const contextualSettings = {
@@ -2147,6 +2148,133 @@ function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
   );
 }
 
+function ComparePdfControls({ files, result }) {
+  const left = files[0];
+  const right = files[1];
+  const stats = result?.comparison?.stats;
+
+  return (
+    <section className="compare-setup" aria-labelledby="compare-setup-title">
+      <div className="compare-setup-heading">
+        <span><ColumnsIcon size={19} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="compare-setup-title">Comparison order</strong><small>The first PDF is the original; the second is the revised version.</small></div>
+      </div>
+      <div className="compare-file-pair">
+        <article className={left ? "ready" : "waiting"}>
+          <b>01 · ORIGINAL</b>
+          <strong title={left?.name}>{left?.name || "Choose the first PDF"}</strong>
+          <small>Removed lines appear in coral.</small>
+        </article>
+        <ArrowRightIcon size={16} aria-hidden="true" />
+        <article className={right ? "ready" : "waiting"}>
+          <b>02 · REVISED</b>
+          <strong title={right?.name}>{right?.name || "Choose the second PDF"}</strong>
+          <small>Added lines appear in green.</small>
+        </article>
+      </div>
+      {stats && (
+        <div className={`compare-ready-summary ${stats.identical ? "identical" : "changed"}`} role="status">
+          {stats.identical ? <CheckCircleIcon size={17} weight="fill" aria-hidden="true" /> : <ArrowsLeftRightIcon size={17} weight="bold" aria-hidden="true" />}
+          <span><strong>{stats.identical ? "No text differences" : `${stats.changedLines.toLocaleString()} changed ${stats.changedLines === 1 ? "line" : "lines"}`}</strong><small>{stats.identical ? "The extracted selectable text matches." : `${stats.addedLines.toLocaleString()} added · ${stats.removedLines.toLocaleString()} removed`}</small></span>
+        </div>
+      )}
+      <div className="compare-text-note"><TextTIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>Selectable text only.</strong> Scans, images, layout, fonts, and visual movement are not compared. Use OCR Reader first for scanned pages.</span></div>
+    </section>
+  );
+}
+
+function ComparisonResult({ result, headingRef, onReset }) {
+  const comparison = result?.comparison;
+  const [viewMode, setViewMode] = useState("changes");
+  const [page, setPage] = useState(0);
+  const rows = useMemo(() => {
+    if (!comparison?.rows) return [];
+    return viewMode === "all" ? comparison.rows : comparison.rows.filter((row) => row.kind !== "unchanged");
+  }, [comparison, viewMode]);
+  const pageCount = Math.max(1, Math.ceil(rows.length / COMPARISON_ROWS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleRows = rows.slice(currentPage * COMPARISON_ROWS_PER_PAGE, (currentPage + 1) * COMPARISON_ROWS_PER_PAGE);
+  const firstVisible = rows.length ? currentPage * COMPARISON_ROWS_PER_PAGE + 1 : 0;
+  const lastVisible = Math.min(rows.length, (currentPage + 1) * COMPARISON_ROWS_PER_PAGE);
+
+  useEffect(() => {
+    setPage(0);
+  }, [result?.id, viewMode]);
+
+  if (!comparison?.stats) {
+    return <div className="error-card" role="alert"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><strong>Comparison view unavailable</strong>The HTML report is still available to download.</span></div>;
+  }
+
+  const { stats } = comparison;
+  const headline = stats.identical
+    ? "No text differences found"
+    : `${stats.changedLines.toLocaleString()} changed ${stats.changedLines === 1 ? "line" : "lines"}`;
+
+  return (
+    <section className="comparison-reader-card" aria-labelledby="comparison-reader-title">
+      <header className="comparison-reader-header">
+        <span><ColumnsIcon size={24} weight="duotone" aria-hidden="true" /></span>
+        <div><h3 id="comparison-reader-title" ref={headingRef} tabIndex="-1">{headline}</h3><p>Compared locally · held only in this tab</p></div>
+        <b>TEXT DIFF</b>
+      </header>
+
+      <div className="comparison-file-headings" aria-label="Compared PDF order">
+        <span><b>ORIGINAL</b><strong title={comparison.leftName}>{comparison.leftName}</strong></span>
+        <ArrowRightIcon size={15} aria-hidden="true" />
+        <span><b>REVISED</b><strong title={comparison.rightName}>{comparison.rightName}</strong></span>
+      </div>
+
+      <div className="comparison-stat-grid" aria-label="Comparison summary">
+        <span className="removed"><FileMinusIcon size={17} weight="duotone" aria-hidden="true" /><span><strong>{stats.removedLines.toLocaleString()}</strong><small>removed</small></span></span>
+        <span className="added"><FilePlusIcon size={17} weight="duotone" aria-hidden="true" /><span><strong>{stats.addedLines.toLocaleString()}</strong><small>added</small></span></span>
+        <span className="same"><CheckCircleIcon size={17} weight="duotone" aria-hidden="true" /><span><strong>{stats.unchangedLines.toLocaleString()}</strong><small>unchanged</small></span></span>
+      </div>
+
+      <div className="comparison-view-toolbar">
+        <div role="group" aria-label="Comparison lines to show">
+          <button type="button" aria-pressed={viewMode === "changes"} onClick={() => setViewMode("changes")}>Changes only</button>
+          <button type="button" aria-pressed={viewMode === "all"} onClick={() => setViewMode("all")}>All lines</button>
+        </div>
+        <small aria-live="polite">{rows.length ? `Showing ${firstVisible.toLocaleString()}–${lastVisible.toLocaleString()} of ${rows.length.toLocaleString()} ${viewMode === "all" ? "lines" : "changed lines"}` : "No changed lines to show"}</small>
+      </div>
+
+      <div className="comparison-diff" role="list" aria-label={viewMode === "all" ? "All compared text lines" : "Changed text lines"}>
+        <div className="comparison-diff-labels" aria-hidden="true"><span /><span>OLD</span><span>NEW</span><span>SELECTABLE TEXT</span></div>
+        {visibleRows.map((row, index) => {
+          const marker = row.kind === "added" ? "+" : row.kind === "removed" ? "−" : "";
+          const accessibleKind = row.kind === "added" ? "Added" : row.kind === "removed" ? "Removed" : "Unchanged";
+          return (
+            <div className={`comparison-row ${row.kind}`} role="listitem" key={`${currentPage}-${index}-${row.leftLine ?? "x"}-${row.rightLine ?? "x"}`} aria-label={`${accessibleKind} line. Original ${row.leftLine ?? "not present"}; revised ${row.rightLine ?? "not present"}. ${row.text || "Blank line"}`}>
+              <b aria-hidden="true">{marker}</b>
+              <span aria-hidden="true">{row.leftLine ?? ""}</span>
+              <span aria-hidden="true">{row.rightLine ?? ""}</span>
+              <code>{row.text || " "}</code>
+            </div>
+          );
+        })}
+        {!visibleRows.length && (
+          <div className="comparison-empty"><CheckCircleIcon size={22} weight="duotone" aria-hidden="true" /><span><strong>{stats.identical ? "The selectable text matches" : "No changed lines in this view"}</strong><small>{stats.identical ? "Switch to All lines to review the matching text." : "Choose All lines to include unchanged context."}</small></span></div>
+        )}
+      </div>
+
+      {pageCount > 1 && (
+        <nav className="comparison-pagination" aria-label="Comparison result pages">
+          <button type="button" disabled={currentPage === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}><ArrowLeftIcon size={14} aria-hidden="true" />Previous</button>
+          <span aria-live="polite">Page {currentPage + 1} of {pageCount}</span>
+          <button type="button" disabled={currentPage >= pageCount - 1} onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}>Next<ArrowRightIcon size={14} aria-hidden="true" /></button>
+        </nav>
+      )}
+
+      <div className="comparison-reader-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span>The PDFs and extracted text stay in this tab. The downloadable report is self-contained and has no scripts or external resources.</span></div>
+      <footer className="comparison-reader-actions">
+        <span><strong>Need to share or archive it?</strong><small>Download the complete local HTML report.</small></span>
+        <button type="button" onClick={() => downloadResult(result)}><FileHtmlIcon size={17} aria-hidden="true" />Download HTML</button>
+      </footer>
+      <button className="start-another comparison-start-another" onClick={onReset}>Compare another pair</button>
+    </section>
+  );
+}
+
 function accessibleProgressMessage(phase = "") {
   if (/checking/i.test(phase)) return "Checking files against local safety limits.";
   if (/loading/i.test(phase)) return "Loading the local processing engine.";
@@ -2732,7 +2860,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["pdf-forms", "redact-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || tool.slug === "redact-pdf";
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfFormInfo = usePdfFormInfo(files[0], tool.slug === "pdf-forms" && passwordGate.ready, limits);
@@ -3010,6 +3138,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         : "Flatten PDF form"
     : tool.slug === "redact-pdf" && redactionPlan?.valid
       ? `Redact ${redactionPlan.regionCount.toLocaleString()} ${redactionPlan.regionCount === 1 ? "area" : "areas"}`
+    : tool.slug === "compare-pdf" && hasRequiredInput
+      ? "Compare 2 PDFs"
     : tool.name;
 
   const updateSetting = (key, value) => {
@@ -3019,9 +3149,19 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     setProcessError("");
   };
 
+  const resetWorkbenchState = () => {
+    passwordGate.resetForFileChange();
+    clearResults();
+    setFiles([]);
+    setStatus("idle");
+    setProcessError("");
+    setFileIssue(null);
+    setQueueAnnouncement(null);
+  };
+
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -3035,7 +3175,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -3105,11 +3245,15 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             )}
 
             {results.length > 0 && tool.slug === "ocr-pdf" && (
-              <OcrReaderResult result={results[0]} headingRef={resultHeadingRef} onReset={() => { passwordGate.resetForFileChange(); clearResults(); setFiles([]); setStatus("idle"); setProcessError(""); setFileIssue(null); setQueueAnnouncement(null); }} />
+              <OcrReaderResult result={results[0]} headingRef={resultHeadingRef} onReset={resetWorkbenchState} />
             )}
 
             {results.length > 0 && ["translate-pdf", "pdf-to-markdown"].includes(tool.slug) && (
-              <TextReaderResult tool={tool} result={results[0]} limits={limits} headingRef={resultHeadingRef} onReset={() => { passwordGate.resetForFileChange(); clearResults(); setFiles([]); setStatus("idle"); setProcessError(""); setFileIssue(null); setQueueAnnouncement(null); }} />
+              <TextReaderResult tool={tool} result={results[0]} limits={limits} headingRef={resultHeadingRef} onReset={resetWorkbenchState} />
+            )}
+
+            {results.length > 0 && tool.slug === "compare-pdf" && (
+              <ComparisonResult result={results[0]} headingRef={resultHeadingRef} onReset={resetWorkbenchState} />
             )}
 
             {results.length > 0 && !inlineReaderTools.has(tool.slug) && (
@@ -3130,7 +3274,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                     </span>
                   </div>
                 ))}
-                <button className="start-another" onClick={() => { passwordGate.resetForFileChange(); clearResults(); setFiles([]); setStatus("idle"); setProcessError(""); setFileIssue(null); setQueueAnnouncement(null); }}>Start another</button>
+                <button className="start-another" onClick={resetWorkbenchState}>Start another</button>
               </div>
             )}
           </section>
@@ -3154,6 +3298,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <PdfFormControls file={files[0]} info={pdfFormInfo} settings={settings} limits={limits} plan={pdfFormPlan} onChange={updateSetting} />
             ) : tool.slug === "redact-pdf" ? (
               <RedactPdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={redactionPlan} limits={limits} />
+            ) : tool.slug === "compare-pdf" ? (
+              <ComparePdfControls files={files} result={results[0]} />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
@@ -3167,7 +3313,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
             <div className="output-summary">
               <span>Output</span>
-              <strong>{tool.slug === "convert-image" ? `.${String(settings.format || "webp").toUpperCase()}` : tool.output.join(" · ").toUpperCase()}</strong>
+              <strong>{tool.slug === "convert-image" ? `.${String(settings.format || "webp").toUpperCase()}` : tool.slug === "compare-pdf" ? "INLINE + .HTML" : tool.output.join(" · ").toUpperCase()}</strong>
             </div>
             </div>
             <div className="process-action-stack">
