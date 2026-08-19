@@ -953,7 +953,10 @@ export async function processPdfTool(slug, files, options = {}, report) {
   if (slug === "repair-pdf") {
     const repaired = await repairPdf(new Uint8Array(await files[0].arrayBuffer()), options.inputPassword);
     const bytes = options.inputPassword === undefined ? repaired : await unlockPdf(repaired, options.inputPassword);
-    return [pdfResult(`${safeFileName(baseName(files[0].name))}-repaired.pdf`, bytes, "Lenient local rewrite")];
+    return [{
+      ...pdfResult(`${safeFileName(baseName(files[0].name))}-repaired.pdf`, bytes, "Fresh full rewrite completed locally"),
+      repairOutcome: "full-rewrite",
+    }];
   }
   if (["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(slug)) return await officeToPdf(slug, files[0], options, report);
   if (slug === "pdf-to-jpg") return await pdfToImages(files[0], options, report);

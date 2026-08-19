@@ -120,6 +120,10 @@ test("Repair PDF removes input protection by default and can apply fresh output 
   const [repaired] = await processPdfTool("repair-pdf", [original], { inputPassword: "owner" });
   const readable = await PDFDocument.load(await repaired.blob.arrayBuffer());
   assert.equal(readable.getPageCount(), 1);
+  assert.equal(repaired.repairOutcome, "full-rewrite");
+  assert.equal(repaired.details, "Fresh full rewrite completed locally");
+  assert.equal(repaired.type, "application/pdf");
+  assert.match(repaired.name, /-repaired\.pdf$/);
 
   const [protectedResult] = await protectGeneratedPdfResults([repaired], "owner");
   const protectedBytes = await protectedResult.blob.arrayBuffer();

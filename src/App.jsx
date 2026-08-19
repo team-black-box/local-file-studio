@@ -2165,6 +2165,33 @@ function SummaryPlan({ settings }) {
   );
 }
 
+function RepairPdfControls() {
+  return (
+    <section className="repair-explainer" aria-labelledby="repair-explainer-title">
+      <header>
+        <span><WrenchIcon size={19} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="repair-explainer-title">Create a fresh PDF structure</strong><small>Your original file is never changed.</small></div>
+      </header>
+      <ol>
+        <li><span>1</span><div><strong>Read leniently</strong><small>Open recoverable objects even when the PDF index or trailing updates are damaged.</small></div></li>
+        <li><span>2</span><div><strong>Rewrite completely</strong><small>Save a new, non-incremental PDF instead of copying the broken structure forward.</small></div></li>
+        <li><span>3</span><div><strong>Review the result</strong><small>Preview the rebuilt file before replacing or sharing the original.</small></div></li>
+      </ol>
+      <p><WarningCircleIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>Repair cannot recreate missing bytes.</strong> Pages, images, fonts, or text that are no longer present in the source may remain unavailable.</span></p>
+    </section>
+  );
+}
+
+function RepairResultSummary() {
+  return (
+    <div className="repair-result-summary" role="status">
+      <span><ArrowClockwiseIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>Fresh PDF structure created</strong><small>The recoverable document was fully rewritten locally. Your original file is unchanged.</small></div>
+      <p><EyeIcon size={16} aria-hidden="true" />Preview every important page before replacing the source; missing content cannot be reconstructed.</p>
+    </div>
+  );
+}
+
 function ComparePdfControls({ files, result }) {
   const left = files[0];
   const right = files[1];
@@ -3133,6 +3160,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     ? "Recognize text"
     : tool.slug === "summarize-pdf" && hasRequiredInput
       ? "Create summary"
+    : tool.slug === "repair-pdf" && hasRequiredInput
+      ? "Rebuild PDF"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -3281,6 +3310,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "compress-pdf" && files[0] && results[0] && (
                   <CompressionResultSummary inputSize={files[0].size} result={results[0]} />
                 )}
+                {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -3319,6 +3349,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <RedactPdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={redactionPlan} limits={limits} />
             ) : tool.slug === "compare-pdf" ? (
               <ComparePdfControls files={files} result={results[0]} />
+            ) : tool.slug === "repair-pdf" ? (
+              <RepairPdfControls />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}

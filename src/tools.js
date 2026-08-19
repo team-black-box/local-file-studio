@@ -228,7 +228,7 @@ export const tools = withPhosphorExports([
   {
     slug: "repair-pdf",
     name: "Repair PDF",
-    description: "Rebuild a damaged PDF and recover readable content.",
+    description: "Rebuild recoverable PDF structure into a fresh local copy.",
     kind: "pdf",
     category: "optimize",
     accepts: [".pdf"],
