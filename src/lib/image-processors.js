@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
-import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
+import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getImageCropPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -238,6 +238,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   const quality = Math.max(0.1, Math.min(1, Number(options.quality || 82) / 100));
   let canvas;
   let imageResizeOutcome = null;
+  let imageCropOutcome = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
 
@@ -277,18 +278,19 @@ async function renderOne(slug, file, options, report, pixelBudget) {
         sourceCanvas.height = 1;
       }
     } else if (slug === "crop-image") {
-      const ratioMap = { square: 1, "1:1": 1, portrait: 4 / 5, "4:3": 4 / 3, landscape: 16 / 9, "16:9": 16 / 9, free: bitmap.width / bitmap.height, original: bitmap.width / bitmap.height };
-      const ratio = ratioMap[options.aspect] || Number(options.aspect) || bitmap.width / bitmap.height;
-      let sourceWidth = bitmap.width;
-      let sourceHeight = sourceWidth / ratio;
-      if (sourceHeight > bitmap.height) {
-        sourceHeight = bitmap.height;
-        sourceWidth = sourceHeight * ratio;
-      }
-      const x = (bitmap.width - sourceWidth) * (Number(options.focusX ?? 50) / 100);
-      const y = (bitmap.height - sourceHeight) * (Number(options.focusY ?? 50) / 100);
-      canvas = makeCanvas(sourceWidth, sourceHeight);
-      canvas.getContext("2d").drawImage(bitmap.source, x, y, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+      const crop = getImageCropPlan(
+        bitmap.width,
+        bitmap.height,
+        options.aspectRatio ?? options.aspect ?? "free",
+        options.cropScale ?? 100,
+        options.focusX ?? 50,
+        options.focusY ?? 50,
+        limits,
+        `${file.name} after cropping`,
+      );
+      imageCropOutcome = crop;
+      canvas = makeCanvas(crop.width, crop.height);
+      canvas.getContext("2d").drawImage(bitmap.source, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
     } else if (slug === "rotate-image") {
       const angle = Number(options.angle || 90);
       const radians = (angle * Math.PI) / 180;
@@ -421,6 +423,8 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       }
       : slug === "resize-image"
         ? { ...result, imageResizeOutcome }
+      : slug === "crop-image"
+        ? { ...result, imageCropOutcome }
       : result;
   } finally {
     bitmap.close?.();
@@ -576,6 +580,24 @@ export async function processImageTool(slug, files, options = {}, report) {
         downsizedFiles: outcomes.filter((outcome) => outcome.direction === "downsize").length,
         enlargedFiles: outcomes.filter((outcome) => outcome.direction === "enlarge").length,
         unchangedFiles: outcomes.filter((outcome) => outcome.direction === "unchanged").length,
+      },
+    }];
+  }
+  if (slug === "crop-image" && results.length > 1 && finalResults.length === 1) {
+    const outcomes = results.map((result) => result.imageCropOutcome).filter(Boolean);
+    if (outcomes.length !== results.length) {
+      throw new FileLimitError("invalid-crop-outcome", "The crop batch did not report complete output details. No result was kept; choose the images again and retry.");
+    }
+    return [{
+      ...finalResults[0],
+      imageCropBatchOutcome: {
+        fileCount: results.length,
+        aspectRatio: String(options.aspectRatio ?? options.aspect ?? "free"),
+        cropScale: Number(options.cropScale ?? 100),
+        focusX: Number(options.focusX ?? 50),
+        focusY: Number(options.focusY ?? 50),
+        retainedPercentMinimum: Math.min(...outcomes.map((outcome) => outcome.retainedPercent)),
+        retainedPercentMaximum: Math.max(...outcomes.map((outcome) => outcome.retainedPercent)),
       },
     }];
   }

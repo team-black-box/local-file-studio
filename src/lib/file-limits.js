@@ -12,6 +12,8 @@ export const MAX_GENERATED_RESULTS = 100;
 export const MAX_PAGE_SELECTION_CHARACTERS = 4_096;
 export const MAX_PAGE_SELECTION_ENTRIES = 2_000;
 export const MAX_PDF_PASSWORD_CHARACTERS = 1_024;
+export const IMAGE_CROP_SCALE_MIN_PERCENT = 40;
+export const IMAGE_CROP_SCALE_MAX_PERCENT = 100;
 export const PDF_PREVIEW_LIMITS = Object.freeze({
   maxOutputBytes: GLOBAL_OUTPUT_LIMIT_BYTES,
   maxPages: 500,
@@ -990,6 +992,57 @@ export function getProportionalResizeDimensions(sourceWidth, sourceHeight, targe
   };
   assertOutputDimensions(output.width, output.height, limitsOrTool, label);
   return output;
+}
+
+export function getImageCropPlan(sourceWidth, sourceHeight, aspectRatio = "free", cropScale = 100, focusX = 50, focusY = 50, limitsOrTool = "crop-image", label = "The cropped output") {
+  const width = Number(sourceWidth);
+  const height = Number(sourceHeight);
+  const scalePercent = Number(cropScale);
+  const normalizedFocusX = Number(focusX);
+  const normalizedFocusY = Number(focusY);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+    throw new FileLimitError("invalid-image-dimensions", `${label} could not be planned because the source dimensions are invalid. Re-save the image and try again.`);
+  }
+  if (!Number.isFinite(scalePercent) || scalePercent < IMAGE_CROP_SCALE_MIN_PERCENT || scalePercent > IMAGE_CROP_SCALE_MAX_PERCENT) {
+    throw new FileLimitError("invalid-crop-settings", `${label} needs a crop size from ${IMAGE_CROP_SCALE_MIN_PERCENT}% to ${IMAGE_CROP_SCALE_MAX_PERCENT}%. Reset the crop and try again.`);
+  }
+  if (![normalizedFocusX, normalizedFocusY].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)) {
+    throw new FileLimitError("invalid-crop-settings", `${label} has an invalid focal position. Reset the crop and try again.`);
+  }
+
+  const ratioMap = { free: width / height, original: width / height, "1:1": 1, "4:3": 4 / 3, "16:9": 16 / 9 };
+  const ratio = ratioMap[aspectRatio] || Number(aspectRatio);
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    throw new FileLimitError("invalid-crop-settings", `${label} has an unsupported aspect ratio. Choose Original, Square, Standard, or Wide.`);
+  }
+
+  let maximumWidth = width;
+  let maximumHeight = maximumWidth / ratio;
+  if (maximumHeight > height) {
+    maximumHeight = height;
+    maximumWidth = maximumHeight * ratio;
+  }
+  const scale = scalePercent / 100;
+  const outputWidth = Math.max(1, Math.min(Math.round(width), Math.round(maximumWidth * scale)));
+  const outputHeight = Math.max(1, Math.min(Math.round(height), Math.round(maximumHeight * scale)));
+  const availableX = Math.max(0, Math.round(width) - outputWidth);
+  const availableY = Math.max(0, Math.round(height) - outputHeight);
+  const x = Math.round(availableX * (normalizedFocusX / 100));
+  const y = Math.round(availableY * (normalizedFocusY / 100));
+  assertOutputDimensions(outputWidth, outputHeight, limitsOrTool, label);
+  return {
+    x,
+    y,
+    width: outputWidth,
+    height: outputHeight,
+    sourceWidth: Math.round(width),
+    sourceHeight: Math.round(height),
+    aspectRatio: String(aspectRatio || "free"),
+    cropScale: scalePercent,
+    focusX: normalizedFocusX,
+    focusY: normalizedFocusY,
+    retainedPercent: Math.max(1, Math.min(100, Math.round(((outputWidth * outputHeight) / (width * height)) * 100))),
+  };
 }
 
 export function assertRasterDimensions(width, height, limitsOrTool, label = "This PDF page") {
