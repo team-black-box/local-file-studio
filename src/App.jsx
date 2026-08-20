@@ -83,7 +83,7 @@ import { categories, categoryById, rankToolSearchResults, tools } from "./tools.
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createPdfJpgOutputPlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
-import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getAnimatedGifPlan, getImageCropPlan, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
+import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS, assertRasterDimensions, describeToolLimits, getAnimatedGifPlan, getImageCropPlan, getPhotoEditorPlan, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
@@ -3068,6 +3068,21 @@ function ImageCropResultSummary({ result }) {
   );
 }
 
+function PhotoEditorResultSummary({ result }) {
+  const outcome = result?.photoEditorOutcome;
+  if (!outcome) return null;
+  const adjustmentSummary = outcome.adjusted
+    ? `Brightness ${outcome.brightness}% · contrast ${outcome.contrast}% · color ${outcome.saturation}% · warmth ${outcome.warmth}%`
+    : "Original color settings";
+  return (
+    <div className="photo-editor-result-summary" role="status" aria-live="polite">
+      <span><PaletteIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.changed ? "Edited photo created" : "Fresh local copy created"}</strong><small>{outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px · {outcome.format.toUpperCase()} · {adjustmentSummary}</small>{outcome.captionCharacters > 0 && <p>{outcome.captionCharacters.toLocaleString()}-character caption added near the bottom edge.</p>}</div>
+      <b>{formatBytes(outcome.outputBytes)}</b>
+    </div>
+  );
+}
+
 function AnimatedGifResultSummary({ result }) {
   const outcome = result?.gifOutcome;
   if (!outcome) return null;
@@ -4031,7 +4046,12 @@ function useImageSourceInspection(files, enabled, tool, mode) {
     let sourceUrl = "";
     setInspection({ state: "loading", file: files[0], files, metadata: [], sourceUrl: "", message: "" });
     (async () => {
-      const checked = await preflightToolFiles(tool, files, mode === "resize" ? { width: 1 } : { aspectRatio: "free", cropScale: 100, focusX: 50, focusY: 50 });
+      const previewOptions = mode === "resize"
+        ? { width: 1 }
+        : mode === "crop"
+          ? { aspectRatio: "free", cropScale: 100, focusX: 50, focusY: 50 }
+          : { brightness: 100, contrast: 100, saturation: 100, warmth: 0, text: "", textColor: PHOTO_EDITOR_TEXT_COLORS[0] };
+      const checked = await preflightToolFiles(tool, files, previewOptions);
       sourceUrl = URL.createObjectURL(files[0]);
       if (cancelled) {
         URL.revokeObjectURL(sourceUrl);
@@ -4045,7 +4065,7 @@ function useImageSourceInspection(files, enabled, tool, mode) {
         sourceUrl = "";
       }
       if (!cancelled) {
-        setInspection({ state: "error", file: files[0], files, metadata: [], sourceUrl: "", message: toFriendlyResourceError(error, "Resize Image")?.message || "These images could not be inspected safely." });
+        setInspection({ state: "error", file: files[0], files, metadata: [], sourceUrl: "", message: toFriendlyResourceError(error, tool.name)?.message || "These images could not be inspected safely." });
       }
     });
 
@@ -4056,6 +4076,120 @@ function useImageSourceInspection(files, enabled, tool, mode) {
   }, [enabled, files, mode, tool]);
 
   return inspection;
+}
+
+const photoEditorPresets = [
+  { id: "original", label: "Original", hint: "Neutral", icon: ArrowClockwiseIcon, values: { brightness: 100, contrast: 100, saturation: 100, warmth: 0 } },
+  { id: "bright", label: "Bright", hint: "Light and clean", icon: SparkleIcon, values: { brightness: 115, contrast: 100, saturation: 105, warmth: 0 } },
+  { id: "punchy", label: "Punchy", hint: "Crisp color", icon: ScalesIcon, values: { brightness: 105, contrast: 120, saturation: 130, warmth: 0 } },
+  { id: "warm", label: "Warm", hint: "Soft warmth", icon: PaletteIcon, values: { brightness: 105, contrast: 105, saturation: 110, warmth: 25 } },
+];
+
+function createPhotoEditorUiPlan(inspection, settings, limits) {
+  if (inspection.state !== "ready") return { state: inspection.state, message: inspection.message || "", plan: null, format: "" };
+  try {
+    const first = inspection.metadata[0];
+    const plan = getPhotoEditorPlan(first?.width, first?.height, settings, limits, `${first?.name || "The photo"} after editing`);
+    return { state: "ready", message: "", plan, format: compressionInputFormat(inspection.file) };
+  } catch (error) {
+    return { state: "error", message: toFriendlyResourceError(error, "Photo Editor")?.message || "Reset the edits and try again.", plan: null, format: "" };
+  }
+}
+
+function PhotoEditorAdjustment({ setting, value, onChange }) {
+  const id = `photo-editor-${setting.key}`;
+  return (
+    <label className="photo-editor-adjustment" htmlFor={id}>
+      <span><strong>{setting.label}</strong><output htmlFor={id}>{Number(value).toLocaleString()}{setting.suffix}</output></span>
+      <input id={id} type="range" min={setting.min} max={setting.max} step={setting.step} value={value} onChange={(event) => onChange(setting.key, Number(event.target.value))} />
+      <span className="range-endpoints" aria-hidden="true"><small>{setting.minLabel}</small><small>{setting.maxLabel}</small></span>
+    </label>
+  );
+}
+
+function PhotoEditorControls({ files, settings, settingsList, inspection, plan, onChange, onApply, onReset }) {
+  const adjustmentSettings = settingsList.filter((setting) => Object.hasOwn(PHOTO_EDITOR_ADJUSTMENTS, setting.key));
+  const captionSetting = settingsList.find((setting) => setting.key === "text");
+  const captionColorSetting = settingsList.find((setting) => setting.key === "textColor");
+  const currentPreset = photoEditorPresets.find((preset) => Object.entries(preset.values).every(([key, value]) => Number(settings[key]) === value));
+  const caption = String(settings.text || "");
+  const lightCaption = String(settings.textColor || PHOTO_EDITOR_TEXT_COLORS[0]).toLowerCase() === PHOTO_EDITOR_TEXT_COLORS[0];
+  const imageFilter = plan.state === "ready" && plan.plan
+    ? `brightness(${plan.plan.brightness}%) contrast(${plan.plan.contrast}%) saturate(${plan.plan.saturation}%) sepia(${plan.plan.warmth}%)`
+    : "none";
+  const unchanged = currentPreset?.id === "original" && !caption && lightCaption;
+
+  return (
+    <section className="photo-editor-controls" aria-labelledby="photo-editor-preview-title">
+      <div className="photo-editor-preview-heading">
+        <span><strong id="photo-editor-preview-title">Live edit</strong><small>{files[0] ? files[0].name : "Add one photo to preview every change"}</small></span>
+        <button type="button" onClick={onReset} disabled={unchanged} aria-label="Reset all photo edits"><ArrowClockwiseIcon size={15} aria-hidden="true" />Reset all</button>
+      </div>
+
+      {plan.state === "ready" && plan.plan ? (
+        <figure className="photo-editor-preview-figure">
+          <div className="photo-editor-preview-stage">
+            <div className="photo-editor-preview-canvas" style={{ "--photo-preview-ratio": plan.plan.width / plan.plan.height }}>
+              <img src={inspection.sourceUrl} alt={`Live Photo Editor preview of ${files[0].name}`} style={{ filter: imageFilter }} />
+              {caption && <span className={lightCaption ? "light" : "dark"}>{caption}</span>}
+            </div>
+          </div>
+          <figcaption>Changes update here immediately. Export renders the full-size source locally and keeps its current image format.</figcaption>
+        </figure>
+      ) : plan.state === "loading" ? (
+        <div className="photo-editor-preview-state" role="status"><SpinnerGapIcon size={20} className="spin" aria-hidden="true" /><span><strong>Opening the photo locally…</strong><small>No file data leaves this browser.</small></span></div>
+      ) : plan.state === "error" ? (
+        <div className="photo-editor-preview-state error" role="alert"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><strong>This preview cannot be prepared safely</strong><small>{plan.message}</small></span></div>
+      ) : (
+        <div className="photo-editor-preview-state"><ImageSquareIcon size={21} weight="duotone" aria-hidden="true" /><span><strong>No photo selected</strong><small>Your live adjustments and caption will appear here.</small></span></div>
+      )}
+
+      <fieldset className="photo-editor-presets">
+        <legend>Choose a starting look</legend>
+        <div>
+          {photoEditorPresets.map((preset) => {
+            const PresetIcon = preset.icon;
+            const selected = currentPreset?.id === preset.id;
+            return (
+              <button type="button" key={preset.id} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onApply(preset.values)}>
+                <span><PresetIcon size={17} weight="duotone" aria-hidden="true" /></span>
+                <strong>{preset.label}</strong>
+                <small>{preset.hint}</small>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <details className="photo-editor-fine-tune">
+        <summary><SlidersHorizontalIcon size={16} aria-hidden="true" /><span><strong>Fine-tune</strong><small>Brightness, contrast, color, and warmth</small></span><CaretRightIcon size={14} aria-hidden="true" /></summary>
+        <div>{adjustmentSettings.map((setting) => <PhotoEditorAdjustment key={setting.key} setting={setting} value={settings[setting.key]} onChange={onChange} />)}</div>
+      </details>
+
+      <fieldset className="photo-editor-caption">
+        <legend>Add a caption <small>Optional</small></legend>
+        <label htmlFor="photo-editor-caption-text">
+          <span className="visually-hidden">{captionSetting?.label || "Optional caption"}</span>
+          <input id="photo-editor-caption-text" type="text" maxLength={captionSetting?.maxLength} value={caption} placeholder="Type a short caption" onChange={(event) => onChange("text", event.target.value)} />
+          <small>{caption.length.toLocaleString()} / {Number(captionSetting?.maxLength || 500).toLocaleString()}</small>
+        </label>
+        <div role="group" aria-label="Caption color">
+          {(captionColorSetting?.options || []).map((option) => {
+            const selected = String(settings.textColor).toLowerCase() === String(option.value).toLowerCase();
+            return <button type="button" key={option.value} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange("textColor", option.value)}><span style={{ background: option.value }} aria-hidden="true" />{option.label}</button>;
+          })}
+        </div>
+      </fieldset>
+
+      {plan.state === "ready" && plan.plan && (
+        <div className="photo-editor-output-plan" aria-label={`Output ${plan.plan.width} by ${plan.plan.height} pixels in ${plan.format.toUpperCase()} format`}>
+          <ImageSquareIcon size={18} weight="duotone" aria-hidden="true" />
+          <span><strong>{plan.plan.width.toLocaleString()} × {plan.plan.height.toLocaleString()} px · {plan.format.toUpperCase()}</strong><small>{plan.plan.changed ? `${plan.plan.adjusted ? "Adjustments applied" : "Original color"}${plan.plan.captionCharacters ? ` · ${plan.plan.captionCharacters.toLocaleString()}-character caption` : ""}` : "No visual changes yet"}</small></span>
+        </div>
+      )}
+      <p className="photo-editor-private-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span>The original stays untouched. Preview and export remain in this tab, and metadata is removed during local re-encoding.</span></p>
+    </section>
+  );
 }
 
 function useAnimatedGifInspection(files, enabled, tool) {
@@ -4861,7 +4995,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "crop-image", "convert-from-jpg", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -4899,6 +5033,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageCropPlan = createImageCropPlan(imageCropInspection, settings, limits);
   const animatedGifInspection = useAnimatedGifInspection(files, tool.slug === "convert-from-jpg", tool);
   const animatedGifPlan = createAnimatedGifUiPlan(animatedGifInspection, settings.delay, settings.loop, limits);
+  const photoEditorInspection = useImageSourceInspection(files, tool.slug === "photo-editor", tool, "photo");
+  const photoEditorPlan = createPhotoEditorUiPlan(photoEditorInspection, settings, limits);
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
     : compressionEstimate;
@@ -5070,12 +5206,13 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageResizeReady = tool.slug !== "resize-image" || !hasRequiredInput || (imageResizeInspection.files === files && imageResizePlan.state === "ready");
   const imageCropReady = tool.slug !== "crop-image" || !hasRequiredInput || (imageCropInspection.files === files && imageCropPlan.state === "ready");
   const animatedGifReady = tool.slug !== "convert-from-jpg" || !hasRequiredInput || (animatedGifInspection.files === files && animatedGifPlan.state === "ready");
+  const photoEditorReady = tool.slug !== "photo-editor" || !hasRequiredInput || (photoEditorInspection.files === files && photoEditorPlan.state === "ready");
   const pdfOfficeTextReady = !usesPdfOfficeTextPreview || !hasRequiredInput || (pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]);
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageCropReady && animatedGifReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -5121,6 +5258,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Reading the JPG frame dimensions locally."
     : tool.slug === "convert-from-jpg" && animatedGifInspection.files === files && animatedGifPlan.state === "error"
       ? animatedGifPlan.message
+    : tool.slug === "photo-editor" && photoEditorInspection.files === files && photoEditorPlan.state === "loading"
+      ? "Opening the photo locally for a safe live preview."
+    : tool.slug === "photo-editor" && photoEditorInspection.files === files && photoEditorPlan.state === "error"
+      ? photoEditorPlan.message
     : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "loading"
       ? "Reading selectable text from every PDF page locally."
     : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "error"
@@ -5233,6 +5374,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         : `Crop ${files.length.toLocaleString()} images · ${cropRatioNames[settings.aspectRatio] || "Custom"}`
     : tool.slug === "convert-from-jpg" && hasRequiredInput && animatedGifPlan.state === "ready"
       ? `Create ${animatedGifPlan.frameCount.toLocaleString()}-frame GIF`
+    : tool.slug === "photo-editor" && hasRequiredInput && photoEditorPlan.state === "ready"
+      ? `Save edited ${photoEditorPlan.format.toUpperCase()}`
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -5293,7 +5436,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -5307,7 +5450,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -5410,6 +5553,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "resize-image" && <ImageResizeResultSummary result={results[0]} />}
                 {tool.slug === "crop-image" && <ImageCropResultSummary result={results[0]} />}
                 {tool.slug === "convert-from-jpg" && <AnimatedGifResultSummary result={results[0]} />}
+                {tool.slug === "photo-editor" && <PhotoEditorResultSummary result={results[0]} />}
                 {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && <ImagePdfResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {tool.slug === "pdf-to-pdfa" && <ArchivePdfResultSummary result={results[0]} />}
@@ -5437,7 +5581,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "crop-image", "convert-from-jpg", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -5483,6 +5627,24 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 inspection={animatedGifInspection}
                 plan={animatedGifPlan}
                 onChange={updateSetting}
+              />
+            ) : tool.slug === "photo-editor" ? (
+              <PhotoEditorControls
+                files={files}
+                settings={settings}
+                settingsList={settingsList}
+                inspection={photoEditorInspection}
+                plan={photoEditorPlan}
+                onChange={updateSetting}
+                onApply={updateSettings}
+                onReset={() => updateSettings({
+                  brightness: PHOTO_EDITOR_ADJUSTMENTS.brightness.default,
+                  contrast: PHOTO_EDITOR_ADJUSTMENTS.contrast.default,
+                  saturation: PHOTO_EDITOR_ADJUSTMENTS.saturation.default,
+                  warmth: PHOTO_EDITOR_ADJUSTMENTS.warmth.default,
+                  text: "",
+                  textColor: PHOTO_EDITOR_TEXT_COLORS[0],
+                })}
               />
             ) : tool.slug === "pdf-to-jpg" ? (
               <PdfJpgControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} info={pageInfo} limits={limits} />
@@ -5592,6 +5754,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "convert-from-jpg" && animatedGifPlan.state === "ready" && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{animatedGifPlan.frameCount.toLocaleString()} {animatedGifPlan.frameCount === 1 ? "frame" : "frames"} · {formatGifDuration(animatedGifPlan.durationMs)} per cycle</strong>
+              )}
+              {tool.slug === "photo-editor" && photoEditorPlan.state === "ready" && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{photoEditorPlan.plan.changed ? "Edited" : "Original look"} · {photoEditorPlan.plan.width.toLocaleString()} × {photoEditorPlan.plan.height.toLocaleString()} px</strong>
               )}
               {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>

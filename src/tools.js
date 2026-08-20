@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
-import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS } from "./lib/file-limits.js";
+import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS } from "./lib/file-limits.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -1099,11 +1099,21 @@ export const tools = withPhosphorExports([
     featured: true,
     maturity: "beta",
     settings: [
-      { key: "brightness", type: "range", label: "Brightness", default: 100, min: 50, max: 150, step: 5, suffix: "%", minLabel: "Darker", maxLabel: "Brighter" },
-      { key: "contrast", type: "range", label: "Contrast", default: 100, min: 50, max: 150, step: 5, suffix: "%", minLabel: "Softer", maxLabel: "Stronger" },
-      { key: "saturation", type: "range", label: "Color", default: 100, min: 0, max: 180, step: 5, suffix: "%", minLabel: "Muted", maxLabel: "Vivid" },
-      { key: "warmth", type: "range", label: "Warmth", default: 0, min: 0, max: 60, step: 5, suffix: "%", minLabel: "Neutral", maxLabel: "Warm" },
+      { key: "brightness", type: "range", label: "Brightness", default: PHOTO_EDITOR_ADJUSTMENTS.brightness.default, min: PHOTO_EDITOR_ADJUSTMENTS.brightness.min, max: PHOTO_EDITOR_ADJUSTMENTS.brightness.max, step: 5, suffix: "%", minLabel: "Darker", maxLabel: "Brighter" },
+      { key: "contrast", type: "range", label: "Contrast", default: PHOTO_EDITOR_ADJUSTMENTS.contrast.default, min: PHOTO_EDITOR_ADJUSTMENTS.contrast.min, max: PHOTO_EDITOR_ADJUSTMENTS.contrast.max, step: 5, suffix: "%", minLabel: "Softer", maxLabel: "Stronger" },
+      { key: "saturation", type: "range", label: "Color", default: PHOTO_EDITOR_ADJUSTMENTS.saturation.default, min: PHOTO_EDITOR_ADJUSTMENTS.saturation.min, max: PHOTO_EDITOR_ADJUSTMENTS.saturation.max, step: 5, suffix: "%", minLabel: "Muted", maxLabel: "Vivid" },
+      { key: "warmth", type: "range", label: "Warmth", default: PHOTO_EDITOR_ADJUSTMENTS.warmth.default, min: PHOTO_EDITOR_ADJUSTMENTS.warmth.min, max: PHOTO_EDITOR_ADJUSTMENTS.warmth.max, step: 5, suffix: "%", minLabel: "Neutral", maxLabel: "Warm" },
       { key: "text", type: "text", label: "Optional caption", default: "", hint: "Leave blank to export only the image adjustments." },
+      {
+        key: "textColor",
+        type: "select",
+        label: "Caption color",
+        default: PHOTO_EDITOR_TEXT_COLORS[0],
+        options: [
+          { value: PHOTO_EDITOR_TEXT_COLORS[0], label: "Light", hint: "White text with a dark shadow." },
+          { value: PHOTO_EDITOR_TEXT_COLORS[1], label: "Dark", hint: "Ink text with a light shadow." },
+        ],
+      },
     ],
   },
   {

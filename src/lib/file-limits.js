@@ -17,6 +17,13 @@ export const IMAGE_CROP_SCALE_MAX_PERCENT = 100;
 export const GIF_FRAME_DELAY_MIN_MS = 100;
 export const GIF_FRAME_DELAY_MAX_MS = 3000;
 export const GIF_FRAME_DELAY_DEFAULT_MS = 900;
+export const PHOTO_EDITOR_ADJUSTMENTS = Object.freeze({
+  brightness: Object.freeze({ min: 50, max: 150, default: 100 }),
+  contrast: Object.freeze({ min: 50, max: 150, default: 100 }),
+  saturation: Object.freeze({ min: 0, max: 180, default: 100 }),
+  warmth: Object.freeze({ min: 0, max: 60, default: 0 }),
+});
+export const PHOTO_EDITOR_TEXT_COLORS = Object.freeze(["#ffffff", "#14201d"]);
 export const PDF_PREVIEW_LIMITS = Object.freeze({
   maxOutputBytes: GLOBAL_OUTPUT_LIMIT_BYTES,
   maxPages: 500,
@@ -1040,6 +1047,46 @@ export function getAnimatedGifPlan(frames, delayMs = GIF_FRAME_DELAY_DEFAULT_MS,
     durationMs: count * delay,
     loop: Boolean(loop),
     coverCroppedFrames,
+  });
+}
+
+export function getPhotoEditorPlan(sourceWidth, sourceHeight, settings = {}, limitsOrTool = "photo-editor", label = "The edited photo") {
+  const width = Math.round(Number(sourceWidth));
+  const height = Math.round(Number(sourceHeight));
+  assertOutputDimensions(width, height, limitsOrTool, label);
+
+  const adjustments = Object.fromEntries(Object.entries(PHOTO_EDITOR_ADJUSTMENTS).map(([key, policy]) => {
+    const value = Number(settings[key] ?? policy.default);
+    if (!Number.isInteger(value) || value < policy.min || value > policy.max) {
+      throw new FileLimitError(
+        "invalid-photo-adjustment",
+        `${label} has an invalid ${key} value. Reset the adjustments and try again.`,
+      );
+    }
+    return [key, value];
+  }));
+  const caption = String(settings.text || "");
+  const captionLimit = TEXT_SETTING_LIMITS["photo-editor"].text;
+  if (caption.length > captionLimit) {
+    throw new FileLimitError(
+      "text-setting-too-long",
+      `Optional caption contains ${caption.length.toLocaleString()} characters; Photo Editor supports ${captionLimit.toLocaleString()}. Shorten the text and try again.`,
+    );
+  }
+  const textColor = String(settings.textColor || PHOTO_EDITOR_TEXT_COLORS[0]).toLowerCase();
+  if (!PHOTO_EDITOR_TEXT_COLORS.includes(textColor)) {
+    throw new FileLimitError("invalid-photo-caption-color", `${label} has an unsupported caption color. Choose Light or Dark and try again.`);
+  }
+
+  return Object.freeze({
+    width,
+    height,
+    ...adjustments,
+    caption,
+    captionCharacters: caption.length,
+    textColor,
+    adjusted: Object.entries(PHOTO_EDITOR_ADJUSTMENTS).some(([key, policy]) => adjustments[key] !== policy.default),
+    changed: caption.length > 0 || Object.entries(PHOTO_EDITOR_ADJUSTMENTS).some(([key, policy]) => adjustments[key] !== policy.default),
   });
 }
 
