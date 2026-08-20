@@ -18,6 +18,7 @@ import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
 import { createOcrReaderResult, createPdfOfficeTextPreview, createPdfSpreadsheetPlan, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { createImageCompressionOutcome, hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
+import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, inspectBackgroundCorners } from "../src/lib/background-removal.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -87,6 +88,91 @@ test("image compression outcomes distinguish lossy quality from lossless PNG re-
   assert.throws(
     () => createImageCompressionOutcome(0, 0, 0, 800, "gif", Number.NaN),
     (error) => error instanceof FileLimitError && error.code === "invalid-image-compression-outcome",
+  );
+});
+
+function backgroundRemovalFixture(center = [230, 230, 230, 255]) {
+  const pixels = new Uint8ClampedArray(3 * 3 * 4);
+  for (let index = 0; index < pixels.length; index += 4) pixels.set([255, 255, 255, 255], index);
+  pixels.set(center, 4 * 4);
+  return pixels;
+}
+
+test("background cleanup choices share one deterministic corner-sampling algorithm", () => {
+  const light = backgroundRemovalFixture();
+  const balanced = backgroundRemovalFixture();
+  const strong = backgroundRemovalFixture();
+  const lightStats = applyBackgroundRemovalPixels(light, 3, 3, "light", "transparent");
+  const balancedStats = applyBackgroundRemovalPixels(balanced, 3, 3, "balanced", "transparent");
+  const strongStats = applyBackgroundRemovalPixels(strong, 3, 3, "strong", "transparent");
+
+  assert.deepEqual(inspectBackgroundCorners(backgroundRemovalFixture(), 3, 3), {
+    color: [255, 255, 255],
+    colorHex: "#ffffff",
+    spread: 0,
+  });
+  assert.equal(lightStats.tolerance, 38);
+  assert.equal(balancedStats.tolerance, 54);
+  assert.equal(strongStats.tolerance, 72);
+  assert.ok(light[19] > balanced[19], "Balanced removes more of the near-background center pixel than Light");
+  assert.ok(balanced[19] > strong[19], "Strong removes more of the near-background center pixel than Balanced");
+  assert.ok(lightStats.removedPercent < balancedStats.removedPercent);
+  assert.ok(balancedStats.removedPercent < strongStats.removedPercent);
+});
+
+test("background removal preserves source transparency and flattens only when requested", () => {
+  const transparent = backgroundRemovalFixture([0, 0, 0, 100]);
+  const transparentStats = applyBackgroundRemovalPixels(transparent, 3, 3, "balanced", "transparent");
+  assert.equal(transparent[19], 100, "existing subject transparency is never increased");
+  assert.equal(transparent[3], 0, "matching white corners become transparent");
+  assert.equal(transparentStats.detectedColor, "#ffffff");
+
+  const white = backgroundRemovalFixture([0, 0, 0, 255]);
+  const whiteStats = applyBackgroundRemovalPixels(white, 3, 3, "balanced", "white");
+  assert.deepEqual([...white.slice(0, 4)], [255, 255, 255, 255]);
+  assert.deepEqual([...white.slice(16, 20)], [0, 0, 0, 255]);
+  assert.equal(whiteStats.background, "white");
+
+  const black = backgroundRemovalFixture([0, 0, 0, 255]);
+  applyBackgroundRemovalPixels(black, 3, 3, "balanced", "black");
+  assert.deepEqual([...black.slice(0, 4)], [0, 0, 0, 255]);
+});
+
+test("background removal reports mixed corners and rejects invalid contracts", () => {
+  const mixed = new Uint8ClampedArray([
+    255, 255, 255, 255, 0, 0, 0, 255,
+    255, 0, 0, 255, 0, 255, 0, 255,
+  ]);
+  const inspection = inspectBackgroundCorners(mixed, 2, 2);
+  assert.equal(inspection.colorHex, "#808040");
+  assert.ok(inspection.spread > 300);
+
+  assert.deepEqual(createBackgroundRemovalOutcome({
+    cleanup: "balanced",
+    tolerance: 54,
+    background: "transparent",
+    detectedColor: "#ffffff",
+    cornerSpread: 0,
+    removedPercent: 80,
+    softenedPercent: 10,
+  }, 1200, 800, 42_000), {
+    cleanup: "balanced",
+    tolerance: 54,
+    background: "transparent",
+    detectedColor: "#ffffff",
+    cornerSpread: 0,
+    removedPercent: 80,
+    softenedPercent: 10,
+    width: 1200,
+    height: 800,
+    outputBytes: 42_000,
+  });
+  assert.throws(() => applyBackgroundRemovalPixels(backgroundRemovalFixture(), 3, 3, "medium", "transparent"), (error) => error instanceof FileLimitError && error.code === "invalid-background-cleanup");
+  assert.throws(() => applyBackgroundRemovalPixels(backgroundRemovalFixture(), 3, 3, "balanced", "blue"), (error) => error instanceof FileLimitError && error.code === "invalid-background-output");
+  assert.throws(() => inspectBackgroundCorners(new Uint8ClampedArray(4), 2, 2), (error) => error instanceof FileLimitError && error.code === "invalid-background-pixels");
+  assert.throws(
+    () => createBackgroundRemovalOutcome({ cleanup: "balanced", tolerance: 72, background: "transparent", detectedColor: "white", cornerSpread: -1, removedPercent: 101, softenedPercent: 0 }, 2, 2, 100),
+    (error) => error instanceof FileLimitError && error.code === "invalid-background-outcome",
   );
 });
 

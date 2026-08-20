@@ -62,7 +62,6 @@ export async function runTool(tool, files, options = {}, report) {
   normalizedOptions.start = normalizedOptions.startAt ?? normalizedOptions.start;
   normalizedOptions.aspect = normalizedOptions.aspectRatio ?? normalizedOptions.aspect;
   normalizedOptions.blur = normalizedOptions.strength ?? normalizedOptions.blur;
-  normalizedOptions.tolerance = { fast: 72, balanced: 54, fine: 38 }[normalizedOptions.edgeQuality] || normalizedOptions.tolerance;
 
   report?.({ phase: "Checking local safety limits", progress: 0.04 });
   try {

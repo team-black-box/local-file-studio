@@ -43,6 +43,7 @@ import {
   getAnimatedGifPlan,
   getImageCropPlan,
   getImageUpscalePlan,
+  getInteractiveImagePreviewDimensions,
   getPhotoEditorPlan,
   getProportionalResizeDimensions,
   getTextSettingLimit,
@@ -668,6 +669,41 @@ test("Upscale Image preflight and catalog use the same exact scale policy", asyn
   await assert.rejects(
     preflightToolFiles(upscale, [image], { scale: 3 }),
     (error) => error instanceof FileLimitError && error.code === "invalid-upscale-scale",
+  );
+});
+
+test("Remove Background uses one catalog contract and a bounded interactive preview", () => {
+  const removeBackground = tools.find(({ slug }) => slug === "remove-image-background");
+  const cleanup = removeBackground.settings.find(({ key }) => key === "cleanup");
+  const background = removeBackground.settings.find(({ key }) => key === "background");
+  const limits = getToolLimits(removeBackground);
+
+  assert.equal(cleanup.default, "balanced");
+  assert.deepEqual(cleanup.options.map(({ value }) => value), ["light", "balanced", "strong"]);
+  assert.equal(removeBackground.settings.some(({ key }) => key === "edgeQuality"), false);
+  assert.deepEqual(background.options.map(({ value }) => value), ["transparent", "white", "black"]);
+  assert.equal(limits.maxInteractivePreviewPixels, 1_500_000);
+  assert.equal(limits.maxInteractivePreviewEdge, 1600);
+  assert.deepEqual(getInteractiveImagePreviewDimensions(1200, 630, removeBackground), {
+    sourceWidth: 1200,
+    sourceHeight: 630,
+    width: 1200,
+    height: 630,
+    scale: 1,
+  });
+
+  const large = getInteractiveImagePreviewDimensions(6000, 4000, removeBackground);
+  assert.equal(large.width, 1500);
+  assert.equal(large.height, 1000);
+  assert.equal(large.width * large.height, limits.maxInteractivePreviewPixels);
+  assert.ok(Math.max(large.width, large.height) <= limits.maxInteractivePreviewEdge);
+  assert.throws(
+    () => getInteractiveImagePreviewDimensions(0, 400, removeBackground),
+    (error) => error instanceof FileLimitError && error.code === "invalid-image-dimensions",
+  );
+  assert.throws(
+    () => getInteractiveImagePreviewDimensions(400, 400, "compress-image"),
+    (error) => error instanceof FileLimitError && error.code === "missing-preview-limits",
   );
 });
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS, IMAGE_UPSCALE_SCALES, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS } from "./lib/file-limits.js";
+import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES } from "./lib/background-removal.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -1157,26 +1158,18 @@ export const tools = withPhosphorExports([
     maturity: "beta",
     settings: [
       {
-        key: "edgeQuality",
+        key: "cleanup",
         type: "select",
-        label: "Edge detail",
+        label: "Background cleanup",
         default: "balanced",
-        options: [
-          { value: "fast", label: "Fast", hint: "Simple edges, quickest result." },
-          { value: "balanced", label: "Balanced", hint: "Good default for most photos." },
-          { value: "fine", label: "Fine", hint: "More edge detail, slower." },
-        ],
+        options: BACKGROUND_REMOVAL_PROFILES.map(({ value, label, hint }) => ({ value, label, hint })),
       },
       {
         key: "background",
         type: "select",
         label: "Background",
         default: "transparent",
-        options: [
-          { value: "transparent", label: "Transparent", hint: "Keep the cutout reusable." },
-          { value: "white", label: "White", hint: "Clean, light background." },
-          { value: "black", label: "Black", hint: "Dark, high-contrast background." },
-        ],
+        options: BACKGROUND_REMOVAL_BACKGROUNDS.map(({ value, label, hint }) => ({ value, label, hint })),
       },
     ],
   },
