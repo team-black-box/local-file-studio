@@ -66,7 +66,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Photo Editor | Live first-image canvas, four visual starting looks, exact bounded fine-tuning, optional light/dark caption preview, reset, exact output plan, privacy/metadata disclosure, and matching result summary | Keep; continue color fidelity, caption edge, mobile, and browser-canvas QA |
 | Upscale Image | Visual 2×/4× choices with exact first-image targets, unsafe-option disabling, source preview, pixel and raw-canvas growth, batch rules, honest resampling limits, privacy note, and matching result summary | Keep; continue mixed-batch, maximum-canvas, mobile, and browser-memory QA |
 | Remove Background | Visual Light/Balanced/Strong cleanup and Transparent/White/Black output choices, real bounded first-image before/after sample, detected corner color and mixed-corner warning, batch rule, honest non-AI method disclosure, and matching result summary | Keep; continue difficult-edge, mixed-background, transparency, mobile, and browser-memory QA |
-| Watermark Image | Text, position dropdown, opacity slider | Use visual position buttons and add image preview |
+| Watermark Image | Live bounded first-image preview, counted text input, visual center/corner placement, upward/straight/downward direction, light/dark contrast choices, exact opacity, batch rule, privacy/metadata disclosure, and matching result summary | Keep; continue mixed-orientation batch, text-fit, contrast, mobile, and browser-canvas QA |
 | Meme Generator | Previously used hidden stock captions | Expose both captions now; add live image preview |
 | Rotate Image | Rotation dropdown | Use visual direction cards and image preview |
 | HTML to Image | Format dropdown and raw viewport number | Use format cards plus device-width presets and stepper |
@@ -77,7 +77,7 @@ Native text or number entry remains available when precision matters. Numeric li
 1. **Shared foundation:** visual choice cards, number steppers/presets, meaningful range endpoints, and safe single-result automatic download.
 2. **PDF page editors:** Organize, representative single-operation previews, field-aware Forms, and per-page multi-region Redact are complete; continue targeted touch and large-document QA.
 3. **PDF conversions and readers:** pre-export page/text/output feedback plus inline Compare and Summary results.
-4. **Image canvas tools:** Resize, Crop, Photo Editor, Upscale, and Remove Background live previews are complete; continue with Watermark, Meme, Rotate, and Blur Face.
+4. **Image canvas tools:** Resize, Crop, Photo Editor, Upscale, Remove Background, and Watermark live previews are complete; continue with Meme, Rotate, and Blur Face.
 5. **Final QA:** keyboard, screen-reader names, mobile reflow, large/boundary files, repeated runs, preview, automatic download, offline reload, and browser coverage.
 
 ## Current audit limits

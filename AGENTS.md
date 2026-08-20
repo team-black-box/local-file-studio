@@ -47,6 +47,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/pdf-comparison.js`: bounded line-view construction and scriptless local HTML comparison export.
 - `src/lib/pdf-output-protection.js`: opt-in fresh protection for generated PDF results.
 - `src/lib/background-removal.js`: shared corner sampling, cleanup profiles, output flattening, and exact cutout outcomes.
+- `src/lib/image-watermark.js`: shared watermark placement, direction, contrast, opacity, drawing, and result contracts.
 - `src/lib/tool-settings.js`: shared cleanup for memory-only sensitive tool settings.
 - `src/lib/tiff-utils.js`: bounded TIFF metadata normalization shared by preflight and decoding.
 - `src/lib/file-limits.js`: canonical resource policies and displayed limit descriptions.

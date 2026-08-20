@@ -19,6 +19,7 @@ import { createOcrReaderResult, createPdfOfficeTextPreview, createPdfSpreadsheet
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { createImageCompressionOutcome, hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
 import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, inspectBackgroundCorners } from "../src/lib/background-removal.js";
+import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "../src/lib/image-watermark.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -174,6 +175,119 @@ test("background removal reports mixed corners and rejects invalid contracts", (
     () => createBackgroundRemovalOutcome({ cleanup: "balanced", tolerance: 72, background: "transparent", detectedColor: "white", cornerSpread: -1, removedPercent: 101, softenedPercent: 0 }, 2, 2, 100),
     (error) => error instanceof FileLimitError && error.code === "invalid-background-outcome",
   );
+});
+
+test("image watermark plans exact placement, direction, contrast, and opacity", () => {
+  const bottomRight = getImageWatermarkPlan(1200, 800, {
+    text: "  © Studio  ",
+    position: "bottom-right",
+    opacity: 45,
+    angle: -24,
+    color: "#ffffff",
+  });
+  assert.deepEqual({
+    width: bottomRight.width,
+    height: bottomRight.height,
+    text: bottomRight.text,
+    textLength: bottomRight.textLength,
+    position: bottomRight.position,
+    opacity: bottomRight.opacity,
+    angle: bottomRight.angle,
+    color: bottomRight.color,
+    fontSize: bottomRight.fontSize,
+    x: bottomRight.x,
+    y: bottomRight.y,
+    textAlign: bottomRight.textAlign,
+    textBaseline: bottomRight.textBaseline,
+    maxWidth: bottomRight.maxWidth,
+    shadowColor: bottomRight.shadowColor,
+  }, {
+    width: 1200,
+    height: 800,
+    text: "© Studio",
+    textLength: 8,
+    position: "bottom-right",
+    opacity: 45,
+    angle: -24,
+    color: "#ffffff",
+    fontSize: 48,
+    x: 1200 - (48 * 0.7),
+    y: 800 - (48 * 0.7),
+    textAlign: "right",
+    textBaseline: "bottom",
+    maxWidth: 1032,
+    shadowColor: "rgba(0,0,0,.72)",
+  });
+
+  const center = getImageWatermarkPlan(400, 300, {
+    text: "Proof",
+    position: "center",
+    angle: 0,
+    color: "#14201d",
+  });
+  assert.deepEqual({ x: center.x, y: center.y, opacity: center.opacity, textAlign: center.textAlign, textBaseline: center.textBaseline, shadowColor: center.shadowColor }, {
+    x: 200,
+    y: 150,
+    opacity: 45,
+    textAlign: "center",
+    textBaseline: "middle",
+    shadowColor: "rgba(255,255,255,.78)",
+  });
+});
+
+test("image watermark drawing and result reporting use the validated plan", () => {
+  const plan = getImageWatermarkPlan(600, 400, { text: "Local", position: "top-left", opacity: 70, angle: 24, color: "#14201d" });
+  const calls = [];
+  const context = {
+    save: () => calls.push("save"),
+    translate: (...values) => calls.push(["translate", ...values]),
+    rotate: (value) => calls.push(["rotate", value]),
+    fillText: (...values) => calls.push(["fillText", ...values]),
+    restore: () => calls.push("restore"),
+  };
+  drawImageWatermark(context, plan);
+  assert.equal(context.globalAlpha, 0.7);
+  assert.equal(context.textAlign, "left");
+  assert.equal(context.textBaseline, "top");
+  assert.equal(context.fillStyle, "#14201d");
+  assert.deepEqual(calls[0], "save");
+  assert.deepEqual(calls[1], ["translate", plan.x, plan.y]);
+  assert.equal(calls[2][0], "rotate");
+  assert.deepEqual(calls[3], ["fillText", "Local", 0, 0, plan.maxWidth]);
+  assert.deepEqual(calls[4], "restore");
+
+  assert.deepEqual(createImageWatermarkOutcome(plan, "png", 42_000), {
+    width: 600,
+    height: 400,
+    text: "Local",
+    textLength: 5,
+    position: "top-left",
+    opacity: 70,
+    angle: 24,
+    color: "#14201d",
+    format: "png",
+    outputBytes: 42_000,
+  });
+});
+
+test("image watermark contracts reject unsupported or unsafe settings", () => {
+  assert.deepEqual(IMAGE_WATERMARK_POSITIONS.map(({ value }) => value), ["center", "top-left", "top-right", "bottom-left", "bottom-right"]);
+  assert.deepEqual(IMAGE_WATERMARK_ANGLES.map(({ value }) => value), [-24, 0, 24]);
+  assert.deepEqual(IMAGE_WATERMARK_COLORS.map(({ value }) => value), ["#ffffff", "#14201d"]);
+
+  const valid = { text: "Watermark", position: "center", opacity: 45, angle: 0, color: "#ffffff" };
+  for (const [options, code] of [
+    [{ ...valid, text: "   " }, "missing-watermark-text"],
+    [{ ...valid, text: "x".repeat(501) }, "watermark-text-limit"],
+    [{ ...valid, position: "tile" }, "invalid-watermark-position"],
+    [{ ...valid, opacity: 4 }, "invalid-watermark-opacity"],
+    [{ ...valid, opacity: 101 }, "invalid-watermark-opacity"],
+    [{ ...valid, angle: 15 }, "invalid-watermark-angle"],
+    [{ ...valid, color: "#ff0000" }, "invalid-watermark-color"],
+  ]) {
+    assert.throws(() => getImageWatermarkPlan(800, 600, options), (error) => error instanceof FileLimitError && error.code === code);
+  }
+  assert.throws(() => createImageWatermarkOutcome(getImageWatermarkPlan(800, 600, valid), "gif", 100), (error) => error instanceof FileLimitError && error.code === "invalid-watermark-outcome");
 });
 
 test("PDF to JPG plans one direct image or an exact multi-page ZIP", () => {
