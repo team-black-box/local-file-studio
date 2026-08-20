@@ -295,6 +295,7 @@ export function getToolLimits(toolOrSlug) {
       maxOutputPixels: canEnlarge ? 16 * MEGAPIXEL : 12 * MEGAPIXEL,
       maxOutputEdge: canEnlarge ? 8192 : 6000,
       firstFrameImageFormats: canEnlarge ? "animated PNG" : "animated PNG/WebP",
+      ...(slug === "remove-image-background" ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
       ...(slug === "blur-face" ? { maxDetectedFaces: 40 } : {}),
     });
   }
@@ -1027,6 +1028,30 @@ export function getImageUpscalePlan(sourceWidth, sourceHeight, scale = IMAGE_UPS
     pixelMultiplier: normalizedScale ** 2,
     outputPixels: width * height,
     outputRgbaBytes: width * height * 4,
+  });
+}
+
+export function getInteractiveImagePreviewDimensions(sourceWidth, sourceHeight, limitsOrTool = "remove-image-background", label = "The local preview") {
+  const limits = resolveLimits(limitsOrTool);
+  const width = Math.round(Number(sourceWidth));
+  const height = Math.round(Number(sourceHeight));
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+    throw new FileLimitError("invalid-image-dimensions", `${label} could not be planned because the source dimensions are invalid. Re-save the image and try again.`);
+  }
+  if (!Number.isFinite(limits.maxInteractivePreviewPixels) || !Number.isFinite(limits.maxInteractivePreviewEdge)) {
+    throw new FileLimitError("missing-preview-limits", `${label} is missing its local preview safeguards. Try another tool while this is fixed.`);
+  }
+  const scale = Math.min(
+    1,
+    limits.maxInteractivePreviewEdge / Math.max(width, height),
+    Math.sqrt(limits.maxInteractivePreviewPixels / (width * height)),
+  );
+  return Object.freeze({
+    sourceWidth: width,
+    sourceHeight: height,
+    width: Math.max(1, Math.floor(width * scale)),
+    height: Math.max(1, Math.floor(height * scale)),
+    scale,
   });
 }
 

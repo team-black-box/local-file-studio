@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
-import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
+import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getInteractiveImagePreviewDimensions, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
+import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./background-removal.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -235,6 +236,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   let imageResizeOutcome = null;
   let imageCropOutcome = null;
   let imageUpscaleOutcome = null;
+  let backgroundRemovalOutcome = null;
   let photoEditorPlan = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
@@ -299,25 +301,8 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       const context = canvas.getContext("2d", { willReadFrequently: true });
       context.drawImage(bitmap.source, 0, 0);
       const frame = context.getImageData(0, 0, canvas.width, canvas.height);
-      const pixels = frame.data;
-      const corners = [0, (canvas.width - 1) * 4, (canvas.width * (canvas.height - 1)) * 4, (canvas.width * canvas.height - 1) * 4];
-      const background = corners.reduce((acc, index) => [acc[0] + pixels[index], acc[1] + pixels[index + 1], acc[2] + pixels[index + 2]], [0, 0, 0]).map((value) => value / 4);
-      const tolerance = Number(options.tolerance || 54);
-      for (let index = 0; index < pixels.length; index += 4) {
-        const distance = Math.hypot(pixels[index] - background[0], pixels[index + 1] - background[1], pixels[index + 2] - background[2]);
-        pixels[index + 3] = Math.max(0, Math.min(255, ((distance - tolerance * 0.55) / (tolerance * 0.65)) * 255));
-      }
+      backgroundRemovalOutcome = applyBackgroundRemovalPixels(frame.data, canvas.width, canvas.height, options.cleanup ?? options.edgeQuality, options.background);
       context.putImageData(frame, 0, 0);
-      if (options.background && options.background !== "transparent") {
-        const flattened = makeCanvas(canvas.width, canvas.height);
-        const flattenedContext = flattened.getContext("2d");
-        flattenedContext.fillStyle = options.background === "black" ? "#000000" : "#ffffff";
-        flattenedContext.fillRect(0, 0, flattened.width, flattened.height);
-        flattenedContext.drawImage(canvas, 0, 0);
-        canvas.width = 1;
-        canvas.height = 1;
-        canvas = flattened;
-      }
       config = IMAGE_OUTPUTS.png;
     } else if (slug === "blur-face") {
       canvas = makeCanvas(bitmap.width, bitmap.height);
@@ -429,6 +414,12 @@ async function renderOne(slug, file, options, report, pixelBudget) {
           details: `${imageUpscaleOutcome.sourceWidth.toLocaleString()} × ${imageUpscaleOutcome.sourceHeight.toLocaleString()} → ${imageUpscaleOutcome.width.toLocaleString()} × ${imageUpscaleOutcome.height.toLocaleString()} · ${imageUpscaleOutcome.scale}× local resampling`,
           imageUpscaleOutcome: { ...imageUpscaleOutcome, format: config.ext, outputBytes: blob.size },
         }
+      : slug === "remove-background"
+        ? {
+          ...result,
+          details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${getBackgroundRemovalProfile(backgroundRemovalOutcome.cleanup).label} cleanup · ${getBackgroundRemovalBackground(backgroundRemovalOutcome.background).label} background`,
+          backgroundRemovalOutcome: createBackgroundRemovalOutcome(backgroundRemovalOutcome, canvas.width, canvas.height, blob.size),
+        }
       : slug === "photo-editor"
         ? {
           ...result,
@@ -450,6 +441,38 @@ export async function createImageCompressionPreview(file, quality = 82) {
   const result = await renderOne("compress-image", file, { quality }, undefined, { used: 0, limit: limits.maxImagePixelsTotal });
   assertOutputSize(result.size, result.name, limits.maxOutputBytes);
   return result;
+}
+
+export async function createBackgroundRemovalPreview(file, options = {}) {
+  const limits = getToolLimits("remove-image-background");
+  const bitmap = await fileToBitmap(file, limits);
+  let canvas;
+  try {
+    const dimensions = getInteractiveImagePreviewDimensions(bitmap.width, bitmap.height, limits, `${file.name} preview`);
+    canvas = makeCanvas(dimensions.width, dimensions.height, `${file.name} preview`);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(bitmap.source, 0, 0, dimensions.width, dimensions.height);
+    const frame = context.getImageData(0, 0, dimensions.width, dimensions.height);
+    const stats = applyBackgroundRemovalPixels(frame.data, dimensions.width, dimensions.height, options.cleanup ?? options.edgeQuality, options.background);
+    context.putImageData(frame, 0, 0);
+    const blob = await canvasToBlob(canvas, "image/png");
+    assertOutputSize(blob.size, `${file.name} preview`, limits.maxOutputBytes);
+    return {
+      blob,
+      ...stats,
+      sourceWidth: bitmap.width,
+      sourceHeight: bitmap.height,
+      previewWidth: dimensions.width,
+      previewHeight: dimensions.height,
+      previewScale: dimensions.scale,
+    };
+  } finally {
+    bitmap.close?.();
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+  }
 }
 
 async function jpgsToAnimatedGif(files, options, report) {
@@ -632,6 +655,22 @@ export async function processImageTool(slug, files, options = {}, report) {
         scale: outcomes[0].scale,
         pixelMultiplier: outcomes[0].pixelMultiplier,
         outputPixelsTotal: outcomes.reduce((sum, outcome) => sum + outcome.outputPixels, 0),
+      },
+    }];
+  }
+  if (slug === "remove-background" && results.length > 1 && finalResults.length === 1) {
+    const outcomes = results.map((result) => result.backgroundRemovalOutcome).filter(Boolean);
+    if (outcomes.length !== results.length) {
+      throw new FileLimitError("invalid-background-outcome", "The background-removal batch did not report complete output details. No result was kept; choose the images again and retry.");
+    }
+    return [{
+      ...finalResults[0],
+      backgroundRemovalBatchOutcome: {
+        fileCount: results.length,
+        cleanup: outcomes[0].cleanup,
+        background: outcomes[0].background,
+        removedPercentMinimum: Math.min(...outcomes.map((outcome) => outcome.removedPercent)),
+        removedPercentMaximum: Math.max(...outcomes.map((outcome) => outcome.removedPercent)),
       },
     }];
   }
