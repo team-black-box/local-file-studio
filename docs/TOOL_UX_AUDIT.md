@@ -59,7 +59,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Translate PDF | Visual language choice and copyable reader | Keep; improve model/glossary status clarity |
 | PDF to Markdown | Copyable text/preview tabs | Keep |
 | Compress Image | Visual quality presets, exact fine-tuning, real first-image before/after encoding preview, byte delta, honest PNG behavior, checked-sample reuse, and actual result/ZIP size feedback | Keep; continue mixed-format batch, transparency, metadata, mobile, and boundary QA |
-| Resize Image | Raw width number | Add width presets and stepper now; show original → target dimensions next |
+| Resize Image | Friendly width presets, exact stepper, first-image proportional preview, exact original → target dimensions, batch explanation, central output validation, and matching result feedback | Keep; continue mixed-orientation batch, enlargement, mobile, and boundary QA |
 | Crop Image | Aspect-ratio dropdown | Use visual ratio cards and add draggable crop preview |
 | Convert Image | Strong visual format choices and quality feedback | Keep |
 | JPG to GIF | Previously used hidden timing defaults | Expose timing and looping now; add animation preview next |

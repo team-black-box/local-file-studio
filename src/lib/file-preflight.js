@@ -8,6 +8,7 @@ import {
   assertMarkupLength,
   assertRasterDimensions,
   formatLimitBytes,
+  getProportionalResizeDimensions,
   getPdfOverlayImagePolicy,
   getToolLimits,
   validatePreflightMetadata,
@@ -411,7 +412,20 @@ export async function preflightToolFiles(tool, files, options = {}, report) {
     if (limits.maxArchiveEntries) await inspectOfficeArchive(file, tool, limits);
   }
 
-  return { limits, metadata, ...validatePreflightMetadata(tool, metadata) };
+  const totals = validatePreflightMetadata(tool, metadata);
+  const outputMetadata = tool.slug === "resize-image"
+    ? metadata.map((item) => {
+      const output = getProportionalResizeDimensions(
+        item.width,
+        item.height,
+        options.width ?? item.width,
+        limits,
+        `${item.name} after resizing`,
+      );
+      return { ...item, outputWidth: output.width, outputHeight: output.height };
+    })
+    : metadata;
+  return { limits, metadata: outputMetadata, ...totals };
 }
 
 export function toFriendlyResourceError(error, toolName = "This tool") {

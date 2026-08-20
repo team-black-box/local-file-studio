@@ -79,7 +79,7 @@ import { categories, categoryById, rankToolSearchResults, tools } from "./tools.
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createPdfJpgOutputPlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
-import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
+import { MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
@@ -3003,6 +3003,40 @@ function ImageCompressionResultSummary({ files, result }) {
   );
 }
 
+function ImageResizeResultSummary({ result }) {
+  const batch = result?.imageResizeBatchOutcome;
+  const outcome = result?.imageResizeOutcome;
+  if (!batch && !outcome) return null;
+
+  if (batch) {
+    const changes = [
+      batch.downsizedFiles ? `${batch.downsizedFiles.toLocaleString()} smaller` : "",
+      batch.enlargedFiles ? `${batch.enlargedFiles.toLocaleString()} enlarged` : "",
+      batch.unchangedFiles ? `${batch.unchangedFiles.toLocaleString()} unchanged` : "",
+    ].filter(Boolean).join(" · ");
+    return (
+      <div className="image-resize-result-summary" role="status" aria-live="polite">
+        <span><ResizeIcon size={23} weight="duotone" aria-hidden="true" /></span>
+        <div><strong>{batch.fileCount.toLocaleString()} images resized</strong><small>{batch.targetWidth.toLocaleString()} px wide · proportional heights · {changes}</small></div>
+        <b>{formatBytes(result.size)} ZIP</b>
+      </div>
+    );
+  }
+
+  const direction = outcome.direction === "downsize"
+    ? `Downsized to ${outcome.scalePercent.toLocaleString()}%`
+    : outcome.direction === "enlarge"
+      ? `Enlarged to ${outcome.scalePercent.toLocaleString()}%`
+      : "Dimensions unchanged";
+  return (
+    <div className="image-resize-result-summary" role="status" aria-live="polite">
+      <span><ResizeIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.sourceWidth.toLocaleString()} × {outcome.sourceHeight.toLocaleString()} <ArrowRightIcon size={15} aria-hidden="true" /> {outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px</strong><small>{direction} · proportions preserved</small></div>
+      <b>{formatBytes(result.size)}</b>
+    </div>
+  );
+}
+
 function ImagePdfResultSummary({ result }) {
   const outcome = result?.scanOutcome || result?.imagePdfOutcome;
   if (!outcome) return null;
@@ -3937,6 +3971,148 @@ function ImageCompressionControls({ files, setting, value, onChange, preview }) 
   );
 }
 
+function useImageResizeInspection(files, enabled, tool) {
+  const [inspection, setInspection] = useState({ state: "idle", file: null, files: null, metadata: [], sourceUrl: "", message: "" });
+
+  useEffect(() => {
+    if (!enabled || !files.length) {
+      setInspection({ state: "idle", file: null, files: null, metadata: [], sourceUrl: "", message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let sourceUrl = "";
+    setInspection({ state: "loading", file: files[0], files, metadata: [], sourceUrl: "", message: "" });
+    (async () => {
+      const checked = await preflightToolFiles(tool, files, { width: 1 });
+      sourceUrl = URL.createObjectURL(files[0]);
+      if (cancelled) {
+        URL.revokeObjectURL(sourceUrl);
+        sourceUrl = "";
+        return;
+      }
+      setInspection({ state: "ready", file: files[0], files, metadata: checked.metadata, sourceUrl, message: "" });
+    })().catch((error) => {
+      if (sourceUrl) {
+        URL.revokeObjectURL(sourceUrl);
+        sourceUrl = "";
+      }
+      if (!cancelled) {
+        setInspection({ state: "error", file: files[0], files, metadata: [], sourceUrl: "", message: toFriendlyResourceError(error, "Resize Image")?.message || "These images could not be inspected safely." });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    };
+  }, [enabled, files, tool]);
+
+  return inspection;
+}
+
+function createImageResizePlan(inspection, width, limits) {
+  if (inspection.state !== "ready") return { state: inspection.state, message: inspection.message || "", plans: [], first: null };
+  try {
+    const plans = inspection.metadata.map((item) => {
+      const output = getProportionalResizeDimensions(item.width, item.height, width, limits, `${item.name} after resizing`);
+      return {
+        ...item,
+        outputWidth: output.width,
+        outputHeight: output.height,
+        scalePercent: Math.round((output.width / item.width) * 100),
+        direction: output.width < item.width ? "downsize" : output.width > item.width ? "enlarge" : "unchanged",
+      };
+    });
+    return { state: "ready", message: "", plans, first: plans[0] || null };
+  } catch (error) {
+    return { state: "error", message: toFriendlyResourceError(error, "Resize Image")?.message || "Choose a smaller output width.", plans: [], first: null };
+  }
+}
+
+const resizePresetIcons = [ArrowsInIcon, BrowserIcon, ImageSquareIcon, ArrowsOutIcon];
+
+function ImageResizeControls({ files, setting, value, onChange, inspection, plan, limits }) {
+  const numericValue = Number(value);
+  const current = Number.isFinite(numericValue) ? numericValue : Number(setting.default || 1920);
+  const step = Number(setting.step || 10);
+  const changeBy = (direction) => onChange(Math.min(limits.maxOutputEdge, Math.max(1, current + (step * direction))));
+  const first = plan.first;
+  const batch = files.length > 1;
+  const directionLabel = first?.direction === "downsize"
+    ? `Downsize to ${first.scalePercent.toLocaleString()}%`
+    : first?.direction === "enlarge"
+      ? `Enlarge to ${first.scalePercent.toLocaleString()}%`
+      : "Keep the current width";
+
+  return (
+    <section className="image-resize-controls" aria-labelledby="image-resize-width-title">
+      <fieldset>
+        <legend id="image-resize-width-title">Choose the new width</legend>
+        <p>Pick a useful starting size or enter the exact pixel width. Height always follows automatically.</p>
+        <div className="image-resize-presets">
+          {setting.presets.map((preset, index) => {
+            const PresetIcon = resizePresetIcons[index] || ResizeIcon;
+            const selected = Number(preset.value) === Number(value);
+            return (
+              <button type="button" key={preset.value} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange(preset.value)}>
+                <span><PresetIcon size={18} weight="duotone" aria-hidden="true" /></span>
+                <strong>{preset.label}</strong>
+                <small>{preset.value.toLocaleString()} px</small>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <div className="image-resize-exact-setting">
+        <label htmlFor="image-resize-width"><strong>Exact width</strong><small>1–{limits.maxOutputEdge.toLocaleString()} px, subject to the {Math.round(limits.maxOutputPixels / 1_000_000)} MP output safeguard</small></label>
+        <div className="number-stepper">
+          <button type="button" onClick={() => changeBy(-1)} disabled={current <= 1} aria-label="Decrease resize width">−</button>
+          <div className="input-with-suffix">
+            <input id="image-resize-width" type="number" inputMode="numeric" min="1" max={limits.maxOutputEdge} step={step} value={value} aria-describedby="image-resize-width-note" onChange={(event) => onChange(event.target.value)} />
+            <span>px</span>
+          </div>
+          <button type="button" onClick={() => changeBy(1)} disabled={current >= limits.maxOutputEdge} aria-label="Increase resize width">+</button>
+        </div>
+      </div>
+
+      <div className="image-resize-preview" aria-live="polite">
+        <div className="image-resize-preview-heading">
+          <span><strong>Proportional preview</strong><small>{files[0] ? batch ? `${files[0].name}, first of ${files.length.toLocaleString()} images` : files[0].name : "Add an image to see its exact target size"}</small></span>
+          <ResizeIcon size={18} weight="duotone" aria-hidden="true" />
+        </div>
+        {plan.state === "ready" && first ? (
+          <>
+            <figure className="image-resize-preview-figure">
+              <div><img src={inspection.sourceUrl} alt={`Proportional resize preview of ${files[0].name}`} /></div>
+              <figcaption>Preview uses the original image; the export is re-rendered at the target pixels below.</figcaption>
+            </figure>
+            <div className="image-resize-dimensions" aria-label={`Original ${first.width} by ${first.height} pixels. Target ${first.outputWidth} by ${first.outputHeight} pixels.`}>
+              <span><small>Original</small><strong>{first.width.toLocaleString()} × {first.height.toLocaleString()}</strong><b>px</b></span>
+              <ArrowRightIcon size={17} aria-hidden="true" />
+              <span><small>Target</small><strong>{first.outputWidth.toLocaleString()} × {first.outputHeight.toLocaleString()}</strong><b>px</b></span>
+            </div>
+            <div className={`image-resize-direction ${first.direction}`}>
+              {first.direction === "downsize" ? <ArrowsInIcon size={18} weight="duotone" aria-hidden="true" /> : first.direction === "enlarge" ? <ArrowsOutIcon size={18} weight="duotone" aria-hidden="true" /> : <ResizeIcon size={18} weight="duotone" aria-hidden="true" />}
+              <span><strong>{directionLabel}</strong><small>{first.direction === "enlarge" ? "Pixel dimensions increase, but resizing cannot invent missing detail." : "The aspect ratio stays locked, so the image will not stretch."}</small></span>
+            </div>
+          </>
+        ) : plan.state === "loading" ? (
+          <div className="image-resize-preview-state" role="status"><SpinnerGapIcon size={19} className="spin" aria-hidden="true" /><span><strong>Reading image dimensions locally…</strong><small>No file data leaves this browser.</small></span></div>
+        ) : plan.state === "error" ? (
+          <div className="image-resize-preview-state error" role="alert"><WarningCircleIcon size={19} weight="fill" aria-hidden="true" /><span><strong>This width will not fit safely</strong><small>{plan.message}</small></span></div>
+        ) : (
+          <div className="image-resize-preview-state"><ImageSquareIcon size={20} weight="duotone" aria-hidden="true" /><span><strong>No image selected</strong><small>The original and target dimensions will appear here.</small></span></div>
+        )}
+      </div>
+
+      {batch && plan.state === "ready" && <p className="image-resize-batch-note"><StackIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>One width, proportional heights.</strong> All {files.length.toLocaleString()} images will be {first.outputWidth.toLocaleString()} px wide; each keeps its own shape.</span></p>}
+      <p id="image-resize-width-note" className="image-resize-format-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span>The original files stay untouched. Output keeps each image’s format; JPG/WebP use balanced local re-encoding and PNG stays lossless.</span></p>
+    </section>
+  );
+}
+
 function ImageFormatControls({ settings, onChange, support }) {
   const format = settings.format || "webp";
   const lossy = format === "webp" || format === "jpg";
@@ -4265,7 +4441,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -4297,6 +4473,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
   const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits, tool.output[0]?.slice(1));
   const imageCompressionPreview = useImageCompressionPreview(files[0], settings.quality, tool.slug === "compress-image", tool);
+  const imageResizeInspection = useImageResizeInspection(files, tool.slug === "resize-image", tool);
+  const imageResizePlan = createImageResizePlan(imageResizeInspection, settings.width, limits);
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
     : compressionEstimate;
@@ -4465,12 +4643,13 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const pdfJpgReady = tool.slug !== "pdf-to-jpg" || !hasRequiredInput || Boolean(pdfJpgPlan);
   const archiveRewriteReady = tool.slug !== "pdf-to-pdfa" || !hasRequiredInput || pageInfo.state === "ready";
   const imageCompressionReady = tool.slug !== "compress-image" || !hasRequiredInput || imageCompressionPreviewMatches;
+  const imageResizeReady = tool.slug !== "resize-image" || !hasRequiredInput || (imageResizeInspection.files === files && imageResizePlan.state === "ready");
   const pdfOfficeTextReady = !usesPdfOfficeTextPreview || !hasRequiredInput || (pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]);
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -4504,6 +4683,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Encoding the representative image sample locally."
     : tool.slug === "compress-image" && imageCompressionPreview.file === files[0] && imageCompressionPreview.state === "error"
       ? imageCompressionPreview.message
+    : tool.slug === "resize-image" && imageResizeInspection.files === files && imageResizePlan.state === "loading"
+      ? "Reading the image dimensions locally."
+    : tool.slug === "resize-image" && imageResizeInspection.files === files && imageResizePlan.state === "error"
+      ? imageResizePlan.message
     : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "loading"
       ? "Reading selectable text from every PDF page locally."
     : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "error"
@@ -4606,6 +4789,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? `Rewrite ${pageInfo.pageCount.toLocaleString()}-page PDF`
     : tool.slug === "compress-image" && hasRequiredInput
       ? files.length === 1 ? "Compress image" : `Compress ${files.length.toLocaleString()} images`
+    : tool.slug === "resize-image" && hasRequiredInput && imageResizePlan.state === "ready"
+      ? files.length === 1
+        ? `Resize to ${imageResizePlan.first.outputWidth.toLocaleString()} px`
+        : `Resize ${files.length.toLocaleString()} images to ${imageResizePlan.first.outputWidth.toLocaleString()} px`
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -4659,7 +4846,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -4673,7 +4860,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -4772,6 +4959,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                   <CompressionResultSummary inputSize={files[0].size} result={results[0]} />
                 )}
                 {tool.slug === "compress-image" && <ImageCompressionResultSummary files={files} result={results[0]} />}
+                {tool.slug === "resize-image" && <ImageResizeResultSummary result={results[0]} />}
                 {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && <ImagePdfResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {tool.slug === "pdf-to-pdfa" && <ArchivePdfResultSummary result={results[0]} />}
@@ -4799,7 +4987,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -4824,6 +5012,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
             ) : tool.slug === "compress-image" ? (
               <ImageCompressionControls files={files} setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} preview={imageCompressionPreview} />
+            ) : tool.slug === "resize-image" ? (
+              <ImageResizeControls files={files} setting={settingsList.find((setting) => setting.key === "width")} value={settings.width} onChange={(value) => updateSetting("width", value)} inspection={imageResizeInspection} plan={imageResizePlan} limits={limits} />
             ) : tool.slug === "pdf-to-jpg" ? (
               <PdfJpgControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} info={pageInfo} limits={limits} />
             ) : tool.slug === "pdf-to-word" ? (
@@ -4923,6 +5113,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "compress-image" && imageCompressionPreviewMatches && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{imageCompressionPreview.result.imageCompressionOutcome.status === "reduced" ? `${Math.round(Math.abs(imageCompressionPreview.result.imageCompressionOutcome.percent)).toLocaleString()}% smaller sample` : "Sample does not get smaller"}</strong>
+              )}
+              {tool.slug === "resize-image" && imageResizePlan.state === "ready" && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{files.length.toLocaleString()} {files.length === 1 ? "image" : "images"} · {imageResizePlan.first.outputWidth.toLocaleString()} px wide</strong>
               )}
               {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
