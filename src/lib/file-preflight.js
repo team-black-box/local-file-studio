@@ -8,6 +8,7 @@ import {
   assertMarkupLength,
   assertRasterDimensions,
   formatLimitBytes,
+  getImageCropPlan,
   getProportionalResizeDimensions,
   getPdfOverlayImagePolicy,
   getToolLimits,
@@ -424,7 +425,21 @@ export async function preflightToolFiles(tool, files, options = {}, report) {
       );
       return { ...item, outputWidth: output.width, outputHeight: output.height };
     })
-    : metadata;
+    : tool.slug === "crop-image"
+      ? metadata.map((item) => {
+        const output = getImageCropPlan(
+          item.width,
+          item.height,
+          options.aspectRatio ?? options.aspect ?? "free",
+          options.cropScale ?? 100,
+          options.focusX ?? 50,
+          options.focusY ?? 50,
+          limits,
+          `${item.name} after cropping`,
+        );
+        return { ...item, outputWidth: output.width, outputHeight: output.height, cropX: output.x, cropY: output.y };
+      })
+      : metadata;
   return { limits, metadata: outputMetadata, ...totals };
 }
 

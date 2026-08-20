@@ -60,7 +60,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | PDF to Markdown | Copyable text/preview tabs | Keep |
 | Compress Image | Visual quality presets, exact fine-tuning, real first-image before/after encoding preview, byte delta, honest PNG behavior, checked-sample reuse, and actual result/ZIP size feedback | Keep; continue mixed-format batch, transparency, metadata, mobile, and boundary QA |
 | Resize Image | Friendly width presets, exact stepper, first-image proportional preview, exact original → target dimensions, batch explanation, central output validation, and matching result feedback | Keep; continue mixed-orientation batch, enlargement, mobile, and boundary QA |
-| Crop Image | Aspect-ratio dropdown | Use visual ratio cards and add draggable crop preview |
+| Crop Image | Visual ratio cards, real first-image preview, draggable and keyboard-movable crop frame, bounded crop amount, reset, exact dimensions, retained-pixel feedback, and matching batch/result summaries | Keep; continue mixed-orientation batch, touch, keyboard, mobile, and boundary QA |
 | Convert Image | Strong visual format choices and quality feedback | Keep |
 | JPG to GIF | Previously used hidden timing defaults | Expose timing and looping now; add animation preview next |
 | Photo Editor | Previously used hidden neutral defaults | Expose adjustments/caption now; add live image canvas next |

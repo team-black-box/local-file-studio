@@ -9,6 +9,8 @@ import {
   ARCHIVE_ITEM_LIMIT_BYTES,
   FileLimitError,
   GLOBAL_OUTPUT_LIMIT_BYTES,
+  IMAGE_CROP_SCALE_MAX_PERCENT,
+  IMAGE_CROP_SCALE_MIN_PERCENT,
   MAX_GENERATED_RESULTS,
   MAX_PDF_PASSWORD_CHARACTERS,
   PDF_PREVIEW_LIMITS,
@@ -32,6 +34,7 @@ import {
   assertTextSettingLengths,
   countLogicalLines,
   describeToolLimits,
+  getImageCropPlan,
   getProportionalResizeDimensions,
   getTextSettingLimit,
   getToolLimits,
@@ -591,6 +594,41 @@ test("Resize Image preflight exposes exact target dimensions before processing",
   await assert.rejects(
     preflightToolFiles(resize, [image], { width: 8192 }),
     (error) => error instanceof FileLimitError && error.code === "output-dimensions-too-large",
+  );
+});
+
+test("Crop Image derives an exact movable crop from the central output policy", () => {
+  assert.equal(IMAGE_CROP_SCALE_MIN_PERCENT, 40);
+  assert.equal(IMAGE_CROP_SCALE_MAX_PERCENT, 100);
+  assert.deepEqual(
+    getImageCropPlan(1200, 630, "1:1", 100, 50, 50, "crop-image", "fixture.jpg after cropping"),
+    { x: 285, y: 0, width: 630, height: 630, sourceWidth: 1200, sourceHeight: 630, aspectRatio: "1:1", cropScale: 100, focusX: 50, focusY: 50, retainedPercent: 53 },
+  );
+  assert.deepEqual(
+    getImageCropPlan(1200, 630, "1:1", 80, 0, 100, "crop-image", "fixture.jpg after cropping"),
+    { x: 0, y: 126, width: 504, height: 504, sourceWidth: 1200, sourceHeight: 630, aspectRatio: "1:1", cropScale: 80, focusX: 0, focusY: 100, retainedPercent: 34 },
+  );
+  const wide = getImageCropPlan(1200, 630, "16:9", 100, 100, 50, "crop-image", "fixture.jpg after cropping");
+  assert.deepEqual({ x: wide.x, y: wide.y, width: wide.width, height: wide.height, retainedPercent: wide.retainedPercent }, { x: 80, y: 0, width: 1120, height: 630, retainedPercent: 93 });
+  assert.throws(
+    () => getImageCropPlan(1200, 630, "1:1", 39, 50, 50, "crop-image", "fixture.jpg after cropping"),
+    (error) => error instanceof FileLimitError && error.code === "invalid-crop-settings",
+  );
+  assert.throws(
+    () => getImageCropPlan(1200, 630, "1:1", 100, -1, 50, "crop-image", "fixture.jpg after cropping"),
+    (error) => error instanceof FileLimitError && error.code === "invalid-crop-settings",
+  );
+});
+
+test("Crop Image preflight exposes the exact source rectangle before processing", async () => {
+  const crop = tools.find(({ slug }) => slug === "crop-image");
+  const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const image = new File([onePixelPng], "pixel.png", { type: "image/png" });
+  const inspected = await preflightToolFiles(crop, [image], { aspectRatio: "1:1", cropScale: 100, focusX: 50, focusY: 50 });
+  assert.deepEqual(inspected.metadata, [{ name: "pixel.png", width: 1, height: 1, format: "png", animated: false, outputWidth: 1, outputHeight: 1, cropX: 0, cropY: 0 }]);
+  await assert.rejects(
+    preflightToolFiles(crop, [image], { aspectRatio: "1:1", cropScale: 101, focusX: 50, focusY: 50 }),
+    (error) => error instanceof FileLimitError && error.code === "invalid-crop-settings",
   );
 });
 
