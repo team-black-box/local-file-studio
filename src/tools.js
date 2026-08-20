@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
-import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS } from "./lib/file-limits.js";
+import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS, IMAGE_UPSCALE_SCALES, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS } from "./lib/file-limits.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -1134,10 +1134,10 @@ export const tools = withPhosphorExports([
         key: "scale",
         type: "select",
         label: "Scale",
-        default: 2,
+        default: IMAGE_UPSCALE_SCALES[0],
         options: [
-          { value: 2, label: "2×", hint: "A practical size increase." },
-          { value: 4, label: "4×", hint: "Much larger and slower." },
+          { value: IMAGE_UPSCALE_SCALES[0], label: "2×", hint: "A practical size increase." },
+          { value: IMAGE_UPSCALE_SCALES[1], label: "4×", hint: "Much larger and slower." },
         ],
       },
     ],

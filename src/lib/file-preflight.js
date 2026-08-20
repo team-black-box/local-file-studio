@@ -9,6 +9,7 @@ import {
   assertRasterDimensions,
   formatLimitBytes,
   getImageCropPlan,
+  getImageUpscalePlan,
   getProportionalResizeDimensions,
   getPdfOverlayImagePolicy,
   getToolLimits,
@@ -425,6 +426,17 @@ export async function preflightToolFiles(tool, files, options = {}, report) {
       );
       return { ...item, outputWidth: output.width, outputHeight: output.height };
     })
+    : tool.slug === "upscale-image"
+      ? metadata.map((item) => {
+        const output = getImageUpscalePlan(
+          item.width,
+          item.height,
+          options.scale,
+          limits,
+          `${item.name} after upscaling`,
+        );
+        return { ...item, outputWidth: output.width, outputHeight: output.height, scale: output.scale, outputPixels: output.outputPixels };
+      })
     : tool.slug === "crop-image"
       ? metadata.map((item) => {
         const output = getImageCropPlan(
