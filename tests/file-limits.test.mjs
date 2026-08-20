@@ -61,6 +61,7 @@ import { preflightToolFiles } from "../src/lib/file-preflight.js";
 import { getTiffDimensions } from "../src/lib/tiff-utils.js";
 import { clearSensitiveToolSettings } from "../src/lib/tool-settings.js";
 import { rankToolSearchResults, tools } from "../src/tools.js";
+import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "../src/lib/image-watermark.js";
 
 const MiB = 1024 * 1024;
 
@@ -705,6 +706,35 @@ test("Remove Background uses one catalog contract and a bounded interactive prev
     () => getInteractiveImagePreviewDimensions(400, 400, "compress-image"),
     (error) => error instanceof FileLimitError && error.code === "missing-preview-limits",
   );
+});
+
+test("Watermark Image uses one catalog contract and a bounded live preview", () => {
+  const watermark = tools.find(({ slug }) => slug === "watermark-image");
+  const settings = Object.fromEntries(watermark.settings.map((setting) => [setting.key, setting]));
+  const limits = getToolLimits(watermark);
+
+  assert.equal(settings.text.default, "© My work");
+  assert.equal(settings.position.default, "bottom-right");
+  assert.deepEqual(settings.position.options.map(({ value }) => value), IMAGE_WATERMARK_POSITIONS.map(({ value }) => value));
+  assert.equal(settings.angle.default, -24);
+  assert.deepEqual(settings.angle.options.map(({ value }) => value), IMAGE_WATERMARK_ANGLES.map(({ value }) => value));
+  assert.equal(settings.color.default, "#ffffff");
+  assert.deepEqual(settings.color.options.map(({ value }) => value), IMAGE_WATERMARK_COLORS.map(({ value }) => value));
+  assert.deepEqual({ min: settings.opacity.min, max: settings.opacity.max, step: settings.opacity.step, default: settings.opacity.default }, {
+    min: IMAGE_WATERMARK_OPACITY_MIN,
+    max: IMAGE_WATERMARK_OPACITY_MAX,
+    step: 5,
+    default: 45,
+  });
+  assert.equal(limits.maxInteractivePreviewPixels, 1_500_000);
+  assert.equal(limits.maxInteractivePreviewEdge, 1600);
+  assert.deepEqual(getInteractiveImagePreviewDimensions(6000, 4000, watermark), {
+    sourceWidth: 6000,
+    sourceHeight: 4000,
+    width: 1500,
+    height: 1000,
+    scale: 0.25,
+  });
 });
 
 test("Crop Image derives an exact movable crop from the central output policy", () => {

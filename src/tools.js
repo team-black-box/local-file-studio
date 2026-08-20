@@ -3,6 +3,7 @@
 
 import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS, IMAGE_UPSCALE_SCALES, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS } from "./lib/file-limits.js";
 import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES } from "./lib/background-removal.js";
+import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "./lib/image-watermark.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -1200,21 +1201,29 @@ export const tools = withPhosphorExports([
         default: "bottom-right",
         compactChoices: true,
         choiceColumns: 3,
-        options: [
-          { value: "center", label: "Center" },
-          { value: "top-left", label: "Top left" },
-          { value: "top-right", label: "Top right" },
-          { value: "bottom-left", label: "Bottom left" },
-          { value: "bottom-right", label: "Bottom right" },
-        ],
+        options: IMAGE_WATERMARK_POSITIONS.map(({ value, label, hint }) => ({ value, label, hint })),
+      },
+      {
+        key: "angle",
+        type: "select",
+        label: "Direction",
+        default: IMAGE_WATERMARK_ANGLES[0].value,
+        options: IMAGE_WATERMARK_ANGLES.map(({ value, label, hint }) => ({ value, label, hint })),
+      },
+      {
+        key: "color",
+        type: "select",
+        label: "Text color",
+        default: IMAGE_WATERMARK_COLORS[0].value,
+        options: IMAGE_WATERMARK_COLORS.map(({ value, label, hint }) => ({ value, label, hint })),
       },
       {
         key: "opacity",
         type: "range",
         label: "Opacity",
         default: 45,
-        min: 5,
-        max: 100,
+        min: IMAGE_WATERMARK_OPACITY_MIN,
+        max: IMAGE_WATERMARK_OPACITY_MAX,
         step: 5,
         suffix: "%",
         minLabel: "Subtle",

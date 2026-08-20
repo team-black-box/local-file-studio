@@ -4,6 +4,7 @@
 import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
 import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getInteractiveImagePreviewDimensions, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
 import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./background-removal.js";
+import { createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "./image-watermark.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -237,6 +238,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   let imageCropOutcome = null;
   let imageUpscaleOutcome = null;
   let backgroundRemovalOutcome = null;
+  let imageWatermarkPlan = null;
   let photoEditorPlan = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
@@ -355,21 +357,8 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       context.filter = "none";
 
       if (slug === "watermark-image") {
-        const text = String(options.text || "Local File Studio");
-        const size = Math.max(18, Math.round(Math.min(canvas.width, canvas.height) * 0.06));
-        context.save();
-        context.globalAlpha = Number(options.opacity || 35) / 100;
-        context.font = `700 ${size}px Manrope, Arial, sans-serif`;
-        const position = options.position || "center";
-        const padding = size * 0.7;
-        const x = position.includes("left") ? padding : position.includes("right") ? canvas.width - padding : canvas.width / 2;
-        const y = position.includes("top") ? padding : position.includes("bottom") ? canvas.height - padding : canvas.height / 2;
-        context.textAlign = position.includes("left") ? "left" : position.includes("right") ? "right" : "center";
-        context.fillStyle = options.color || "#ffffff";
-        context.translate(x, y);
-        context.rotate((Number(options.angle || -24) * Math.PI) / 180);
-        context.fillText(text, 0, 0, canvas.width * 0.86);
-        context.restore();
+        imageWatermarkPlan = getImageWatermarkPlan(canvas.width, canvas.height, options, limits, `${file.name} watermark`);
+        drawImageWatermark(context, imageWatermarkPlan);
       }
 
       if (slug === "meme-generator") {
@@ -420,6 +409,12 @@ async function renderOne(slug, file, options, report, pixelBudget) {
           details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${getBackgroundRemovalProfile(backgroundRemovalOutcome.cleanup).label} cleanup · ${getBackgroundRemovalBackground(backgroundRemovalOutcome.background).label} background`,
           backgroundRemovalOutcome: createBackgroundRemovalOutcome(backgroundRemovalOutcome, canvas.width, canvas.height, blob.size),
         }
+      : slug === "watermark-image"
+        ? {
+          ...result,
+          details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${imageWatermarkPlan.opacity}% · ${imageWatermarkPlan.position.replace("-", " ")}`,
+          imageWatermarkOutcome: createImageWatermarkOutcome(imageWatermarkPlan, config.ext, blob.size),
+        }
       : slug === "photo-editor"
         ? {
           ...result,
@@ -460,6 +455,37 @@ export async function createBackgroundRemovalPreview(file, options = {}) {
     return {
       blob,
       ...stats,
+      sourceWidth: bitmap.width,
+      sourceHeight: bitmap.height,
+      previewWidth: dimensions.width,
+      previewHeight: dimensions.height,
+      previewScale: dimensions.scale,
+    };
+  } finally {
+    bitmap.close?.();
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+  }
+}
+
+export async function createImageWatermarkPreview(file, options = {}) {
+  const limits = getToolLimits("watermark-image");
+  const bitmap = await fileToBitmap(file, limits);
+  let canvas;
+  try {
+    const dimensions = getInteractiveImagePreviewDimensions(bitmap.width, bitmap.height, limits, `${file.name} preview`);
+    canvas = makeCanvas(dimensions.width, dimensions.height, `${file.name} preview`);
+    const context = canvas.getContext("2d");
+    context.drawImage(bitmap.source, 0, 0, dimensions.width, dimensions.height);
+    const plan = getImageWatermarkPlan(dimensions.width, dimensions.height, options, limits, `${file.name} watermark preview`);
+    drawImageWatermark(context, plan);
+    const blob = await canvasToBlob(canvas, "image/png");
+    assertOutputSize(blob.size, `${file.name} preview`, limits.maxOutputBytes);
+    return {
+      blob,
+      ...plan,
       sourceWidth: bitmap.width,
       sourceHeight: bitmap.height,
       previewWidth: dimensions.width,
@@ -671,6 +697,24 @@ export async function processImageTool(slug, files, options = {}, report) {
         background: outcomes[0].background,
         removedPercentMinimum: Math.min(...outcomes.map((outcome) => outcome.removedPercent)),
         removedPercentMaximum: Math.max(...outcomes.map((outcome) => outcome.removedPercent)),
+      },
+    }];
+  }
+  if (slug === "watermark-image" && results.length > 1 && finalResults.length === 1) {
+    const outcomes = results.map((result) => result.imageWatermarkOutcome).filter(Boolean);
+    if (outcomes.length !== results.length) {
+      throw new FileLimitError("invalid-watermark-outcome", "The watermark batch did not report complete output details. No result was kept; choose the images again and retry.");
+    }
+    return [{
+      ...finalResults[0],
+      imageWatermarkBatchOutcome: {
+        fileCount: results.length,
+        textLength: outcomes[0].textLength,
+        position: outcomes[0].position,
+        opacity: outcomes[0].opacity,
+        angle: outcomes[0].angle,
+        color: outcomes[0].color,
+        formats: [...new Set(outcomes.map((outcome) => outcome.format))].sort(),
       },
     }];
   }
