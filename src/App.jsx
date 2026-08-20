@@ -3313,12 +3313,60 @@ function RepairPdfControls() {
   );
 }
 
+function ArchivePdfControls({ file, info }) {
+  const pageLabel = info.state === "ready"
+    ? `${info.pageCount.toLocaleString()} ${info.pageCount === 1 ? "page" : "pages"} will be rewritten`
+    : info.state === "loading"
+      ? "Reading the PDF page count locally…"
+      : info.state === "error"
+        ? info.message
+        : "Choose one PDF to see the rewrite plan.";
+
+  return (
+    <section className="archive-rewrite-plan" aria-labelledby="archive-rewrite-title">
+      <header>
+        <span><ArchiveIcon size={19} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="archive-rewrite-title">Create an archive-friendly copy</strong><small>Your original PDF is never changed.</small></div>
+      </header>
+
+      <div className={`archive-rewrite-status ${info.state}`} role={info.state === "error" ? "alert" : "status"} aria-live="polite">
+        {info.state === "loading"
+          ? <SpinnerGapIcon size={17} className="spin" aria-hidden="true" />
+          : info.state === "error"
+            ? <WarningCircleIcon size={17} weight="fill" aria-hidden="true" />
+            : <FilePdfIcon size={17} weight="duotone" aria-hidden="true" />}
+        <span><strong>{file?.name || "Archive rewrite plan"}</strong><small>{pageLabel}</small></span>
+      </div>
+
+      <ul>
+        <li><CheckCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Fresh PDF structure</strong><small>The document is saved as a new, compatibility-oriented PDF with object streams disabled.</small></span></li>
+        <li><CheckCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Updated standard metadata</strong><small>Creator, producer, and document dates are refreshed for the new copy.</small></span></li>
+        <li><CheckCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Pages stay in order</strong><small>The rewrite does not intentionally change the document’s page content or sequence.</small></span></li>
+      </ul>
+
+      <p><WarningCircleIcon size={17} weight="fill" aria-hidden="true" /><span><strong>Not certified PDF/A.</strong> This tool does not validate conformance, embed missing fonts or color profiles, or add standards-required archival metadata. Use a certified validator when formal PDF/A compliance is required.</span></p>
+    </section>
+  );
+}
+
 function RepairResultSummary() {
   return (
     <div className="repair-result-summary" role="status">
       <span><ArrowClockwiseIcon size={23} weight="duotone" aria-hidden="true" /></span>
       <div><strong>Fresh PDF structure created</strong><small>The recoverable document was fully rewritten locally. Your original file is unchanged.</small></div>
       <p><EyeIcon size={16} aria-hidden="true" />Preview every important page before replacing the source; missing content cannot be reconstructed.</p>
+    </div>
+  );
+}
+
+function ArchivePdfResultSummary({ result }) {
+  const outcome = result?.archiveRewriteOutcome;
+  if (!outcome) return null;
+  return (
+    <div className="archive-result-summary" role="status">
+      <span><ArchiveIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>Archive-friendly copy created</strong><small>{outcome.pageCount.toLocaleString()} {outcome.pageCount === 1 ? "page" : "pages"} rewritten with refreshed standard metadata. Your original file is unchanged.</small></div>
+      <p><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Still not certified PDF/A.</strong> Preview the result, then use a certified validator if formal archival conformance is required.</span></p>
     </div>
   );
 }
@@ -4036,8 +4084,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
-  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
     if (tool.slug !== "pdf-to-jpg" || pageInfo.state !== "ready") return null;
@@ -4229,12 +4277,13 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
   const pdfJpgReady = tool.slug !== "pdf-to-jpg" || !hasRequiredInput || Boolean(pdfJpgPlan);
+  const archiveRewriteReady = tool.slug !== "pdf-to-pdfa" || !hasRequiredInput || pageInfo.state === "ready";
   const pdfOfficeTextReady = !usesPdfOfficeTextPreview || !hasRequiredInput || (pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]);
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -4259,6 +4308,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     : tool.slug === "pdf-to-jpg" && pageInfo.state === "loading"
       ? "Reading the PDF page count before JPG conversion."
     : tool.slug === "pdf-to-jpg" && pageInfo.state === "error"
+      ? pageInfo.message
+    : tool.slug === "pdf-to-pdfa" && pageInfo.state === "loading"
+      ? "Reading the PDF page count before the archive-friendly rewrite."
+    : tool.slug === "pdf-to-pdfa" && pageInfo.state === "error"
       ? pageInfo.message
     : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "loading"
       ? "Reading selectable text from every PDF page locally."
@@ -4352,6 +4405,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? `Create PPTX · ${pdfOfficeTextPreview.pageCount.toLocaleString()} ${pdfOfficeTextPreview.pageCount === 1 ? "slide" : "slides"}`
     : tool.slug === "pdf-to-excel" && pdfOfficeTextPreview.state === "ready"
       ? `Create XLSX · ${pdfOfficeTextPreview.pageCount.toLocaleString()} ${pdfOfficeTextPreview.pageCount === 1 ? "sheet" : "sheets"}`
+    : tool.slug === "pdf-to-pdfa" && pageInfo.state === "ready"
+      ? `Rewrite ${pageInfo.pageCount.toLocaleString()}-page PDF`
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -4519,6 +4574,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 )}
                 {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && <ImagePdfResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
+                {tool.slug === "pdf-to-pdfa" && <ArchivePdfResultSummary result={results[0]} />}
                 {tool.slug === "word-to-pdf" && <WordPdfResultSummary result={results[0]} />}
                 {usesPdfOfficeTextPreview && <PdfOfficeTextResultSummary result={results[0]} />}
                 {tool.slug === "powerpoint-to-pdf" && <PowerPointPdfResultSummary result={results[0]} />}
@@ -4543,7 +4599,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -4574,6 +4630,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <PdfOfficeTextControls file={files[0]} preview={pdfOfficeTextPreview} format="pptx" />
             ) : tool.slug === "pdf-to-excel" ? (
               <PdfOfficeTextControls file={files[0]} preview={pdfOfficeTextPreview} format="xlsx" />
+            ) : tool.slug === "pdf-to-pdfa" ? (
+              <ArchivePdfControls file={files[0]} info={pageInfo} />
             ) : tool.slug === "convert-image" ? (
               <ImageFormatControls settings={settings} onChange={updateSetting} support={imageEncoderSupport} />
             ) : tool.slug === "pdf-forms" ? (
@@ -4657,6 +4715,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "pdf-to-excel" && pdfOfficeTextPreview.state === "ready" && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{pdfOfficeTextPreview.pageCount.toLocaleString()} {pdfOfficeTextPreview.pageCount === 1 ? "sheet" : "sheets"} ready</strong>
+              )}
+              {tool.slug === "pdf-to-pdfa" && pageInfo.state === "ready" && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{pageInfo.pageCount.toLocaleString()} {pageInfo.pageCount === 1 ? "page" : "pages"} ready to rewrite</strong>
               )}
               {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>

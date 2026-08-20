@@ -1122,8 +1122,10 @@ async function fillForm(file, options) {
   )];
 }
 
-async function archiveNormalize(file, options) {
+async function archiveNormalize(file, report) {
+  report?.({ phase: "Reading PDF structure", progress: 0.18 });
   const pdf = await loadPdfLib(file);
+  const pageCount = pdf.getPageCount();
   pdf.setProducer("Local File Studio archival normalization");
   pdf.setCreator("Local File Studio");
   try {
@@ -1132,7 +1134,22 @@ async function archiveNormalize(file, options) {
     pdf.setCreationDate(new Date());
   }
   pdf.setModificationDate(new Date());
-  return [pdfResult(`${safeFileName(baseName(file.name))}-archive.pdf`, await pdf.save({ useObjectStreams: false }), "Archive-friendly rewrite; formal PDF/A conformance is not certified")];
+  report?.({ phase: "Rewriting PDF structure", progress: 0.68 });
+  const bytes = await pdf.save({ useObjectStreams: false });
+  report?.({ phase: "Finishing archive-friendly PDF", progress: 1 });
+  return [{
+    ...pdfResult(
+      `${safeFileName(baseName(file.name))}-archive.pdf`,
+      bytes,
+      `${pageCount.toLocaleString()} ${pageCount === 1 ? "page" : "pages"} · Archive-friendly rewrite · Not certified PDF/A`,
+    ),
+    archiveRewriteOutcome: {
+      pageCount,
+      certifiedPdfA: false,
+      objectStreams: false,
+      metadataRefreshed: true,
+    },
+  }];
 }
 
 export async function processPdfTool(slug, files, options = {}, report) {
@@ -1156,7 +1173,7 @@ export async function processPdfTool(slug, files, options = {}, report) {
   if (["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(slug)) return await officeToPdf(slug, files[0], options, report);
   if (slug === "pdf-to-jpg") return await pdfToImages(files[0], options, report);
   if (["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(slug)) return await pdfToOffice(slug, files[0], options, report);
-  if (slug === "pdf-to-pdfa") return await archiveNormalize(files[0], options);
+  if (slug === "pdf-to-pdfa") return await archiveNormalize(files[0], report);
   if (slug === "add-image-to-pdf") return await addImagesToPdf(files[0], options, report);
   if (["rotate-pdf", "add-page-numbers", "watermark-pdf", "crop-pdf", "edit-pdf", "sign-pdf"].includes(slug)) return await mutatePdf(slug, files[0], options);
   if (slug === "pdf-forms") return await fillForm(files[0], options);

@@ -4288,6 +4288,109 @@ kbd {
   color: currentColor;
 }
 
+.archive-rewrite-plan {
+  display: grid;
+  gap: 12px;
+}
+
+.archive-rewrite-plan > header,
+.archive-rewrite-status,
+.archive-rewrite-plan li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+}
+
+.archive-rewrite-plan > header {
+  align-items: center;
+}
+
+.archive-rewrite-plan > header > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+}
+
+.archive-rewrite-plan header > div,
+.archive-rewrite-status > span,
+.archive-rewrite-plan li > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.archive-rewrite-plan strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.archive-rewrite-plan small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.archive-rewrite-status {
+  align-items: center;
+  border: 1px solid #cfe2d9;
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+}
+
+.archive-rewrite-status.error {
+  border-color: #ead3c6;
+  background: var(--coral-soft);
+  color: var(--coral-dark);
+}
+
+.archive-rewrite-plan ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.archive-rewrite-plan li {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--surface-soft);
+}
+
+.archive-rewrite-plan li > svg {
+  color: var(--privacy);
+}
+
+.archive-rewrite-plan > p {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  border: 1px solid #e5bca7;
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--coral-soft);
+  color: var(--coral-dark);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.archive-rewrite-plan > p svg {
+  flex: 0 0 auto;
+}
+
+.archive-rewrite-plan > p strong {
+  color: currentColor;
+}
+
 .word-preview-empty,
 .word-preview-loading,
 .word-preview-error {
@@ -4697,6 +4800,7 @@ kbd {
 }
 
 .repair-result-summary,
+.archive-result-summary,
 .scan-result-summary,
 .word-result-summary,
 .ppt-result-summary,
@@ -4711,6 +4815,7 @@ kbd {
 }
 
 .repair-result-summary > span,
+.archive-result-summary > span,
 .scan-result-summary > span,
 .word-result-summary > span,
 .ppt-result-summary > span,
@@ -4726,6 +4831,7 @@ kbd {
 }
 
 .repair-result-summary > div,
+.archive-result-summary > div,
 .scan-result-summary > div,
 .word-result-summary > div,
 .ppt-result-summary > div,
@@ -4737,6 +4843,7 @@ kbd {
 }
 
 .repair-result-summary > div strong,
+.archive-result-summary > div strong,
 .scan-result-summary > div strong,
 .word-result-summary > div strong,
 .ppt-result-summary > div strong,
@@ -4747,6 +4854,7 @@ kbd {
 }
 
 .repair-result-summary > div small,
+.archive-result-summary > div small,
 .scan-result-summary > div small,
 .word-result-summary > div small,
 .ppt-result-summary > div small,
@@ -4758,6 +4866,7 @@ kbd {
 }
 
 .repair-result-summary > p,
+.archive-result-summary > p,
 .scan-result-summary > p,
 .word-result-summary > p,
 .ppt-result-summary > p,

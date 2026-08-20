@@ -42,7 +42,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | PDF to Word | Bounded page-by-page selectable-text preview, exact page/text counts, and one-section-per-page DOCX plan | Keep; continue protected-input, empty-page, long-document, mobile, and boundary QA |
 | PDF to PowerPoint | Bounded page-by-page selectable-text preview, exact text counts, and one-slide-per-page PPTX plan | Keep; continue protected-input, empty-page, long-document, mobile, and boundary QA |
 | PDF to Excel | Bounded page-by-page table preview with exact sheet, row, and value counts | Keep; continue protected-input, empty-page, table-separator, mobile, and boundary QA |
-| Archive PDF Rewrite | One-action conversion with accurate caveat | Keep; make the non-certified PDF/A caveat visible beside the action |
+| Archive PDF Rewrite | Exact page-count rewrite plan, visible description of structural and metadata changes, non-certified PDF/A warning beside the action, and matching result summary | Keep; continue real-document, validator, protected-input, mobile, and boundary QA |
 | Rotate PDF | Visual direction cards and a representative first-page orientation preview | Keep; continue real-document/mobile QA |
 | Add Page Numbers | Visual position grid, accessible starting-number stepper, and first-page preview | Keep; continue real-document/mobile QA |
 | Add Watermark | Text, visual opacity scale, and representative first-page preview | Keep; continue real-document/mobile QA |

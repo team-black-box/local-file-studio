@@ -205,6 +205,35 @@ test("PDF to Excel previews exact sheets, rows, and values before export", async
   );
 });
 
+test("Archive PDF Rewrite reports its exact non-certified output contract", async () => {
+  const source = await PDFDocument.create();
+  source.addPage([300, 400]);
+  source.addPage([500, 600]);
+  source.setProducer("Legacy producer");
+  source.setCreator("Legacy creator");
+  const file = namedBlob(await source.save(), "records.pdf", "application/pdf");
+  const phases = [];
+
+  const [result] = await processPdfTool("pdf-to-pdfa", [file], {}, (progress) => phases.push(progress.phase));
+
+  assert.equal(result.name, "records-archive.pdf");
+  assert.equal(result.type, "application/pdf");
+  assert.equal(result.details, "2 pages · Archive-friendly rewrite · Not certified PDF/A");
+  assert.deepEqual(result.archiveRewriteOutcome, {
+    pageCount: 2,
+    certifiedPdfA: false,
+    objectStreams: false,
+    metadataRefreshed: true,
+  });
+  assert.deepEqual(phases, ["Reading PDF structure", "Rewriting PDF structure", "Finishing archive-friendly PDF"]);
+
+  const rewritten = await PDFDocument.load(await result.blob.arrayBuffer(), { updateMetadata: false });
+  assert.equal(rewritten.getPageCount(), 2);
+  assert.deepEqual(rewritten.getPages().map((page) => [page.getWidth(), page.getHeight()]), [[300, 400], [500, 600]]);
+  assert.equal(rewritten.getProducer(), "Local File Studio archival normalization");
+  assert.equal(rewritten.getCreator(), "Local File Studio");
+});
+
 test("OCR reader results keep bounded page text in memory without a download blob", () => {
   const result = createOcrReaderResult("scan.pdf", [
     { pageNumber: 1, text: "First page", confidence: 97.6 },
