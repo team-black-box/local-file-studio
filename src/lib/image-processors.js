@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
-import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getToolLimits } from "./file-limits.js";
+import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -237,6 +237,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   const bitmap = await fileToBitmap(file, limits);
   const quality = Math.max(0.1, Math.min(1, Number(options.quality || 82) / 100));
   let canvas;
+  let imageResizeOutcome = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
 
@@ -250,11 +251,20 @@ async function renderOne(slug, file, options, report, pixelBudget) {
         : Number(options.percent || 0) > 0
           ? Number(options.percent) / 100
           : null;
-      const target = fitWithin(
-        scale ? bitmap.width * scale : Number(options.width || bitmap.width),
-        scale ? bitmap.height * scale : Number(options.height || Math.round(bitmap.height * (Number(options.width || bitmap.width) / bitmap.width))),
-      );
+      const target = slug === "resize-image"
+        ? getProportionalResizeDimensions(bitmap.width, bitmap.height, options.width ?? bitmap.width, limits, `${file.name} after resizing`)
+        : fitWithin(bitmap.width * scale, bitmap.height * scale);
       assertOutputDimensions(target.width, target.height, limits, `${file.name} after ${slug === "upscale-image" ? "upscaling" : "resizing"}`);
+      if (slug === "resize-image") {
+        imageResizeOutcome = {
+          sourceWidth: bitmap.width,
+          sourceHeight: bitmap.height,
+          width: target.width,
+          height: target.height,
+          scalePercent: Math.round((target.width / bitmap.width) * 100),
+          direction: target.width < bitmap.width ? "downsize" : target.width > bitmap.width ? "enlarge" : "unchanged",
+        };
+      }
       canvas = makeCanvas(target.width, target.height);
       const picaModule = await import("pica");
       const pica = picaModule.default();
@@ -409,6 +419,8 @@ async function renderOne(slug, file, options, report, pixelBudget) {
         details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${config.ext === "png" ? "Lossless PNG re-encode" : `${Math.round(quality * 100).toLocaleString()}% quality`}`,
         imageCompressionOutcome: createImageCompressionOutcome(file.size, blob.size, canvas.width, canvas.height, config.ext, quality * 100),
       }
+      : slug === "resize-image"
+        ? { ...result, imageResizeOutcome }
       : result;
   } finally {
     bitmap.close?.();
@@ -551,6 +563,19 @@ export async function processImageTool(slug, files, options = {}, report) {
         outputBytes,
         encodedBytes: results.reduce((sum, result) => sum + result.size, 0),
         reducedFiles: results.filter((result) => result.imageCompressionOutcome?.status === "reduced").length,
+      },
+    }];
+  }
+  if (slug === "resize-image" && results.length > 1 && finalResults.length === 1) {
+    const outcomes = results.map((result) => result.imageResizeOutcome).filter(Boolean);
+    return [{
+      ...finalResults[0],
+      imageResizeBatchOutcome: {
+        fileCount: results.length,
+        targetWidth: outcomes[0]?.width || Math.round(Number(options.width)),
+        downsizedFiles: outcomes.filter((outcome) => outcome.direction === "downsize").length,
+        enlargedFiles: outcomes.filter((outcome) => outcome.direction === "enlarge").length,
+        unchangedFiles: outcomes.filter((outcome) => outcome.direction === "unchanged").length,
       },
     }];
   }

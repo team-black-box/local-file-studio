@@ -974,6 +974,24 @@ export function assertOutputDimensions(width, height, limitsOrTool, label = "The
   }
 }
 
+export function getProportionalResizeDimensions(sourceWidth, sourceHeight, targetWidth, limitsOrTool = "resize-image", label = "The resized output") {
+  const normalizedSourceWidth = Number(sourceWidth);
+  const normalizedSourceHeight = Number(sourceHeight);
+  const normalizedTargetWidth = Math.round(Number(targetWidth));
+  if (!Number.isFinite(normalizedSourceWidth) || !Number.isFinite(normalizedSourceHeight) || normalizedSourceWidth < 1 || normalizedSourceHeight < 1) {
+    throw new FileLimitError("invalid-image-dimensions", `${label} could not be planned because the source dimensions are invalid. Re-save the image and try again.`);
+  }
+  if (!Number.isFinite(normalizedTargetWidth) || normalizedTargetWidth < 1) {
+    throw new FileLimitError("invalid-output-dimensions", `${label} needs a width of at least 1 pixel. Enter a valid width and try again.`);
+  }
+  const output = {
+    width: normalizedTargetWidth,
+    height: Math.max(1, Math.round(normalizedSourceHeight * (normalizedTargetWidth / normalizedSourceWidth))),
+  };
+  assertOutputDimensions(output.width, output.height, limitsOrTool, label);
+  return output;
+}
+
 export function assertRasterDimensions(width, height, limitsOrTool, label = "This PDF page") {
   const limits = limitsOrTool?.maxFileBytes ? limitsOrTool : getToolLimits(limitsOrTool);
   const pixels = width * height;

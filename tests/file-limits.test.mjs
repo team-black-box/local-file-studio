@@ -32,6 +32,7 @@ import {
   assertTextSettingLengths,
   countLogicalLines,
   describeToolLimits,
+  getProportionalResizeDimensions,
   getTextSettingLimit,
   getToolLimits,
   summarizeRejections,
@@ -565,6 +566,32 @@ test("image and raster guards accept exact pixel limits and reject one-pixel ove
   assert.doesNotThrow(() => assertOutputDimensions(4000, 4000, imageLimits, "output"));
   assert.throws(() => assertOutputDimensions(Number.NaN, 4000, imageLimits, "output"), /invalid dimensions/);
   assert.throws(() => assertRasterDimensions(0, 4000, rasterLimits, "page 3"), /invalid render dimensions/);
+});
+
+test("Resize Image derives proportional targets from the central output policy", () => {
+  assert.deepEqual(getProportionalResizeDimensions(1200, 630, 640, "resize-image", "fixture.jpg after resizing"), { width: 640, height: 336 });
+  assert.deepEqual(getProportionalResizeDimensions(1200, 630, 1920, "resize-image", "fixture.jpg after resizing"), { width: 1920, height: 1008 });
+  assert.deepEqual(getProportionalResizeDimensions(8192, 1, 8192, "resize-image", "wide.png after resizing"), { width: 8192, height: 1 });
+  assert.throws(
+    () => getProportionalResizeDimensions(1200, 630, 0, "resize-image", "fixture.jpg after resizing"),
+    (error) => error instanceof FileLimitError && error.code === "invalid-output-dimensions",
+  );
+  assert.throws(
+    () => getProportionalResizeDimensions(100, 8192, 640, "resize-image", "tall.png after resizing"),
+    (error) => error instanceof FileLimitError && error.code === "output-dimensions-too-large",
+  );
+});
+
+test("Resize Image preflight exposes exact target dimensions before processing", async () => {
+  const resize = tools.find(({ slug }) => slug === "resize-image");
+  const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const image = new File([onePixelPng], "pixel.png", { type: "image/png" });
+  const inspected = await preflightToolFiles(resize, [image], { width: 640 });
+  assert.deepEqual(inspected.metadata, [{ name: "pixel.png", width: 1, height: 1, format: "png", animated: false, outputWidth: 640, outputHeight: 640 }]);
+  await assert.rejects(
+    preflightToolFiles(resize, [image], { width: 8192 }),
+    (error) => error instanceof FileLimitError && error.code === "output-dimensions-too-large",
+  );
 });
 
 test("aggregate decoded-pixel budgets reject the file that crosses the boundary", () => {
