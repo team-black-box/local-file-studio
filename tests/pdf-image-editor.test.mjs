@@ -17,7 +17,7 @@ import {
 import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
 import { createOcrReaderResult, createPdfOfficeTextPreview, createPdfSpreadsheetPlan, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
-import { hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
+import { createImageCompressionOutcome, hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -67,6 +67,27 @@ test("compression size summaries report reductions without hiding larger outputs
   assert.equal(compressionEstimateAllowsProcessing({ state: "ready", status: "unchanged" }), false);
   assert.equal(compressionEstimateAllowsProcessing({ state: "loading" }), false);
   assert.equal(compressionEstimateAllowsProcessing({ state: "error" }), true);
+});
+
+test("image compression outcomes distinguish lossy quality from lossless PNG re-encoding", () => {
+  assert.deepEqual(createImageCompressionOutcome(1_000, 600, 1200, 800, "jpg", 82), {
+    inputBytes: 1_000,
+    outputBytes: 600,
+    bytesSaved: 400,
+    percent: 40,
+    status: "reduced",
+    width: 1200,
+    height: 800,
+    format: "jpg",
+    quality: 82,
+    qualityApplies: true,
+  });
+  assert.equal(createImageCompressionOutcome(1_000, 1_200, 1200, 800, "png", 20).status, "increased");
+  assert.equal(createImageCompressionOutcome(1_000, 1_200, 1200, 800, "png", 20).qualityApplies, false);
+  assert.throws(
+    () => createImageCompressionOutcome(0, 0, 0, 800, "gif", Number.NaN),
+    (error) => error instanceof FileLimitError && error.code === "invalid-image-compression-outcome",
+  );
 });
 
 test("PDF to JPG plans one direct image or an exact multi-page ZIP", () => {

@@ -58,7 +58,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Local Summarizer | Visual length/format choices, exact extractive plan, and copyable in-tab summary with optional TXT | Keep; continue protected-input, short-source, mobile, and boundary QA |
 | Translate PDF | Visual language choice and copyable reader | Keep; improve model/glossary status clarity |
 | PDF to Markdown | Copyable text/preview tabs | Keep |
-| Compress Image | Quality slider | Add before/after file-size estimate and representative image preview |
+| Compress Image | Visual quality presets, exact fine-tuning, real first-image before/after encoding preview, byte delta, honest PNG behavior, checked-sample reuse, and actual result/ZIP size feedback | Keep; continue mixed-format batch, transparency, metadata, mobile, and boundary QA |
 | Resize Image | Raw width number | Add width presets and stepper now; show original → target dimensions next |
 | Crop Image | Aspect-ratio dropdown | Use visual ratio cards and add draggable crop preview |
 | Convert Image | Strong visual format choices and quality feedback | Keep |

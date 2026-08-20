@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
-import { baseName, createResultBudget, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
-import { FileLimitError, assertImageDimensions, assertOutputDimensions, getToolLimits } from "./file-limits.js";
+import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
+import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getToolLimits } from "./file-limits.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -13,6 +13,23 @@ const IMAGE_OUTPUTS = {
 };
 
 const ABSOLUTE_CANVAS_LIMITS = getToolLimits("compress-image");
+
+export function createImageCompressionOutcome(inputBytes, outputBytes, width, height, format, quality) {
+  const change = getCompressionSizeChange(inputBytes, outputBytes);
+  const normalizedFormat = String(format || "").toLowerCase();
+  const normalizedQuality = Math.max(10, Math.min(100, Math.round(Number(quality))));
+  if (!change || !Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1 || !IMAGE_OUTPUTS[normalizedFormat] || !Number.isFinite(normalizedQuality)) {
+    throw new FileLimitError("invalid-image-compression-outcome", "The image compression preview reported invalid output details. Choose the image again and retry.");
+  }
+  return {
+    ...change,
+    width,
+    height,
+    format: IMAGE_OUTPUTS[normalizedFormat].ext,
+    quality: normalizedQuality,
+    qualityApplies: normalizedFormat !== "png",
+  };
+}
 
 export function hasNonFragmentSvgUrl(value) {
   const source = String(value || "");
@@ -385,7 +402,14 @@ async function renderOne(slug, file, options, report, pixelBudget) {
     report?.({ phase: "Encoding image", progress: 0.76 });
     const blob = await canvasToBlob(canvas, config.mime, quality);
     const suffix = slug === "compress-image" ? "compressed" : slug === "convert-image" ? "converted" : slug.replace(/-image$|^convert-/g, "") || "edited";
-    return resultFromBlob(`${safeFileName(baseName(file.name))}-${safeFileName(suffix)}.${config.ext}`, blob, `${canvas.width} × ${canvas.height}`);
+    const result = resultFromBlob(`${safeFileName(baseName(file.name))}-${safeFileName(suffix)}.${config.ext}`, blob, `${canvas.width} × ${canvas.height}`);
+    return slug === "compress-image"
+      ? {
+        ...result,
+        details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${config.ext === "png" ? "Lossless PNG re-encode" : `${Math.round(quality * 100).toLocaleString()}% quality`}`,
+        imageCompressionOutcome: createImageCompressionOutcome(file.size, blob.size, canvas.width, canvas.height, config.ext, quality * 100),
+      }
+      : result;
   } finally {
     bitmap.close?.();
     if (canvas) {
@@ -393,6 +417,13 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       canvas.height = 1;
     }
   }
+}
+
+export async function createImageCompressionPreview(file, quality = 82) {
+  const limits = getToolLimits("compress-image");
+  const result = await renderOne("compress-image", file, { quality }, undefined, { used: 0, limit: limits.maxImagePixelsTotal });
+  assertOutputSize(result.size, result.name, limits.maxOutputBytes);
+  return result;
 }
 
 async function jpgsToAnimatedGif(files, options, report) {
@@ -488,9 +519,40 @@ export async function processImageTool(slug, files, options = {}, report) {
   const resultBudget = createResultBudget({ maxItems: limits.maxGeneratedItems || undefined });
   for (let index = 0; index < files.length; index += 1) {
     report?.({ phase: `Processing ${index + 1} of ${files.length}`, progress: index / files.length });
-    const result = await renderOne(slug, files[index], options, report, pixelBudget);
+    const checkedPreview = options.compressionPreview;
+    const previewOutcome = checkedPreview?.result?.imageCompressionOutcome;
+    const previewMatches = slug === "compress-image"
+      && index === 0
+      && checkedPreview?.file === files[index]
+      && checkedPreview.result?.blob instanceof Blob
+      && (previewOutcome?.qualityApplies === false || previewOutcome?.quality === Math.round(Number(options.quality || 82)));
+    const result = previewMatches
+      ? checkedPreview.result
+      : await renderOne(slug, files[index], options, report, pixelBudget);
+    if (previewMatches) {
+      consumeImagePixels(pixelBudget, { width: previewOutcome.width, height: previewOutcome.height }, files[index].name);
+      assertOutputSize(result.size, result.name, limits.maxOutputBytes);
+      report?.({ phase: "Reusing checked sample", progress: 0.76 });
+    }
     results.push(retainResult(resultBudget, result));
   }
   report?.({ phase: "Finishing", progress: 0.96 });
-  return options.keepSeparate ? results : await zipResults(results, `${safeFileName(slug)}-results.zip`);
+  const finalResults = options.keepSeparate ? results : await zipResults(results, `${safeFileName(slug)}-results.zip`);
+  if (slug === "compress-image" && results.length > 1 && finalResults.length === 1) {
+    const inputBytes = files.reduce((sum, file) => sum + file.size, 0);
+    const outputBytes = finalResults[0].size;
+    const change = getCompressionSizeChange(inputBytes, outputBytes);
+    return [{
+      ...finalResults[0],
+      imageCompressionBatchOutcome: {
+        ...change,
+        fileCount: results.length,
+        inputBytes,
+        outputBytes,
+        encodedBytes: results.reduce((sum, result) => sum + result.size, 0),
+        reducedFiles: results.filter((result) => result.imageCompressionOutcome?.status === "reduced").length,
+      },
+    }];
+  }
+  return finalResults;
 }
