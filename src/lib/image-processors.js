@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
-import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getImageCropPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
+import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -450,38 +450,47 @@ async function jpgsToAnimatedGif(files, options, report) {
   }
   const { GIFEncoder, applyPalette, quantize } = await import("gifenc");
   const first = await fileToBitmap(files[0], limits);
-  let width;
-  let height;
   try {
     consumeImagePixels(pixelBudget, first, files[0].name);
-    width = Math.min(limits.maxGifWidth, first.width);
-    height = Math.round(width * (first.height / first.width));
-    assertOutputDimensions(width, height, { maxFileBytes: 1, maxOutputEdge: limits.maxGifFrameEdge, maxOutputPixels: limits.maxGifFramePixels }, "The animated GIF frame");
+    const plan = getAnimatedGifPlan(
+      [{ name: files[0].name, width: first.width, height: first.height }],
+      options.delay,
+      options.loop,
+      limits,
+      files.length,
+    );
+    const encoder = GIFEncoder();
+    let coverCroppedFrames = 0;
+    for (let index = 0; index < files.length; index += 1) {
+      report?.({ phase: `Encoding GIF frame ${index + 1} of ${files.length}`, progress: index / files.length });
+      const bitmap = index === 0 ? first : await fileToBitmap(files[index], limits);
+      const canvas = makeCanvas(plan.width, plan.height);
+      try {
+        if (index > 0) consumeImagePixels(pixelBudget, bitmap, files[index].name);
+        if ((bitmap.width * first.height) !== (bitmap.height * first.width)) coverCroppedFrames += 1;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        drawCover(context, bitmap.source, bitmap.width, bitmap.height, plan.width, plan.height);
+        const data = context.getImageData(0, 0, plan.width, plan.height).data;
+        const palette = quantize(data, 256);
+        const indexed = applyPalette(data, palette);
+        encoder.writeFrame(indexed, plan.width, plan.height, { palette, delay: plan.delayMs, repeat: plan.loop ? 0 : -1 });
+      } finally {
+        if (index > 0) bitmap.close?.();
+        canvas.width = 1;
+        canvas.height = 1;
+      }
+    }
+    encoder.finish();
+    const blob = new Blob([encoder.bytes()], { type: "image/gif" });
+    const result = resultFromBlob(
+      "local-animation.gif",
+      blob,
+      `${plan.frameCount} frames · ${plan.width} × ${plan.height} · ${plan.delayMs} ms/frame`,
+    );
+    return [{ ...result, gifOutcome: { ...plan, coverCroppedFrames } }];
   } finally {
     first.close?.();
   }
-  const encoder = GIFEncoder();
-  for (let index = 0; index < files.length; index += 1) {
-    report?.({ phase: `Encoding GIF frame ${index + 1} of ${files.length}`, progress: index / files.length });
-    const bitmap = await fileToBitmap(files[index], limits);
-    const canvas = makeCanvas(width, height);
-    try {
-      if (index > 0) consumeImagePixels(pixelBudget, bitmap, files[index].name);
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-      drawCover(context, bitmap.source, bitmap.width, bitmap.height, width, height);
-      const data = context.getImageData(0, 0, width, height).data;
-      const palette = quantize(data, 256);
-      const indexed = applyPalette(data, palette);
-      encoder.writeFrame(indexed, width, height, { palette, delay: Number(options.delay || 900), repeat: options.loop === false ? -1 : 0 });
-    } finally {
-      bitmap.close?.();
-      canvas.width = 1;
-      canvas.height = 1;
-    }
-  }
-  encoder.finish();
-  const blob = new Blob([encoder.bytes()], { type: "image/gif" });
-  return [resultFromBlob("local-animation.gif", blob, `${files.length} frames · ${width} × ${height}`)];
 }
 
 async function htmlToImage(files, options) {

@@ -8,6 +8,9 @@ import {
   ARCHIVE_INPUT_LIMIT_BYTES,
   ARCHIVE_ITEM_LIMIT_BYTES,
   FileLimitError,
+  GIF_FRAME_DELAY_DEFAULT_MS,
+  GIF_FRAME_DELAY_MAX_MS,
+  GIF_FRAME_DELAY_MIN_MS,
   GLOBAL_OUTPUT_LIMIT_BYTES,
   IMAGE_CROP_SCALE_MAX_PERCENT,
   IMAGE_CROP_SCALE_MIN_PERCENT,
@@ -34,6 +37,7 @@ import {
   assertTextSettingLengths,
   countLogicalLines,
   describeToolLimits,
+  getAnimatedGifPlan,
   getImageCropPlan,
   getProportionalResizeDimensions,
   getTextSettingLimit,
@@ -169,15 +173,40 @@ test("JPG to GIF remains a distinct animation tool instead of an overlapping sta
     key: "delay",
     type: "range",
     label: "Time per image",
-    default: 900,
-    min: 100,
-    max: 3000,
+    default: GIF_FRAME_DELAY_DEFAULT_MS,
+    min: GIF_FRAME_DELAY_MIN_MS,
+    max: GIF_FRAME_DELAY_MAX_MS,
     step: 100,
     suffix: "ms",
     minLabel: "Faster",
     maxLabel: "Slower",
   });
   assert.equal(getToolLimits(gif).maxGifFrames, 20);
+
+  assert.deepEqual(
+    getAnimatedGifPlan([
+      { name: "wide.jpg", width: 1200, height: 630 },
+      { name: "square.jpg", width: 512, height: 512 },
+      { name: "matching.jpg", width: 800, height: 420 },
+    ], GIF_FRAME_DELAY_DEFAULT_MS, true, gif),
+    {
+      frameCount: 3,
+      width: 1200,
+      height: 630,
+      delayMs: GIF_FRAME_DELAY_DEFAULT_MS,
+      durationMs: 2700,
+      loop: true,
+      coverCroppedFrames: 1,
+    },
+  );
+  assert.deepEqual(
+    getAnimatedGifPlan([{ name: "large.jpg", width: 2800, height: 1400 }], 1500, false, gif),
+    { frameCount: 1, width: 1400, height: 700, delayMs: 1500, durationMs: 1500, loop: false, coverCroppedFrames: 0 },
+  );
+  assert.throws(() => getAnimatedGifPlan([{ name: "frame.jpg", width: 1200, height: 630 }], GIF_FRAME_DELAY_MIN_MS - 1, true, gif), /100 to 3,000 milliseconds/);
+  assert.throws(() => getAnimatedGifPlan([{ name: "frame.jpg", width: 1200, height: 630 }], GIF_FRAME_DELAY_MAX_MS + 1, true, gif), /100 to 3,000 milliseconds/);
+  assert.throws(() => getAnimatedGifPlan([], GIF_FRAME_DELAY_DEFAULT_MS, true, gif), /at least one JPG frame/);
+  assert.throws(() => getAnimatedGifPlan([{ name: "frame.jpg", width: 1200, height: 630 }], GIF_FRAME_DELAY_DEFAULT_MS, true, gif, 21), /1–20 frames/);
 });
 
 test("converted image signatures must match the requested output container", () => {

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
+import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS } from "./lib/file-limits.js";
+
 const withPhosphorExports = (entries) =>
   Object.freeze(
     entries.map((entry) =>
@@ -1066,9 +1068,9 @@ export const tools = withPhosphorExports([
         key: "delay",
         type: "range",
         label: "Time per image",
-        default: 900,
-        min: 100,
-        max: 3000,
+        default: GIF_FRAME_DELAY_DEFAULT_MS,
+        min: GIF_FRAME_DELAY_MIN_MS,
+        max: GIF_FRAME_DELAY_MAX_MS,
         step: 100,
         suffix: "ms",
         minLabel: "Faster",
