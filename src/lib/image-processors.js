@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
-import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
+import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -197,11 +197,6 @@ function consumeImagePixels(budget, bitmap, fileName) {
   budget.used += pixels;
 }
 
-function fitWithin(width, height, maxDimension = 10000) {
-  const ratio = Math.min(1, maxDimension / Math.max(width, height));
-  return { width: Math.round(width * ratio), height: Math.round(height * ratio) };
-}
-
 function outputConfig(options, fallback = "png") {
   const requested = String(options.format || fallback).toLowerCase();
   const config = IMAGE_OUTPUTS[requested];
@@ -239,6 +234,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   let canvas;
   let imageResizeOutcome = null;
   let imageCropOutcome = null;
+  let imageUpscaleOutcome = null;
   let photoEditorPlan = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
@@ -248,14 +244,9 @@ async function renderOne(slug, file, options, report, pixelBudget) {
     report?.({ phase: "Preparing pixels", progress: 0.18 });
 
     if (slug === "resize-image" || slug === "upscale-image") {
-      const scale = slug === "upscale-image"
-        ? Math.max(2, Number(options.scale || 2))
-        : Number(options.percent || 0) > 0
-          ? Number(options.percent) / 100
-          : null;
       const target = slug === "resize-image"
         ? getProportionalResizeDimensions(bitmap.width, bitmap.height, options.width ?? bitmap.width, limits, `${file.name} after resizing`)
-        : fitWithin(bitmap.width * scale, bitmap.height * scale);
+        : getImageUpscalePlan(bitmap.width, bitmap.height, options.scale, limits, `${file.name} after upscaling`);
       assertOutputDimensions(target.width, target.height, limits, `${file.name} after ${slug === "upscale-image" ? "upscaling" : "resizing"}`);
       if (slug === "resize-image") {
         imageResizeOutcome = {
@@ -266,6 +257,8 @@ async function renderOne(slug, file, options, report, pixelBudget) {
           scalePercent: Math.round((target.width / bitmap.width) * 100),
           direction: target.width < bitmap.width ? "downsize" : target.width > bitmap.width ? "enlarge" : "unchanged",
         };
+      } else {
+        imageUpscaleOutcome = target;
       }
       canvas = makeCanvas(target.width, target.height);
       const picaModule = await import("pica");
@@ -430,6 +423,12 @@ async function renderOne(slug, file, options, report, pixelBudget) {
         ? { ...result, imageResizeOutcome }
       : slug === "crop-image"
         ? { ...result, imageCropOutcome }
+      : slug === "upscale-image"
+        ? {
+          ...result,
+          details: `${imageUpscaleOutcome.sourceWidth.toLocaleString()} × ${imageUpscaleOutcome.sourceHeight.toLocaleString()} → ${imageUpscaleOutcome.width.toLocaleString()} × ${imageUpscaleOutcome.height.toLocaleString()} · ${imageUpscaleOutcome.scale}× local resampling`,
+          imageUpscaleOutcome: { ...imageUpscaleOutcome, format: config.ext, outputBytes: blob.size },
+        }
       : slug === "photo-editor"
         ? {
           ...result,
@@ -618,6 +617,21 @@ export async function processImageTool(slug, files, options = {}, report) {
         focusY: Number(options.focusY ?? 50),
         retainedPercentMinimum: Math.min(...outcomes.map((outcome) => outcome.retainedPercent)),
         retainedPercentMaximum: Math.max(...outcomes.map((outcome) => outcome.retainedPercent)),
+      },
+    }];
+  }
+  if (slug === "upscale-image" && results.length > 1 && finalResults.length === 1) {
+    const outcomes = results.map((result) => result.imageUpscaleOutcome).filter(Boolean);
+    if (outcomes.length !== results.length) {
+      throw new FileLimitError("invalid-upscale-outcome", "The upscale batch did not report complete output details. No result was kept; choose the images again and retry.");
+    }
+    return [{
+      ...finalResults[0],
+      imageUpscaleBatchOutcome: {
+        fileCount: results.length,
+        scale: outcomes[0].scale,
+        pixelMultiplier: outcomes[0].pixelMultiplier,
+        outputPixelsTotal: outcomes.reduce((sum, outcome) => sum + outcome.outputPixels, 0),
       },
     }];
   }

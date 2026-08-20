@@ -17,6 +17,7 @@ export const IMAGE_CROP_SCALE_MAX_PERCENT = 100;
 export const GIF_FRAME_DELAY_MIN_MS = 100;
 export const GIF_FRAME_DELAY_MAX_MS = 3000;
 export const GIF_FRAME_DELAY_DEFAULT_MS = 900;
+export const IMAGE_UPSCALE_SCALES = Object.freeze([2, 4]);
 export const PHOTO_EDITOR_ADJUSTMENTS = Object.freeze({
   brightness: Object.freeze({ min: 50, max: 150, default: 100 }),
   contrast: Object.freeze({ min: 50, max: 150, default: 100 }),
@@ -1002,6 +1003,31 @@ export function getProportionalResizeDimensions(sourceWidth, sourceHeight, targe
   };
   assertOutputDimensions(output.width, output.height, limitsOrTool, label);
   return output;
+}
+
+export function getImageUpscalePlan(sourceWidth, sourceHeight, scale = IMAGE_UPSCALE_SCALES[0], limitsOrTool = "upscale-image", label = "The upscaled output") {
+  const normalizedSourceWidth = Math.round(Number(sourceWidth));
+  const normalizedSourceHeight = Math.round(Number(sourceHeight));
+  const normalizedScale = Number(scale);
+  if (!Number.isFinite(normalizedSourceWidth) || !Number.isFinite(normalizedSourceHeight) || normalizedSourceWidth < 1 || normalizedSourceHeight < 1) {
+    throw new FileLimitError("invalid-image-dimensions", `${label} could not be planned because the source dimensions are invalid. Re-save the image and try again.`);
+  }
+  if (!IMAGE_UPSCALE_SCALES.includes(normalizedScale)) {
+    throw new FileLimitError("invalid-upscale-scale", `${label} needs the 2× or 4× scale. Choose one of the available sizes and try again.`);
+  }
+  const width = normalizedSourceWidth * normalizedScale;
+  const height = normalizedSourceHeight * normalizedScale;
+  assertOutputDimensions(width, height, limitsOrTool, label);
+  return Object.freeze({
+    sourceWidth: normalizedSourceWidth,
+    sourceHeight: normalizedSourceHeight,
+    width,
+    height,
+    scale: normalizedScale,
+    pixelMultiplier: normalizedScale ** 2,
+    outputPixels: width * height,
+    outputRgbaBytes: width * height * 4,
+  });
 }
 
 export function getAnimatedGifPlan(frames, delayMs = GIF_FRAME_DELAY_DEFAULT_MS, loop = true, limitsOrTool = "convert-from-jpg", frameCount = frames?.length) {

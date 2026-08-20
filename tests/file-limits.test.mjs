@@ -14,6 +14,7 @@ import {
   GLOBAL_OUTPUT_LIMIT_BYTES,
   IMAGE_CROP_SCALE_MAX_PERCENT,
   IMAGE_CROP_SCALE_MIN_PERCENT,
+  IMAGE_UPSCALE_SCALES,
   MAX_GENERATED_RESULTS,
   MAX_PDF_PASSWORD_CHARACTERS,
   PDF_PREVIEW_LIMITS,
@@ -41,6 +42,7 @@ import {
   describeToolLimits,
   getAnimatedGifPlan,
   getImageCropPlan,
+  getImageUpscalePlan,
   getPhotoEditorPlan,
   getProportionalResizeDimensions,
   getTextSettingLimit,
@@ -626,6 +628,46 @@ test("Resize Image preflight exposes exact target dimensions before processing",
   await assert.rejects(
     preflightToolFiles(resize, [image], { width: 8192 }),
     (error) => error instanceof FileLimitError && error.code === "output-dimensions-too-large",
+  );
+});
+
+test("Upscale Image plans exact 2× and 4× dimensions, pixels, and raw canvas bytes", () => {
+  assert.deepEqual(IMAGE_UPSCALE_SCALES, [2, 4]);
+  assert.deepEqual(
+    getImageUpscalePlan(1200, 630, 2, "upscale-image", "fixture.jpg after upscaling"),
+    { sourceWidth: 1200, sourceHeight: 630, width: 2400, height: 1260, scale: 2, pixelMultiplier: 4, outputPixels: 3_024_000, outputRgbaBytes: 12_096_000 },
+  );
+  assert.deepEqual(
+    getImageUpscalePlan(1200, 630, 4, "upscale-image", "fixture.jpg after upscaling"),
+    { sourceWidth: 1200, sourceHeight: 630, width: 4800, height: 2520, scale: 4, pixelMultiplier: 16, outputPixels: 12_096_000, outputRgbaBytes: 48_384_000 },
+  );
+  assert.deepEqual(
+    getImageUpscalePlan(2000, 2000, 2, "upscale-image", "boundary.png after upscaling"),
+    { sourceWidth: 2000, sourceHeight: 2000, width: 4000, height: 4000, scale: 2, pixelMultiplier: 4, outputPixels: 16_000_000, outputRgbaBytes: 64_000_000 },
+  );
+  assert.throws(
+    () => getImageUpscalePlan(1200, 630, 3, "upscale-image", "fixture.jpg after upscaling"),
+    (error) => error instanceof FileLimitError && error.code === "invalid-upscale-scale",
+  );
+  assert.throws(
+    () => getImageUpscalePlan(2000, 2000, 4, "upscale-image", "large.png after upscaling"),
+    (error) => error instanceof FileLimitError && error.code === "output-dimensions-too-large",
+  );
+});
+
+test("Upscale Image preflight and catalog use the same exact scale policy", async () => {
+  const upscale = tools.find(({ slug }) => slug === "upscale-image");
+  const scaleSetting = upscale.settings.find(({ key }) => key === "scale");
+  assert.equal(scaleSetting.default, IMAGE_UPSCALE_SCALES[0]);
+  assert.deepEqual(scaleSetting.options.map(({ value }) => value), IMAGE_UPSCALE_SCALES);
+
+  const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const image = new File([onePixelPng], "pixel.png", { type: "image/png" });
+  const inspected = await preflightToolFiles(upscale, [image], { scale: 4 });
+  assert.deepEqual(inspected.metadata, [{ name: "pixel.png", width: 1, height: 1, format: "png", animated: false, outputWidth: 4, outputHeight: 4, scale: 4, outputPixels: 16 }]);
+  await assert.rejects(
+    preflightToolFiles(upscale, [image], { scale: 3 }),
+    (error) => error instanceof FileLimitError && error.code === "invalid-upscale-scale",
   );
 });
 
