@@ -17,6 +17,8 @@ import {
   MAX_GENERATED_RESULTS,
   MAX_PDF_PASSWORD_CHARACTERS,
   PDF_PREVIEW_LIMITS,
+  PHOTO_EDITOR_ADJUSTMENTS,
+  PHOTO_EDITOR_TEXT_COLORS,
   assertComparisonLineCounts,
   assertExtractedTextLength,
   assertGeneratedItemCount,
@@ -39,6 +41,7 @@ import {
   describeToolLimits,
   getAnimatedGifPlan,
   getImageCropPlan,
+  getPhotoEditorPlan,
   getProportionalResizeDimensions,
   getTextSettingLimit,
   getToolLimits,
@@ -659,6 +662,79 @@ test("Crop Image preflight exposes the exact source rectangle before processing"
     preflightToolFiles(crop, [image], { aspectRatio: "1:1", cropScale: 101, focusX: 50, focusY: 50 }),
     (error) => error instanceof FileLimitError && error.code === "invalid-crop-settings",
   );
+});
+
+test("Photo Editor plans exact local adjustments, captions, and unchanged output", () => {
+  assert.deepEqual(PHOTO_EDITOR_ADJUSTMENTS, {
+    brightness: { min: 50, max: 150, default: 100 },
+    contrast: { min: 50, max: 150, default: 100 },
+    saturation: { min: 0, max: 180, default: 100 },
+    warmth: { min: 0, max: 60, default: 0 },
+  });
+  assert.deepEqual(PHOTO_EDITOR_TEXT_COLORS, ["#ffffff", "#14201d"]);
+  assert.deepEqual(
+    getPhotoEditorPlan(1200, 630, {}, "photo-editor", "fixture.jpg after editing"),
+    {
+      width: 1200,
+      height: 630,
+      brightness: 100,
+      contrast: 100,
+      saturation: 100,
+      warmth: 0,
+      caption: "",
+      captionCharacters: 0,
+      textColor: "#ffffff",
+      adjusted: false,
+      changed: false,
+    },
+  );
+  assert.deepEqual(
+    getPhotoEditorPlan(1200, 630, { brightness: 115, contrast: 105, saturation: 110, warmth: 25, text: "Edited locally", textColor: "#14201d" }, "photo-editor", "fixture.jpg after editing"),
+    {
+      width: 1200,
+      height: 630,
+      brightness: 115,
+      contrast: 105,
+      saturation: 110,
+      warmth: 25,
+      caption: "Edited locally",
+      captionCharacters: 14,
+      textColor: "#14201d",
+      adjusted: true,
+      changed: true,
+    },
+  );
+});
+
+test("Photo Editor rejects invalid adjustments and caption settings before rendering", () => {
+  for (const [settings, code] of [
+    [{ brightness: PHOTO_EDITOR_ADJUSTMENTS.brightness.min - 1 }, "invalid-photo-adjustment"],
+    [{ warmth: PHOTO_EDITOR_ADJUSTMENTS.warmth.max + 1 }, "invalid-photo-adjustment"],
+    [{ contrast: 100.5 }, "invalid-photo-adjustment"],
+    [{ textColor: "#ff0000" }, "invalid-photo-caption-color"],
+    [{ text: "x".repeat(501) }, "text-setting-too-long"],
+  ]) {
+    assert.throws(
+      () => getPhotoEditorPlan(1200, 630, settings, "photo-editor", "fixture.jpg after editing"),
+      (error) => error instanceof FileLimitError && error.code === code,
+    );
+  }
+});
+
+test("Photo Editor catalog controls use the central adjustment and caption policy", () => {
+  const photoEditor = tools.find(({ slug }) => slug === "photo-editor");
+  const settingsByKey = Object.fromEntries(photoEditor.settings.map((setting) => [setting.key, setting]));
+  for (const [key, policy] of Object.entries(PHOTO_EDITOR_ADJUSTMENTS)) {
+    assert.deepEqual(
+      { min: settingsByKey[key].min, max: settingsByKey[key].max, default: settingsByKey[key].default },
+      policy,
+    );
+  }
+  assert.equal(getTextSettingLimit(photoEditor, "text"), 500);
+  assert.deepEqual(settingsByKey.textColor.options.map(({ value, label }) => ({ value, label })), [
+    { value: "#ffffff", label: "Light" },
+    { value: "#14201d", label: "Dark" },
+  ]);
 });
 
 test("aggregate decoded-pixel budgets reject the file that crosses the boundary", () => {

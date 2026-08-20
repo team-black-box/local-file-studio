@@ -63,7 +63,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Crop Image | Visual ratio cards, real first-image preview, draggable and keyboard-movable crop frame, bounded crop amount, reset, exact dimensions, retained-pixel feedback, and matching batch/result summaries | Keep; continue mixed-orientation batch, touch, keyboard, mobile, and boundary QA |
 | Convert Image | Strong visual format choices and quality feedback | Keep |
 | JPG to GIF | Numbered thumbnail frame order, visual timing presets plus exact bounded timing, loop/play-once control, local Play/Pause source preview, exact output shape/duration feedback, crop and palette disclosures, and matching result summary | Keep; continue long-sequence, palette, mobile, and browser playback QA |
-| Photo Editor | Previously used hidden neutral defaults | Expose adjustments/caption now; add live image canvas next |
+| Photo Editor | Live first-image canvas, four visual starting looks, exact bounded fine-tuning, optional light/dark caption preview, reset, exact output plan, privacy/metadata disclosure, and matching result summary | Keep; continue color fidelity, caption edge, mobile, and browser-canvas QA |
 | Upscale Image | Scale dropdown | Use visual 2×/4× cards and show target dimensions/memory warning |
 | Remove Background | Edge/background dropdowns | Use visual choices and add transparent checkerboard preview |
 | Watermark Image | Text, position dropdown, opacity slider | Use visual position buttons and add image preview |
@@ -77,7 +77,7 @@ Native text or number entry remains available when precision matters. Numeric li
 1. **Shared foundation:** visual choice cards, number steppers/presets, meaningful range endpoints, and safe single-result automatic download.
 2. **PDF page editors:** Organize, representative single-operation previews, field-aware Forms, and per-page multi-region Redact are complete; continue targeted touch and large-document QA.
 3. **PDF conversions and readers:** pre-export page/text/output feedback plus inline Compare and Summary results.
-4. **Image canvas tools:** Resize, Crop, Photo Editor, Remove Background, Watermark, Meme, Rotate, and Blur Face live previews.
+4. **Image canvas tools:** Resize, Crop, and Photo Editor live previews are complete; continue with Remove Background, Watermark, Meme, Rotate, and Blur Face.
 5. **Final QA:** keyboard, screen-reader names, mobile reflow, large/boundary files, repeated runs, preview, automatic download, offline reload, and browser coverage.
 
 ## Current audit limits

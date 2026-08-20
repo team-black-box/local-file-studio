@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
-import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
+import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -239,6 +239,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   let canvas;
   let imageResizeOutcome = null;
   let imageCropOutcome = null;
+  let photoEditorPlan = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
 
@@ -369,11 +370,8 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       }
 
       if (slug === "photo-editor") {
-        const brightness = Number(options.brightness || 100);
-        const contrast = Number(options.contrast || 100);
-        const saturation = Number(options.saturation || 100);
-        const warmth = Number(options.warmth || 0);
-        context.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) sepia(${Math.max(0, warmth)}%)`;
+        photoEditorPlan = getPhotoEditorPlan(bitmap.width, bitmap.height, options, limits, `${file.name} after editing`);
+        context.filter = `brightness(${photoEditorPlan.brightness}%) contrast(${photoEditorPlan.contrast}%) saturate(${photoEditorPlan.saturation}%) sepia(${photoEditorPlan.warmth}%)`;
       }
       context.drawImage(bitmap.source, 0, 0);
       context.filter = "none";
@@ -402,12 +400,19 @@ async function renderOne(slug, file, options, report, pixelBudget) {
         drawOutlinedText(context, String(options.bottomText || "STAYS ON YOUR DEVICE").toUpperCase(), canvas.width / 2, canvas.height - size * 0.85, canvas.width * 0.9, size);
       }
 
-      if (slug === "photo-editor" && options.text) {
+      if (slug === "photo-editor" && photoEditorPlan?.caption) {
         const size = Math.max(20, Math.round(Math.min(canvas.width, canvas.height) * 0.055));
+        const lightText = photoEditorPlan.textColor === "#ffffff";
+        context.save();
         context.font = `700 ${size}px Manrope, Arial, sans-serif`;
         context.textAlign = "center";
-        context.fillStyle = options.textColor || "#ffffff";
-        context.fillText(String(options.text), canvas.width / 2, canvas.height * 0.9, canvas.width * 0.86);
+        context.textBaseline = "middle";
+        context.fillStyle = photoEditorPlan.textColor;
+        context.shadowColor = lightText ? "rgba(0,0,0,.82)" : "rgba(255,255,255,.82)";
+        context.shadowBlur = Math.max(4, size * 0.14);
+        context.shadowOffsetY = Math.max(1, size * 0.04);
+        context.fillText(photoEditorPlan.caption, canvas.width / 2, canvas.height * 0.9, canvas.width * 0.86);
+        context.restore();
       }
     }
 
@@ -425,6 +430,12 @@ async function renderOne(slug, file, options, report, pixelBudget) {
         ? { ...result, imageResizeOutcome }
       : slug === "crop-image"
         ? { ...result, imageCropOutcome }
+      : slug === "photo-editor"
+        ? {
+          ...result,
+          details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${config.ext.toUpperCase()} · Edited locally`,
+          photoEditorOutcome: { ...photoEditorPlan, format: config.ext, outputBytes: blob.size },
+        }
       : result;
   } finally {
     bitmap.close?.();
