@@ -49,8 +49,11 @@ import {
   MagnifyingGlassIcon,
   MarkdownLogoIcon,
   PaletteIcon,
+  PauseIcon,
   PencilSimpleIcon,
+  PlayIcon,
   PlusIcon,
+  RepeatIcon,
   ResizeIcon,
   ScanIcon,
   ScalesIcon,
@@ -67,6 +70,7 @@ import {
   StarIcon,
   TextboxIcon,
   TextTIcon,
+  TimerIcon,
   TranslateIcon,
   TrashIcon,
   UploadSimpleIcon,
@@ -79,7 +83,7 @@ import { categories, categoryById, rankToolSearchResults, tools } from "./tools.
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createPdfJpgOutputPlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
-import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getImageCropPlan, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
+import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, assertRasterDimensions, describeToolLimits, getAnimatedGifPlan, getImageCropPlan, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
@@ -179,9 +183,6 @@ const contextualSettings = {
   ],
   "html-to-pdf": [
     { key: "html", type: "textarea", label: "Or paste HTML", default: "", placeholder: "<h1>Local document</h1>" },
-  ],
-  "convert-from-jpg": [
-    { key: "delay", type: "number", label: "GIF frame delay", default: 900, min: 80, max: 5000, step: 20, suffix: "ms" },
   ],
   "html-to-image": [
     { key: "html", type: "textarea", label: "Or paste HTML", default: "", placeholder: "<h1>Private by design</h1>" },
@@ -2079,8 +2080,11 @@ function useLocalImageUrl(file) {
   return url;
 }
 
-function ImagePdfFileQueue({ files, getFileId, moveFile, removeFile, reorderButtonsRef, removeButtonsRef }) {
+function ImageSequenceFileQueue({ files, getFileId, moveFile, removeFile, reorderButtonsRef, removeButtonsRef, mode = "pdf" }) {
   const [urls, setUrls] = useState(new Map());
+  const gifMode = mode === "gif";
+  const itemName = gifMode ? "frame" : "page";
+  const headingId = `image-sequence-order-${mode}`;
 
   useEffect(() => {
     const nextEntries = files.map((file) => [getFileId(file), URL.createObjectURL(file)]);
@@ -2089,12 +2093,12 @@ function ImagePdfFileQueue({ files, getFileId, moveFile, removeFile, reorderButt
   }, [files]);
 
   return (
-    <div className="scan-order" role="group" aria-labelledby="scan-order-title">
+    <div className={`scan-order ${gifMode ? "gif-frame-order" : ""}`} role="group" aria-labelledby={headingId}>
       <div className="scan-order-heading">
-        <span><strong id="scan-order-title">PDF page order</strong><small>Each image becomes one page. Use the arrows to arrange the final PDF.</small></span>
-        <b>{files.length.toLocaleString()} {files.length === 1 ? "page" : "pages"}</b>
+        <span><strong id={headingId}>{gifMode ? "GIF frame order" : "PDF page order"}</strong><small>{gifMode ? "Each JPG becomes one frame. Arrange the sequence before it plays." : "Each image becomes one page. Use the arrows to arrange the final PDF."}</small></span>
+        <b>{files.length.toLocaleString()} {files.length === 1 ? itemName : `${itemName}s`}</b>
       </div>
-      <div className="scan-order-strip" role="list" aria-label={`${files.length} image pages in output order`}>
+      <div className="scan-order-strip" role="list" aria-label={`${files.length} image ${files.length === 1 ? itemName : `${itemName}s`} in output order`}>
         {files.map((file, index) => {
           const fileId = getFileId(file);
           return (
@@ -2103,7 +2107,7 @@ function ImagePdfFileQueue({ files, getFileId, moveFile, removeFile, reorderButt
                 <img src={urls.get(fileId) || ""} alt="" />
                 <b aria-hidden="true">{index + 1}</b>
               </div>
-              <span className="scan-order-file"><strong title={file.name}>{file.name}</strong><small>Page {index + 1} · {formatBytes(file.size)}</small></span>
+              <span className="scan-order-file"><strong title={file.name}>{file.name}</strong><small>{gifMode ? "Frame" : "Page"} {index + 1} · {formatBytes(file.size)}</small></span>
               <div className="scan-order-actions">
                 <span>
                   <button
@@ -2111,28 +2115,28 @@ function ImagePdfFileQueue({ files, getFileId, moveFile, removeFile, reorderButt
                     type="button"
                     onClick={() => moveFile(index, -1)}
                     disabled={index === 0}
-                    aria-label={`Move ${file.name} earlier from page ${index + 1} of ${files.length}`}
+                    aria-label={`Move ${file.name} earlier from ${itemName} ${index + 1} of ${files.length}`}
                   ><ArrowLeftIcon size={15} aria-hidden="true" /></button>
                   <button
                     ref={(node) => { const key = `${fileId}:down`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }}
                     type="button"
                     onClick={() => moveFile(index, 1)}
                     disabled={index === files.length - 1}
-                    aria-label={`Move ${file.name} later from page ${index + 1} of ${files.length}`}
+                    aria-label={`Move ${file.name} later from ${itemName} ${index + 1} of ${files.length}`}
                   ><ArrowRightIcon size={15} aria-hidden="true" /></button>
                 </span>
                 <button
                   ref={(node) => { if (node) removeButtonsRef.current.set(fileId, node); else removeButtonsRef.current.delete(fileId); }}
                   type="button"
                   onClick={() => removeFile(file, index)}
-                  aria-label={`Remove ${file.name}, page ${index + 1} of ${files.length}`}
+                  aria-label={`Remove ${file.name}, ${itemName} ${index + 1} of ${files.length}`}
                 ><TrashIcon size={15} aria-hidden="true" /></button>
               </div>
             </article>
           );
         })}
       </div>
-      <p><ArrowsLeftRightIcon size={15} aria-hidden="true" />Scroll sideways with a trackpad or swipe to review every page.</p>
+      <p><ArrowsLeftRightIcon size={15} aria-hidden="true" />Scroll sideways with a trackpad or swipe to review every {itemName}.</p>
     </div>
   );
 }
@@ -3059,6 +3063,22 @@ function ImageCropResultSummary({ result }) {
     <div className="image-crop-result-summary" role="status" aria-live="polite">
       <span><CropIcon size={23} weight="duotone" aria-hidden="true" /></span>
       <div><strong>{outcome.sourceWidth.toLocaleString()} × {outcome.sourceHeight.toLocaleString()} <ArrowRightIcon size={15} aria-hidden="true" /> {outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px</strong><small>{outcome.retainedPercent.toLocaleString()}% of the original pixels retained</small></div>
+      <b>{formatBytes(result.size)}</b>
+    </div>
+  );
+}
+
+function AnimatedGifResultSummary({ result }) {
+  const outcome = result?.gifOutcome;
+  if (!outcome) return null;
+  return (
+    <div className="image-gif-result-summary" role="status" aria-live="polite">
+      <span><PlayIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div>
+        <strong>{outcome.frameCount.toLocaleString()}-frame GIF created</strong>
+        <small>{outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px · {outcome.delayMs.toLocaleString()} ms/frame · {formatGifDuration(outcome.durationMs)} per cycle · {outcome.loop ? "continuous loop" : "plays once"}</small>
+        {outcome.coverCroppedFrames > 0 && <p>{outcome.coverCroppedFrames.toLocaleString()} differently shaped {outcome.coverCroppedFrames === 1 ? "frame was" : "frames were"} centered and cropped to match frame 1.</p>}
+      </div>
       <b>{formatBytes(result.size)}</b>
     </div>
   );
@@ -4038,6 +4058,186 @@ function useImageSourceInspection(files, enabled, tool, mode) {
   return inspection;
 }
 
+function useAnimatedGifInspection(files, enabled, tool) {
+  const [inspection, setInspection] = useState({ state: "idle", files: null, metadata: [], urls: [], message: "" });
+
+  useEffect(() => {
+    if (!enabled || !files.length) {
+      setInspection({ state: "idle", files: null, metadata: [], urls: [], message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let urls = [];
+    setInspection({ state: "loading", files, metadata: [], urls: [], message: "" });
+    (async () => {
+      const checked = await preflightToolFiles(tool, files, { delay: 900, loop: true });
+      urls = files.map((file) => URL.createObjectURL(file));
+      if (cancelled) {
+        urls.forEach((url) => URL.revokeObjectURL(url));
+        urls = [];
+        return;
+      }
+      setInspection({ state: "ready", files, metadata: checked.metadata, urls, message: "" });
+    })().catch((error) => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls = [];
+      if (!cancelled) {
+        setInspection({ state: "error", files, metadata: [], urls: [], message: toFriendlyResourceError(error, "JPG to GIF")?.message || "These JPG frames could not be inspected safely." });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [enabled, files, tool]);
+
+  return inspection;
+}
+
+function createAnimatedGifUiPlan(inspection, delay, loop, limits) {
+  if (inspection.state !== "ready") return { state: inspection.state, message: inspection.message || "" };
+  try {
+    return { state: "ready", message: "", ...getAnimatedGifPlan(inspection.metadata, delay, loop, limits) };
+  } catch (error) {
+    return { state: "error", message: toFriendlyResourceError(error, "JPG to GIF")?.message || "Choose valid animation timing and try again." };
+  }
+}
+
+function formatGifDuration(milliseconds) {
+  const seconds = Number(milliseconds) / 1000;
+  return `${Number.isInteger(seconds) ? seconds.toLocaleString() : seconds.toLocaleString(undefined, { maximumFractionDigits: 1 })} s`;
+}
+
+const gifTimingPresets = [
+  { value: 300, label: "Quick", hint: "Fast motion", icon: LightningIcon },
+  { value: 900, label: "Balanced", hint: "Easy to follow", icon: ScalesIcon },
+  { value: 1500, label: "Slideshow", hint: "Longer pause", icon: TimerIcon },
+];
+
+function AnimatedGifControls({ files, setting, settings, inspection, plan, onChange }) {
+  const [reducedMotion] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false);
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const delay = Number(settings.delay);
+  const activeIndex = plan.state === "ready" ? Math.min(frameIndex, plan.frameCount - 1) : 0;
+  const currentUrl = inspection.urls[activeIndex] || "";
+
+  useEffect(() => {
+    setFrameIndex(0);
+    setPlaying(inspection.state === "ready" && inspection.urls.length > 1 && !reducedMotion);
+  }, [inspection.files, inspection.state, inspection.urls.length, reducedMotion]);
+
+  useEffect(() => {
+    if (!playing || plan.state !== "ready" || plan.frameCount < 2) return undefined;
+    const timer = window.setTimeout(() => {
+      setFrameIndex((current) => {
+        if (current + 1 < plan.frameCount) return current + 1;
+        if (plan.loop) return 0;
+        setPlaying(false);
+        return current;
+      });
+    }, plan.delayMs);
+    return () => window.clearTimeout(timer);
+  }, [frameIndex, plan.delayMs, plan.frameCount, plan.loop, plan.state, playing]);
+
+  useEffect(() => {
+    const pauseWhenHidden = () => { if (document.hidden) setPlaying(false); };
+    document.addEventListener("visibilitychange", pauseWhenHidden);
+    return () => document.removeEventListener("visibilitychange", pauseWhenHidden);
+  }, []);
+
+  const togglePreview = () => {
+    if (playing) {
+      setPlaying(false);
+      return;
+    }
+    if (plan.state === "ready" && activeIndex === plan.frameCount - 1 && !plan.loop) setFrameIndex(0);
+    setPlaying(true);
+  };
+
+  return (
+    <section className="image-gif-controls" aria-labelledby="image-gif-timing-title">
+      <fieldset>
+        <legend id="image-gif-timing-title">Choose the pace</legend>
+        <p>Pick how long each JPG stays on screen. The preview below uses the same frame order and timing.</p>
+        <div className="image-gif-presets">
+          {gifTimingPresets.map((preset) => {
+            const PresetIcon = preset.icon;
+            const selected = delay === preset.value;
+            return (
+              <button type="button" key={preset.value} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange("delay", preset.value)}>
+                <span><PresetIcon size={18} weight="duotone" aria-hidden="true" /></span>
+                <strong>{preset.label}</strong>
+                <small>{preset.value.toLocaleString()} ms · {preset.hint}</small>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <label className="setting-field range-field image-gif-range" htmlFor="image-gif-delay">
+        <span><strong>Exact timing</strong><output>{delay.toLocaleString()} ms</output></span>
+        <input id="image-gif-delay" type="range" min={setting.min} max={setting.max} step={setting.step || 100} value={settings.delay} onChange={(event) => onChange("delay", Number(event.target.value))} />
+        <span className="range-endpoints"><small>{setting.min.toLocaleString()} ms</small><small>{setting.max.toLocaleString()} ms</small></span>
+      </label>
+
+      <button type="button" className={`image-gif-loop ${settings.loop ? "selected" : ""}`} aria-pressed={Boolean(settings.loop)} onClick={() => onChange("loop", !settings.loop)}>
+        <span><RepeatIcon size={19} weight="duotone" aria-hidden="true" /></span>
+        <span><strong>{settings.loop ? "Loop continuously" : "Play once"}</strong><small>{settings.loop ? "Restart after the final frame." : "Stop on the final frame."}</small></span>
+        <b aria-hidden="true">{settings.loop ? "ON" : "OFF"}</b>
+      </button>
+
+      <div className="image-gif-preview">
+        <div className="image-gif-preview-heading">
+          <span><strong>Animation preview</strong><small>{files.length ? `${files.length.toLocaleString()} ${files.length === 1 ? "frame" : "frames"} · source JPG preview` : "Add JPGs to build the sequence"}</small></span>
+          <button type="button" onClick={togglePreview} disabled={plan.state !== "ready" || plan.frameCount < 2} aria-label={playing ? "Pause animation preview" : "Play animation preview"}>
+            {playing ? <PauseIcon size={16} weight="fill" aria-hidden="true" /> : <PlayIcon size={16} weight="fill" aria-hidden="true" />}
+            {playing ? "Pause" : "Play"}
+          </button>
+        </div>
+        {plan.state === "ready" ? (
+          <>
+            <figure className="image-gif-preview-figure">
+              <div style={{ "--gif-preview-ratio": plan.width / plan.height }}>
+                <img src={currentUrl} alt={`Frame ${activeIndex + 1} preview: ${files[activeIndex]?.name || "JPG image"}`} />
+                <span aria-hidden="true">FRAME {activeIndex + 1} / {plan.frameCount}</span>
+              </div>
+              <figcaption>The browser cycles the original JPGs. The exported GIF uses a 256-color palette, so some colors may shift.</figcaption>
+            </figure>
+            <div className="image-gif-thumbnails" role="list" aria-label="Animation frames">
+              {inspection.urls.map((url, index) => (
+                <span role="listitem" key={`${files[index]?.name}-${files[index]?.size}-${index}`}>
+                  <button type="button" className={index === activeIndex ? "selected" : ""} aria-label={`Show frame ${index + 1}, ${files[index]?.name}`} aria-current={index === activeIndex ? "true" : undefined} onClick={() => { setFrameIndex(index); setPlaying(false); }}>
+                    <img src={url} alt="" />
+                    <b>{index + 1}</b>
+                  </button>
+                </span>
+              ))}
+            </div>
+            <dl className="image-gif-plan" aria-label="Animated GIF output plan">
+              <div><dt>Output</dt><dd>{plan.width.toLocaleString()} × {plan.height.toLocaleString()} px</dd></div>
+              <div><dt>One cycle</dt><dd>{formatGifDuration(plan.durationMs)}</dd></div>
+              <div><dt>Playback</dt><dd>{plan.loop ? "Continuous loop" : "Play once"}</dd></div>
+            </dl>
+            {plan.coverCroppedFrames > 0 && <p className="image-gif-crop-note"><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>{plan.coverCroppedFrames.toLocaleString()} {plan.coverCroppedFrames === 1 ? "frame has" : "frames have"} a different shape.</strong> Those frames are centered and cropped to match the first frame; nothing is stretched.</span></p>}
+          </>
+        ) : plan.state === "loading" ? (
+          <div className="image-gif-preview-state" role="status"><SpinnerGapIcon size={19} className="spin" aria-hidden="true" /><span><strong>Reading JPG dimensions locally…</strong><small>No file data leaves this browser.</small></span></div>
+        ) : plan.state === "error" ? (
+          <div className="image-gif-preview-state error" role="alert"><WarningCircleIcon size={19} weight="fill" aria-hidden="true" /><span><strong>This animation cannot be prepared safely</strong><small>{plan.message}</small></span></div>
+        ) : (
+          <div className="image-gif-preview-state"><ImagesIcon size={20} weight="duotone" aria-hidden="true" /><span><strong>No frames selected</strong><small>The animation, frame order, dimensions, and duration will appear here.</small></span></div>
+        )}
+      </div>
+
+      {reducedMotion && plan.state === "ready" && <p className="image-gif-motion-note"><PlayIcon size={15} aria-hidden="true" /><span>Automatic preview is paused because reduced motion is enabled. Use Play whenever you want to review it.</span></p>}
+      <p className="image-gif-private-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span>The JPGs and animation stay in this tab. The originals are never changed.</span></p>
+    </section>
+  );
+}
+
 function createImageResizePlan(inspection, width, limits) {
   if (inspection.state !== "ready") return { state: inspection.state, message: inspection.message || "", plans: [], first: null };
   try {
@@ -4661,7 +4861,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "crop-image", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "crop-image", "convert-from-jpg", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -4697,6 +4897,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageResizePlan = createImageResizePlan(imageResizeInspection, settings.width, limits);
   const imageCropInspection = useImageSourceInspection(files, tool.slug === "crop-image", tool, "crop");
   const imageCropPlan = createImageCropPlan(imageCropInspection, settings, limits);
+  const animatedGifInspection = useAnimatedGifInspection(files, tool.slug === "convert-from-jpg", tool);
+  const animatedGifPlan = createAnimatedGifUiPlan(animatedGifInspection, settings.delay, settings.loop, limits);
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
     : compressionEstimate;
@@ -4867,12 +5069,13 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageCompressionReady = tool.slug !== "compress-image" || !hasRequiredInput || imageCompressionPreviewMatches;
   const imageResizeReady = tool.slug !== "resize-image" || !hasRequiredInput || (imageResizeInspection.files === files && imageResizePlan.state === "ready");
   const imageCropReady = tool.slug !== "crop-image" || !hasRequiredInput || (imageCropInspection.files === files && imageCropPlan.state === "ready");
+  const animatedGifReady = tool.slug !== "convert-from-jpg" || !hasRequiredInput || (animatedGifInspection.files === files && animatedGifPlan.state === "ready");
   const pdfOfficeTextReady = !usesPdfOfficeTextPreview || !hasRequiredInput || (pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]);
   const wordPreviewReady = tool.slug !== "word-to-pdf" || !hasRequiredInput || (wordPreview.state === "ready" && wordPreview.file === files[0]);
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageCropReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageCropReady && animatedGifReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -4914,6 +5117,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Reading the image dimensions locally."
     : tool.slug === "crop-image" && imageCropInspection.files === files && imageCropPlan.state === "error"
       ? imageCropPlan.message
+    : tool.slug === "convert-from-jpg" && animatedGifInspection.files === files && animatedGifPlan.state === "loading"
+      ? "Reading the JPG frame dimensions locally."
+    : tool.slug === "convert-from-jpg" && animatedGifInspection.files === files && animatedGifPlan.state === "error"
+      ? animatedGifPlan.message
     : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "loading"
       ? "Reading selectable text from every PDF page locally."
     : usesPdfOfficeTextPreview && pdfOfficeTextPreview.file === files[0] && pdfOfficeTextPreview.state === "error"
@@ -5024,6 +5231,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? files.length === 1
         ? `Crop to ${imageCropPlan.first.outputWidth.toLocaleString()} × ${imageCropPlan.first.outputHeight.toLocaleString()} px`
         : `Crop ${files.length.toLocaleString()} images · ${cropRatioNames[settings.aspectRatio] || "Custom"}`
+    : tool.slug === "convert-from-jpg" && hasRequiredInput && animatedGifPlan.state === "ready"
+      ? `Create ${animatedGifPlan.frameCount.toLocaleString()}-frame GIF`
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "loading"
     ? "Checking estimated size"
     : tool.slug === "compress-pdf" && hasRequiredInput && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -5084,7 +5293,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -5098,7 +5307,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -5139,14 +5348,15 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             {files.length > 0 && (
               <div className="file-queue">
                 <div className="queue-heading"><strong>{files.length} {files.length === 1 ? "file" : "files"}</strong><span>{formatBytes(files.reduce((sum, file) => sum + file.size, 0))} total</span></div>
-                {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) ? (
-                  <ImagePdfFileQueue
+                {["scan-to-pdf", "jpg-to-pdf", "convert-from-jpg"].includes(tool.slug) ? (
+                  <ImageSequenceFileQueue
                     files={files}
                     getFileId={getFileId}
                     moveFile={moveFile}
                     removeFile={removeFile}
                     reorderButtonsRef={reorderButtonsRef}
                     removeButtonsRef={removeButtonsRef}
+                    mode={tool.slug === "convert-from-jpg" ? "gif" : "pdf"}
                   />
                 ) : (
                   <div role="list" aria-label={`${files.length} queued ${files.length === 1 ? "file" : "files"}`}>
@@ -5192,13 +5402,14 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
             {results.length > 0 && !inlineReaderTools.has(tool.slug) && (
               <div className="results-card">
-                <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : automaticDownloadRequested ? "Automatic download requested. Preview it or download it again below." : "Created locally. Download the files before closing this tab."}</p></div></div>
+                <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : automaticDownloadRequested ? isPdfPreviewResult(results[0]) ? "Automatic download requested. Preview it or download it again below." : "Automatic download requested. Download it again below if needed." : "Created locally. Download the files before closing this tab."}</p></div></div>
                 {tool.slug === "compress-pdf" && files[0] && results[0] && (
                   <CompressionResultSummary inputSize={files[0].size} result={results[0]} />
                 )}
                 {tool.slug === "compress-image" && <ImageCompressionResultSummary files={files} result={results[0]} />}
                 {tool.slug === "resize-image" && <ImageResizeResultSummary result={results[0]} />}
                 {tool.slug === "crop-image" && <ImageCropResultSummary result={results[0]} />}
+                {tool.slug === "convert-from-jpg" && <AnimatedGifResultSummary result={results[0]} />}
                 {["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && <ImagePdfResultSummary result={results[0]} />}
                 {tool.slug === "repair-pdf" && results[0]?.repairOutcome === "full-rewrite" && <RepairResultSummary />}
                 {tool.slug === "pdf-to-pdfa" && <ArchivePdfResultSummary result={results[0]} />}
@@ -5226,7 +5437,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "crop-image", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "crop-image", "convert-from-jpg", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -5263,6 +5474,15 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 onChange={updateSetting}
                 onMove={(focusX, focusY) => updateSettings({ focusX, focusY })}
                 onReset={() => updateSettings({ aspectRatio: "free", cropScale: 100, focusX: 50, focusY: 50 })}
+              />
+            ) : tool.slug === "convert-from-jpg" ? (
+              <AnimatedGifControls
+                files={files}
+                setting={settingsList.find((setting) => setting.key === "delay")}
+                settings={settings}
+                inspection={animatedGifInspection}
+                plan={animatedGifPlan}
+                onChange={updateSetting}
               />
             ) : tool.slug === "pdf-to-jpg" ? (
               <PdfJpgControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} info={pageInfo} limits={limits} />
@@ -5369,6 +5589,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "crop-image" && imageCropPlan.state === "ready" && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{files.length.toLocaleString()} {files.length === 1 ? "image" : "images"} · {imageCropPlan.first.crop.retainedPercent.toLocaleString()}% retained</strong>
+              )}
+              {tool.slug === "convert-from-jpg" && animatedGifPlan.state === "ready" && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{animatedGifPlan.frameCount.toLocaleString()} {animatedGifPlan.frameCount === 1 ? "frame" : "frames"} · {formatGifDuration(animatedGifPlan.durationMs)} per cycle</strong>
               )}
               {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>

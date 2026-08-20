@@ -62,7 +62,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Resize Image | Friendly width presets, exact stepper, first-image proportional preview, exact original → target dimensions, batch explanation, central output validation, and matching result feedback | Keep; continue mixed-orientation batch, enlargement, mobile, and boundary QA |
 | Crop Image | Visual ratio cards, real first-image preview, draggable and keyboard-movable crop frame, bounded crop amount, reset, exact dimensions, retained-pixel feedback, and matching batch/result summaries | Keep; continue mixed-orientation batch, touch, keyboard, mobile, and boundary QA |
 | Convert Image | Strong visual format choices and quality feedback | Keep |
-| JPG to GIF | Previously used hidden timing defaults | Expose timing and looping now; add animation preview next |
+| JPG to GIF | Numbered thumbnail frame order, visual timing presets plus exact bounded timing, loop/play-once control, local Play/Pause source preview, exact output shape/duration feedback, crop and palette disclosures, and matching result summary | Keep; continue long-sequence, palette, mobile, and browser playback QA |
 | Photo Editor | Previously used hidden neutral defaults | Expose adjustments/caption now; add live image canvas next |
 | Upscale Image | Scale dropdown | Use visual 2×/4× cards and show target dimensions/memory warning |
 | Remove Background | Edge/background dropdowns | Use visual choices and add transparent checkerboard preview |

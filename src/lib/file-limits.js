@@ -14,6 +14,9 @@ export const MAX_PAGE_SELECTION_ENTRIES = 2_000;
 export const MAX_PDF_PASSWORD_CHARACTERS = 1_024;
 export const IMAGE_CROP_SCALE_MIN_PERCENT = 40;
 export const IMAGE_CROP_SCALE_MAX_PERCENT = 100;
+export const GIF_FRAME_DELAY_MIN_MS = 100;
+export const GIF_FRAME_DELAY_MAX_MS = 3000;
+export const GIF_FRAME_DELAY_DEFAULT_MS = 900;
 export const PDF_PREVIEW_LIMITS = Object.freeze({
   maxOutputBytes: GLOBAL_OUTPUT_LIMIT_BYTES,
   maxPages: 500,
@@ -992,6 +995,52 @@ export function getProportionalResizeDimensions(sourceWidth, sourceHeight, targe
   };
   assertOutputDimensions(output.width, output.height, limitsOrTool, label);
   return output;
+}
+
+export function getAnimatedGifPlan(frames, delayMs = GIF_FRAME_DELAY_DEFAULT_MS, loop = true, limitsOrTool = "convert-from-jpg", frameCount = frames?.length) {
+  const limits = limitsOrTool?.maxFileBytes ? limitsOrTool : getToolLimits(limitsOrTool);
+  const count = Number(frameCount);
+  const delay = Number(delayMs);
+  if (!Array.isArray(frames) || !frames.length) {
+    throw new FileLimitError("missing-gif-frames", "Add at least one JPG frame before creating the animation.");
+  }
+  if (!Number.isInteger(count) || count < 1 || count > limits.maxGifFrames) {
+    throw new FileLimitError("gif-frame-limit", `Animated GIF supports 1–${limits.maxGifFrames.toLocaleString()} frames. Remove extra images or create another animation.`);
+  }
+  if (!Number.isInteger(delay) || delay < GIF_FRAME_DELAY_MIN_MS || delay > GIF_FRAME_DELAY_MAX_MS) {
+    throw new FileLimitError("invalid-gif-delay", `Time per image must be from ${GIF_FRAME_DELAY_MIN_MS.toLocaleString()} to ${GIF_FRAME_DELAY_MAX_MS.toLocaleString()} milliseconds.`);
+  }
+
+  const normalizedFrames = frames.map((frame, index) => {
+    const width = Math.round(Number(frame?.width));
+    const height = Math.round(Number(frame?.height));
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+      throw new FileLimitError("invalid-image-dimensions", `${frame?.name || `Frame ${index + 1}`} has invalid image dimensions. Re-save it as a JPG and try again.`);
+    }
+    return { ...frame, width, height };
+  });
+  const first = normalizedFrames[0];
+  const width = Math.min(limits.maxGifWidth, first.width);
+  const height = Math.max(1, Math.round(width * (first.height / first.width)));
+  assertOutputDimensions(
+    width,
+    height,
+    { ...limits, maxOutputEdge: limits.maxGifFrameEdge, maxOutputPixels: limits.maxGifFramePixels },
+    "The animated GIF frame",
+  );
+  const coverCroppedFrames = normalizedFrames.reduce((total, frame) => (
+    (frame.width * first.height) === (frame.height * first.width) ? total : total + 1
+  ), 0);
+
+  return Object.freeze({
+    frameCount: count,
+    width,
+    height,
+    delayMs: delay,
+    durationMs: count * delay,
+    loop: Boolean(loop),
+    coverCroppedFrames,
+  });
 }
 
 export function getImageCropPlan(sourceWidth, sourceHeight, aspectRatio = "free", cropScale = 100, focusX = 50, focusY = 50, limitsOrTool = "crop-image", label = "The cropped output") {
