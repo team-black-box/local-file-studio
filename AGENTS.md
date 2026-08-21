@@ -46,6 +46,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/pdf-form-fields.js`: bounded AcroForm inspection, visual field descriptors, validation, and fill/flatten behavior.
 - `src/lib/pdf-redactions.js`: bounded per-page redaction geometry, serialization, and execution planning.
 - `src/lib/pdf-comparison.js`: bounded line-view construction and scriptless local HTML comparison export.
+- `src/lib/pdf-translation.js`: explicit browser-model availability/preparation and deterministic limited-glossary contracts.
 - `src/lib/pdf-output-protection.js`: opt-in fresh protection for generated PDF results.
 - `src/lib/background-removal.js`: shared corner sampling, cleanup profiles, output flattening, and exact cutout outcomes.
 - `src/lib/face-blur.js`: shared face-region normalization, movable fallback geometry, blur drawing, preview guides, and result contracts.
