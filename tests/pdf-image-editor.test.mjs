@@ -800,6 +800,7 @@ test("Merge PDF preserves selected order in a previewable PDF result", async () 
   assert.equal(result.name, "merged-local.pdf");
   assert.equal(result.type, "application/pdf");
   assert.equal(result.details, "3 pages merged");
+  assert.deepEqual(result.mergeOutcome, { fileCount: 2, totalPages: 3 });
   assert.equal(result.size, result.blob.size);
   assert.ok(result.size > 0);
 

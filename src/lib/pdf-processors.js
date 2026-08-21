@@ -4,6 +4,7 @@
 import {
   PDF_TO_JPG_RENDER_SCALE,
   baseName,
+  createMergePdfPlan,
   createSplitPdfGroups,
   createResultBudget,
   formatPageSelection,
@@ -310,23 +311,21 @@ async function mergePdfs(files, options, report) {
   const { PDFDocument } = await import("pdf-lib");
   const limits = getToolLimits("merge-pdf");
   const output = await PDFDocument.create();
-  let totalPages = 0;
+  const pageCounts = [];
+  let plan = createMergePdfPlan(pageCounts, files.map((file) => file.name), limits);
   for (let index = 0; index < files.length; index += 1) {
     report?.({ phase: `Adding PDF ${index + 1} of ${files.length}`, progress: index / files.length });
     const source = await loadPdfLib(files[index]);
     const sourcePages = source.getPageCount();
-    if (sourcePages > limits.maxPdfPagesPerFile) {
-      throw new FileLimitError("too-many-pages", `${files[index].name} has ${sourcePages.toLocaleString()} pages; Merge PDF supports ${limits.maxPdfPagesPerFile.toLocaleString()} per file. Split it first.`);
-    }
-    totalPages += sourcePages;
-    if (totalPages > limits.maxPdfPagesTotal) {
-      throw new FileLimitError("too-many-total-pages", `${files[index].name} takes this merge above ${limits.maxPdfPagesTotal.toLocaleString()} pages combined. Merge fewer PDFs at a time.`);
-    }
+    pageCounts.push(sourcePages);
+    plan = createMergePdfPlan(pageCounts, files.map((file) => file.name), limits);
     const pages = await output.copyPages(source, source.getPageIndices());
     pages.forEach((page) => output.addPage(page));
   }
+  if (!plan.valid) throw new FileLimitError("not-enough-files", `Merge PDF needs at least ${limits.minFiles.toLocaleString()} PDFs.`);
   const bytes = await output.save({ useObjectStreams: true });
-  return [pdfResult("merged-local.pdf", bytes, `${output.getPageCount()} pages merged`)];
+  const result = pdfResult("merged-local.pdf", bytes, `${plan.totalPages.toLocaleString()} ${plan.totalPages === 1 ? "page" : "pages"} merged`);
+  return [{ ...result, mergeOutcome: { fileCount: plan.fileCount, totalPages: plan.totalPages } }];
 }
 
 async function splitPdf(file, options, report) {

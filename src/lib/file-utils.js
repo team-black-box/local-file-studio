@@ -12,9 +12,71 @@ import {
   assertOutputSize,
   formatLimitBytes,
   FileLimitError,
+  getToolLimits,
 } from "./file-limits.js";
 
 export const PDF_TO_JPG_RENDER_SCALE = 1.7;
+
+export function createMergePdfPlan(pageCounts, fileNames = [], limitsOrTool = "merge-pdf") {
+  if (!Array.isArray(pageCounts)) {
+    throw new FileLimitError("invalid-merge-plan", "The merge page plan is unavailable. Choose the PDFs again.");
+  }
+  const limits = typeof limitsOrTool === "object" && Number.isInteger(limitsOrTool.maxPdfPagesTotal)
+    ? limitsOrTool
+    : getToolLimits(limitsOrTool);
+  if (pageCounts.length > limits.maxFiles) {
+    throw new FileLimitError("too-many-files", `Merge PDF supports up to ${limits.maxFiles.toLocaleString()} PDFs at a time.`);
+  }
+
+  let totalPages = 0;
+  const entries = pageCounts.map((rawPageCount, index) => {
+    const pageCount = Number(rawPageCount);
+    const name = typeof fileNames[index] === "string" && fileNames[index].trim()
+      ? fileNames[index]
+      : `PDF ${index + 1}`;
+    if (!Number.isInteger(pageCount) || pageCount < 1) {
+      throw new FileLimitError("invalid-page-count", `${name} reported an invalid PDF page count. Re-save the PDF and try again.`);
+    }
+    if (pageCount > limits.maxPdfPagesPerFile) {
+      throw new FileLimitError(
+        "too-many-pages",
+        `${name} has ${pageCount.toLocaleString()} pages; Merge PDF safely handles up to ${limits.maxPdfPagesPerFile.toLocaleString()} per file. Split the PDF into smaller parts first.`,
+      );
+    }
+    const startPage = totalPages + 1;
+    totalPages += pageCount;
+    if (!Number.isSafeInteger(totalPages) || totalPages > limits.maxPdfPagesTotal) {
+      throw new FileLimitError(
+        "too-many-total-pages",
+        `${name} takes this job above ${limits.maxPdfPagesTotal.toLocaleString()} pages combined. Remove PDFs or merge them in smaller groups.`,
+      );
+    }
+    const endPage = totalPages;
+    return Object.freeze({
+      index,
+      name,
+      pageCount,
+      startPage,
+      endPage,
+      rangeLabel: startPage === endPage ? String(startPage) : `${startPage}–${endPage}`,
+    });
+  });
+
+  const fileCount = entries.length;
+  const valid = fileCount >= limits.minFiles;
+  return Object.freeze({
+    valid,
+    fileCount,
+    totalPages,
+    entries: Object.freeze(entries),
+    actionLabel: valid
+      ? `Merge ${fileCount.toLocaleString()} PDFs · ${totalPages.toLocaleString()} ${totalPages === 1 ? "page" : "pages"}`
+      : `Add ${Math.max(0, limits.minFiles - fileCount).toLocaleString()} more PDF`,
+    readyLabel: valid
+      ? `${fileCount.toLocaleString()} PDFs · ${totalPages.toLocaleString()} ${totalPages === 1 ? "page" : "pages"} ready`
+      : `${fileCount.toLocaleString()} of ${limits.minFiles.toLocaleString()} PDFs added`,
+  });
+}
 
 export function formatBytes(bytes = 0) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
