@@ -49,6 +49,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/background-removal.js`: shared corner sampling, cleanup profiles, output flattening, and exact cutout outcomes.
 - `src/lib/image-watermark.js`: shared watermark placement, direction, contrast, opacity, drawing, and result contracts.
 - `src/lib/image-meme.js`: shared caption normalization, auto-fit wrapping, outlined drawing, and meme result contracts.
+- `src/lib/image-rotation.js`: shared direction choices, exact rotated dimensions, and rotation result contracts.
 - `src/lib/tool-settings.js`: shared cleanup for memory-only sensitive tool settings.
 - `src/lib/tiff-utils.js`: bounded TIFF metadata normalization shared by preflight and decoding.
 - `src/lib/file-limits.js`: canonical resource policies and displayed limit descriptions.

@@ -339,7 +339,7 @@ export function getToolLimits(toolOrSlug) {
   if (IMAGE_BATCH_TOOLS.has(slug) || tool?.kind === "image") {
     return imageProfile({
       firstFrameImageFormats: "animated PNG/WebP",
-      ...(slug === "watermark-image" ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
+      ...(["watermark-image", "rotate-image"].includes(slug) ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
     });
   }
 
