@@ -54,7 +54,7 @@ import {
 } from "../src/lib/file-limits.js";
 import { runBoundedLineDiff } from "../src/lib/diff-worker-client.js";
 import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
-import { createExtractPagePlan, createOrganizePagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, getAutomaticDownloadResult, isToolSearchShortcut, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
+import { createExtractPagePlan, createMergePdfPlan, createOrganizePagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, getAutomaticDownloadResult, isToolSearchShortcut, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { matchesImageSignature } from "../src/lib/image-processors.js";
 import { preflightToolFiles } from "../src/lib/file-preflight.js";
@@ -594,6 +594,35 @@ test("PDF metadata accepts the merge boundary and rejects per-file or combined o
       (error) => error instanceof FileLimitError && error.code === "invalid-page-count" && /invalid\.pdf/.test(error.message),
     );
   }
+});
+
+test("Merge PDF plans exact final ranges from the same central page limits", () => {
+  const limits = getToolLimits("merge-pdf");
+  const exact = createMergePdfPlan([300, 200], ["first.pdf", "second.pdf"], limits);
+  assert.equal(exact.valid, true);
+  assert.equal(exact.totalPages, 500);
+  assert.equal(exact.actionLabel, "Merge 2 PDFs · 500 pages");
+  assert.equal(exact.readyLabel, "2 PDFs · 500 pages ready");
+  assert.deepEqual(exact.entries, [
+    { index: 0, name: "first.pdf", pageCount: 300, startPage: 1, endPage: 300, rangeLabel: "1–300" },
+    { index: 1, name: "second.pdf", pageCount: 200, startPage: 301, endPage: 500, rangeLabel: "301–500" },
+  ]);
+
+  const waiting = createMergePdfPlan([1], ["only.pdf"], limits);
+  assert.equal(waiting.valid, false);
+  assert.equal(waiting.readyLabel, "1 of 2 PDFs added");
+  assert.throws(
+    () => createMergePdfPlan([301, 1], ["large.pdf", "small.pdf"], limits),
+    (error) => error instanceof FileLimitError && error.code === "too-many-pages" && /large\.pdf/.test(error.message),
+  );
+  assert.throws(
+    () => createMergePdfPlan([300, 201], ["first.pdf", "overflow.pdf"], limits),
+    (error) => error instanceof FileLimitError && error.code === "too-many-total-pages" && /overflow\.pdf/.test(error.message),
+  );
+  assert.throws(
+    () => createMergePdfPlan([0, 1], ["invalid.pdf", "valid.pdf"], limits),
+    (error) => error instanceof FileLimitError && error.code === "invalid-page-count" && /invalid\.pdf/.test(error.message),
+  );
 });
 
 test("image and raster guards accept exact pixel limits and reject one-pixel overflow", () => {

@@ -93,7 +93,7 @@ import {
 import { categories, categoryById, rankToolSearchResults, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
-import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createOrganizePagePlan, createPdfJpgOutputPlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
+import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createMergePdfPlan, createOrganizePagePlan, createPdfJpgOutputPlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, IMAGE_UPSCALE_SCALES, MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS, assertRasterDimensions, describeToolLimits, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getPhotoEditorPlan, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./lib/background-removal.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, getImageWatermarkAngle, getImageWatermarkColor, getImageWatermarkPosition } from "./lib/image-watermark.js";
@@ -682,6 +682,65 @@ function usePdfPageInfo(file, enabled, limits, toolName) {
   }, [enabled, file, limits.maxPdfPagesPerFile, toolName]);
 
   return info;
+}
+
+function useMergePdfPreview(files, enabled, tool, limits) {
+  const [preview, setPreview] = useState({ state: "idle", files: null, plan: null, message: "" });
+  const pageCountCacheRef = useRef(new WeakMap());
+
+  useEffect(() => {
+    if (tool.slug !== "merge-pdf" || !files.length) {
+      setPreview({ state: "idle", files: null, plan: null, message: "" });
+      return undefined;
+    }
+    if (!enabled) {
+      setPreview({ state: "waiting", files, plan: null, message: "Checking PDF protection locally…" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    const cachedCounts = files.map((file) => pageCountCacheRef.current.get(file));
+    if (cachedCounts.every((pageCount) => Number.isInteger(pageCount))) {
+      try {
+        const plan = createMergePdfPlan(cachedCounts, files.map((file) => file.name), limits);
+        setPreview({ state: "ready", files, plan, message: "" });
+      } catch (error) {
+        const friendly = toFriendlyResourceError(error, "Merge PDF");
+        setPreview({ state: "error", files, plan: null, message: friendly?.message || "The PDF page counts could not be read locally." });
+      }
+      return () => { cancelled = true; };
+    }
+
+    setPreview({ state: "loading", files, plan: null, message: "Reading page counts locally…" });
+    (async () => {
+      const pageCounts = [...cachedCounts];
+      for (let index = 0; index < files.length; index += 1) {
+        if (Number.isInteger(pageCounts[index])) continue;
+        const inspected = await preflightToolFiles(tool, [files[index]], {}, (progress) => {
+          if (!cancelled) setPreview((current) => current.files === files ? { ...current, message: progress.phase } : current);
+        });
+        if (cancelled) return;
+        const pageCount = inspected.metadata[0]?.pdfPages;
+        pageCountCacheRef.current.set(files[index], pageCount);
+        pageCounts[index] = pageCount;
+      }
+      if (cancelled) return;
+      const plan = createMergePdfPlan(
+        pageCounts,
+        files.map((file) => file.name),
+        limits,
+      );
+      setPreview({ state: "ready", files, plan, message: "" });
+    })().catch((error) => {
+      if (cancelled) return;
+      const friendly = toFriendlyResourceError(error, "Merge PDF");
+      setPreview({ state: "error", files, plan: null, message: friendly?.message || "The PDF page counts could not be read locally." });
+    });
+
+    return () => { cancelled = true; };
+  }, [enabled, files, limits, tool]);
+
+  return preview;
 }
 
 function usePdfOfficeTextPreview(file, password, enabled, limits, format) {
@@ -2123,6 +2182,76 @@ function PdfSettingPreview({ tool, settings, info }) {
       </div>
       <p>{previewDescription}</p>
     </section>
+  );
+}
+
+function MergePdfControls({ files, preview }) {
+  const plan = preview.files === files ? preview.plan : null;
+  const state = preview.files === files ? preview.state : files.length ? "loading" : "idle";
+
+  if (state === "idle") {
+    return (
+      <section className="merge-plan" aria-labelledby="merge-plan-title">
+        <div className="merge-plan-state">
+          <FilesIcon size={22} weight="duotone" aria-hidden="true" />
+          <span><strong id="merge-plan-title">Build one PDF in order</strong><small>Add at least two PDFs. Their exact page counts and final ranges will appear here.</small></span>
+        </div>
+      </section>
+    );
+  }
+
+  if (["waiting", "loading"].includes(state)) {
+    return (
+      <section className="merge-plan" aria-labelledby="merge-plan-title">
+        <div className="merge-plan-state" role="status">
+          <SpinnerGapIcon size={21} className="spin" aria-hidden="true" />
+          <span><strong id="merge-plan-title">Checking the merge locally</strong><small>{preview.message || "Reading page counts without uploading the files."}</small></span>
+        </div>
+      </section>
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <section className="merge-plan" aria-labelledby="merge-plan-title">
+        <div className="merge-plan-state error" role="alert">
+          <WarningCircleIcon size={21} weight="fill" aria-hidden="true" />
+          <span><strong id="merge-plan-title">This merge needs attention</strong><small>{preview.message}</small></span>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="merge-plan" aria-labelledby="merge-plan-title">
+      <div className="merge-plan-summary">
+        <span><FilesIcon size={21} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="merge-plan-title">{plan.fileCount.toLocaleString()} {plan.fileCount === 1 ? "PDF checked" : "PDFs in final order"}</strong><small>{plan.valid ? `They will become one ${plan.totalPages.toLocaleString()}-page PDF.` : "Add one more PDF to create the merged file."}</small></div>
+        <b>{plan.totalPages.toLocaleString()}<small>{plan.totalPages === 1 ? "page" : "pages"}</small></b>
+      </div>
+      <ol className="merge-plan-list" aria-label="Final merged page ranges">
+        {plan.entries.map((entry) => (
+          <li key={`${entry.index}-${entry.name}`}>
+            <span className="merge-plan-number" aria-hidden="true">{entry.index + 1}</span>
+            <span className="merge-plan-file"><strong title={entry.name}>{entry.name}</strong><small>{entry.pageCount.toLocaleString()} {entry.pageCount === 1 ? "page" : "pages"}</small></span>
+            <span className="merge-plan-range"><small>{entry.startPage === entry.endPage ? "Page" : "Pages"}</small><strong>{entry.rangeLabel}</strong></span>
+          </li>
+        ))}
+      </ol>
+      <p className="merge-plan-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Order is visible before merging.</strong> Move files with the arrows on the left; page ranges update locally and the originals stay untouched.</span></p>
+    </section>
+  );
+}
+
+function MergePdfResultSummary({ result }) {
+  const outcome = result?.mergeOutcome;
+  if (!outcome) return null;
+  return (
+    <div className="merge-result-summary" role="status">
+      <span><FilesIcon size={20} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.fileCount.toLocaleString()} PDFs merged in order</strong><small>{outcome.totalPages.toLocaleString()} {outcome.totalPages === 1 ? "page" : "pages"} in the finished PDF · source files unchanged</small></div>
+      <b>LOCAL</b>
+    </div>
   );
 }
 
@@ -6040,9 +6169,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [fileIssue, setFileIssue] = useState(null);
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
+  const mergePdfPreview = useMergePdfPreview(files, tool.slug === "merge-pdf" && passwordGate.ready, tool, limits);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["merge-pdf", "scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -6093,6 +6223,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
     ? { state: "loading", file: files[0], mode: settings.quality }
     : compressionEstimate;
+  const mergePdfPreviewMatches = mergePdfPreview.state === "ready"
+    && mergePdfPreview.files === files
+    && Boolean(mergePdfPreview.plan);
   const imageCompressionPreviewMatches = imageCompressionPreview.state === "ready"
     && imageCompressionPreview.file === files[0]
     && (imageCompressionPreview.result?.imageCompressionOutcome?.qualityApplies === false
@@ -6281,6 +6414,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         ? Boolean(organizePlan?.valid)
         : true;
   const compressionReady = tool.slug !== "compress-pdf" || !hasRequiredInput || compressionEstimateAllowsProcessing(activeCompressionEstimate);
+  const mergePdfReady = tool.slug !== "merge-pdf" || !hasRequiredInput || (mergePdfPreviewMatches && mergePdfPreview.plan.valid);
   const imageEncoderReady = tool.slug !== "convert-image" || (imageEncoderSupport.state === "ready" && imageEncoderSupport.formats[settings.format] === true);
   const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
@@ -6303,7 +6437,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
   const htmlImagePreviewReady = tool.slug !== "html-to-image" || !hasRequiredInput || htmlImagePreviewMatches;
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && mergePdfReady && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -6313,6 +6447,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? passwordGate.active?.status === "checking"
         ? "Checking PDF protection locally."
         : "Enter the PDF password above to continue."
+    : tool.slug === "merge-pdf" && hasRequiredInput && (!mergePdfPreviewMatches || mergePdfPreview.state === "loading")
+      ? "Reading every PDF page count before merging."
+    : tool.slug === "merge-pdf" && mergePdfPreview.state === "error"
+      ? mergePdfPreview.message
     : tool.slug === "split-pdf" && !splitPlan?.valid
       ? splitPlan?.message
     : tool.slug === "remove-pdf-pages" && !removePlan?.valid
@@ -6467,8 +6605,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const dropzoneAction = files.length
     ? limits.maxFiles === 1 ? "Choose a different file" : "Add more files"
     : "Drop files here or choose files";
-  const processButtonLabel = tool.slug === "ocr-pdf" && hasRequiredInput
-    ? "Recognize text"
+  const processButtonLabel = tool.slug === "merge-pdf" && mergePdfPreviewMatches
+    ? mergePdfPreview.plan.actionLabel
+    : tool.slug === "ocr-pdf" && hasRequiredInput
+      ? "Recognize text"
     : tool.slug === "summarize-pdf" && hasRequiredInput
       ? "Create summary"
     : tool.slug === "repair-pdf" && hasRequiredInput
@@ -6650,14 +6790,24 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                   />
                 ) : (
                   <div role="list" aria-label={`${files.length} queued ${files.length === 1 ? "file" : "files"}`}>
-                    {files.map((file, index) => (
-                      <div className="file-row" role="listitem" key={getFileId(file)}>
+                    {files.map((file, index) => {
+                      const mergeEntry = tool.slug === "merge-pdf" && mergePdfPreview.files === files
+                        ? mergePdfPreview.plan?.entries[index]
+                        : null;
+                      const fileStatus = mergeEntry
+                        ? `${mergeEntry.pageCount.toLocaleString()} ${mergeEntry.pageCount === 1 ? "page" : "pages"} · final ${mergeEntry.startPage === mergeEntry.endPage ? "page" : "pages"} ${mergeEntry.rangeLabel}`
+                        : tool.slug === "merge-pdf"
+                          ? mergePdfPreview.files === files && mergePdfPreview.state === "error" ? "page check needs attention" : "checking pages locally…"
+                          : "ready locally";
+                      return (
+                      <div className={`file-row ${mergeEntry ? "merge-file-row" : ""}`} role="listitem" key={getFileId(file)}>
                         <span className={`file-type ${tool.kind}`}><ToolIcon tool={tool} size={19} /></span>
-                        <span className="file-info"><strong title={file.name}>{file.name}</strong><small>{formatBytes(file.size)} · ready locally</small></span>
+                        <span className="file-info"><strong title={file.name}>{file.name}</strong><small>{formatBytes(file.size)} · {fileStatus}</small></span>
                         {files.length > 1 && <span className="reorder-controls"><button ref={(node) => { const key = `${getFileId(file)}:up`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }} onClick={() => moveFile(index, -1)} disabled={index === 0} aria-label={`Move ${file.name} up from position ${index + 1} of ${files.length}`}><ArrowUpIcon size={15} aria-hidden="true" /></button><button ref={(node) => { const key = `${getFileId(file)}:down`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }} onClick={() => moveFile(index, 1)} disabled={index === files.length - 1} aria-label={`Move ${file.name} down from position ${index + 1} of ${files.length}`}><ArrowDownIcon size={15} aria-hidden="true" /></button></span>}
                         <button ref={(node) => { const fileId = getFileId(file); if (node) removeButtonsRef.current.set(fileId, node); else removeButtonsRef.current.delete(fileId); }} className="remove-file" onClick={() => removeFile(file, index)} aria-label={`Remove ${file.name}, position ${index + 1} of ${files.length}`}><TrashIcon size={17} aria-hidden="true" /></button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -6716,6 +6866,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "excel-to-pdf" && <SpreadsheetPdfResultSummary result={results[0]} />}
                 {tool.slug === "html-to-pdf" && <HtmlPdfResultSummary result={results[0]} />}
                 {tool.slug === "html-to-image" && <HtmlImageResultSummary result={results[0]} />}
+                {tool.slug === "merge-pdf" && <MergePdfResultSummary result={results[0]} />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -6735,8 +6886,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
-            {tool.slug === "split-pdf" ? (
+            <div className="settings-heading"><span>{tool.slug === "merge-pdf" ? <FilesIcon size={19} /> : ["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "merge-pdf" ? "Merge plan" : tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "merge-pdf" ? "Check every source and the final page order before merging." : tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
+            {tool.slug === "merge-pdf" ? (
+              <MergePdfControls files={files} preview={mergePdfPreview} />
+            ) : tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
               <RemovePdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={removePlan} />
@@ -6892,6 +7045,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               {processError && <div className="error-card" role="alert"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><strong>Couldn’t finish that job</strong>{processError}</span></div>}
               {tool.slug === "split-pdf" && splitPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{splitPlan.groups.length.toLocaleString()} {splitPlan.groups.length === 1 ? "PDF" : "PDFs"} ready</strong>
+              )}
+              {tool.slug === "merge-pdf" && mergePdfPreviewMatches && mergePdfPreview.plan.valid && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{mergePdfPreview.plan.readyLabel}</strong>
               )}
               {tool.slug === "extract-pdf-pages" && extractPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{settings.combine === false ? `${extractPlan.outputCount.toLocaleString()} ${extractPlan.outputCount === 1 ? "PDF" : "PDFs"} in ZIP` : "1 PDF"} ready</strong>

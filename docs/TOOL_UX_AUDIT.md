@@ -24,7 +24,7 @@ Native text or number entry remains available when precision matters. Numeric li
 
 | Tool | Current interaction | Next enhancement |
 | --- | --- | --- |
-| Merge PDF | Strong ordered file list and PDF preview | Keep; add page-count feedback before merge |
+| Merge PDF | Complete: ordered file list, local per-file page inspection, live final page ranges and total, exact readiness action, and previewable result summary | Keep; continue protected-input, 20-file, 500-page, reorder, mobile, and boundary QA |
 | Split PDF | Strong visual page rail, presets, and output groups | Keep; continue boundary/mobile QA |
 | Remove Pages | Strong visual page selection | Keep; continue boundary/mobile QA |
 | Extract Pages | Strong visual page selection and output choice | Keep; continue boundary/mobile QA |
