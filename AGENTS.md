@@ -47,6 +47,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/pdf-comparison.js`: bounded line-view construction and scriptless local HTML comparison export.
 - `src/lib/pdf-output-protection.js`: opt-in fresh protection for generated PDF results.
 - `src/lib/background-removal.js`: shared corner sampling, cleanup profiles, output flattening, and exact cutout outcomes.
+- `src/lib/face-blur.js`: shared face-region normalization, movable fallback geometry, blur drawing, preview guides, and result contracts.
 - `src/lib/image-watermark.js`: shared watermark placement, direction, contrast, opacity, drawing, and result contracts.
 - `src/lib/image-meme.js`: shared caption normalization, auto-fit wrapping, outlined drawing, and meme result contracts.
 - `src/lib/image-rotation.js`: shared direction choices, exact rotated dimensions, and rotation result contracts.

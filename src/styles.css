@@ -9476,6 +9476,382 @@ body {
   }
 }
 
+.workbench-body.face-blur-preview-body {
+  grid-template-columns: minmax(0, 1fr) 460px;
+}
+
+.face-blur-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.face-blur-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.face-blur-preview-heading > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.face-blur-preview-heading strong,
+.face-blur-strength-choices > legend {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 790;
+}
+
+.face-blur-preview-heading small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.face-blur-preview-heading > svg {
+  flex: 0 0 auto;
+  color: var(--privacy);
+}
+
+.face-blur-preview-figure {
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.face-blur-preview-figure > button,
+.face-blur-preview-figure > div {
+  width: min(100%, calc(230px * var(--face-preview-ratio)));
+  aspect-ratio: var(--face-preview-ratio);
+  display: block;
+  overflow: hidden;
+  margin: 0 auto;
+  border: 0;
+  padding: 0;
+  background: #eef1ed;
+}
+
+.face-blur-preview-positioner {
+  color: inherit;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.face-blur-preview-positioner:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+
+.face-blur-preview-figure img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: fill;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.face-blur-preview-figure figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding: 9px 10px;
+}
+
+.face-blur-preview-figure figcaption > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.face-blur-preview-figure figcaption strong {
+  color: var(--ink);
+  font-size: 8px;
+}
+
+.face-blur-preview-figure figcaption small {
+  color: var(--muted);
+  font-size: 7px;
+  line-height: 1.35;
+}
+
+.face-blur-preview-figure figcaption b {
+  flex: 0 0 auto;
+  border: 1px solid #cfe2d9;
+  border-radius: 999px;
+  padding: 5px 7px;
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+  font: 780 6px/1 var(--mono);
+}
+
+.face-blur-preview-state {
+  min-height: 210px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  place-content: center;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #cfe2d9;
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+}
+
+.face-blur-preview-state > span {
+  display: grid;
+  gap: 2px;
+}
+
+.face-blur-preview-state strong {
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.face-blur-preview-state small {
+  color: var(--muted-strong);
+  font-size: 7px;
+  line-height: 1.4;
+}
+
+.face-blur-preview-state.error {
+  border-color: #e2d5ca;
+  background: var(--warm-soft);
+  color: #684a36;
+}
+
+.face-blur-fallback-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.face-blur-fallback-controls > p,
+.face-blur-batch-note,
+.face-blur-private-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  border-radius: 8px;
+  padding: 9px;
+  color: var(--muted-strong);
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.face-blur-fallback-controls > p {
+  border: 1px solid #e2d5ca;
+  background: var(--warm-soft);
+  color: #684a36;
+}
+
+.face-blur-fallback-controls > p svg,
+.face-blur-batch-note svg,
+.face-blur-private-note svg {
+  flex: 0 0 auto;
+}
+
+.face-blur-fallback-controls > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.face-blur-fallback-controls label,
+.face-blur-strength-range {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--surface);
+}
+
+.face-blur-fallback-controls label > span,
+.face-blur-strength-range > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.face-blur-fallback-controls label strong,
+.face-blur-strength-range strong {
+  color: var(--ink);
+  font-size: 8px;
+}
+
+.face-blur-fallback-controls output,
+.face-blur-strength-range output {
+  color: var(--privacy-dark);
+  font: 760 7px/1 var(--mono);
+}
+
+.face-blur-fallback-controls input,
+.face-blur-strength-range input {
+  width: 100%;
+  accent-color: var(--privacy);
+}
+
+.face-blur-strength-choices {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.face-blur-strength-choices > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.face-blur-strength-choices button {
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  padding: 10px 7px;
+  background: var(--surface);
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.face-blur-strength-choices button:hover,
+.face-blur-strength-choices button.selected {
+  border-color: var(--privacy);
+  background: var(--privacy-soft);
+  color: var(--privacy-dark);
+}
+
+.face-blur-strength-choices button > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+
+.face-blur-strength-choices button strong {
+  color: var(--ink);
+  font-size: 8px;
+}
+
+.face-blur-strength-choices button small {
+  color: var(--muted);
+  font-size: 6px;
+  line-height: 1.25;
+}
+
+.face-blur-strength-range {
+  border-color: #cfe2d9;
+  background: var(--privacy-soft);
+}
+
+.face-blur-batch-note {
+  border: 1px solid #dce4df;
+  background: var(--surface-soft);
+}
+
+.face-blur-private-note {
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 10px 0 0;
+}
+
+.face-blur-result-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  background: #f8fbf9;
+}
+
+.face-blur-result-summary > span {
+  width: 37px;
+  height: 37px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--privacy-soft);
+  color: var(--privacy);
+}
+
+.face-blur-result-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.face-blur-result-summary > div strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.face-blur-result-summary > div small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.face-blur-result-summary > b {
+  color: var(--privacy-dark);
+  font: 780 8px/1 var(--mono);
+}
+
+@media (min-width: 801px) and (max-width: 1100px) {
+  .workbench-body.face-blur-preview-body {
+    grid-template-columns: minmax(0, 1fr) 420px;
+  }
+}
+
+@media (max-width: 800px) {
+  .workbench-body.face-blur-preview-body {
+    display: block;
+    overflow-y: auto;
+  }
+
+  .face-blur-preview-body .file-stage,
+  .face-blur-preview-body .settings-panel {
+    overflow: visible;
+  }
+
+  .face-blur-preview-body .settings-panel {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .face-blur-fallback-controls > div,
+  .face-blur-strength-choices > div {
+    grid-template-columns: 1fr;
+  }
+
+  .face-blur-result-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .face-blur-result-summary > b {
+    grid-column: 2;
+  }
+}
+
 /* Shared minimal tool controls */
 .workbench-body.image-compression-preview-body {
   grid-template-columns: minmax(0, 1fr) 430px;

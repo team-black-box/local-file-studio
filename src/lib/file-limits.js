@@ -296,7 +296,7 @@ export function getToolLimits(toolOrSlug) {
       maxOutputEdge: canEnlarge ? 8192 : 6000,
       firstFrameImageFormats: canEnlarge ? "animated PNG" : "animated PNG/WebP",
       ...(slug === "remove-image-background" ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
-      ...(slug === "blur-face" ? { maxDetectedFaces: 40 } : {}),
+      ...(slug === "blur-face" ? { maxDetectedFaces: 40, maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
     });
   }
 
