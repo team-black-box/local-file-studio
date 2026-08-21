@@ -332,6 +332,7 @@ export function getToolLimits(toolOrSlug) {
       maxTotalBytes: 30 * MIB,
       maxImagePixelsTotal: 16 * MEGAPIXEL,
       firstFrameImageFormats: "animated PNG/WebP",
+      ...(slug === "meme-generator" ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
     });
   }
 

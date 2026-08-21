@@ -5,6 +5,7 @@ import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob,
 import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getInteractiveImagePreviewDimensions, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
 import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./background-removal.js";
 import { createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "./image-watermark.js";
+import { createImageMemeOutcome, drawImageMeme, getImageMemePlan } from "./image-meme.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -215,20 +216,6 @@ function drawCover(context, source, sourceWidth, sourceHeight, width, height) {
   context.drawImage(source, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
 }
 
-function drawOutlinedText(context, text, x, y, maxWidth, size, align = "center") {
-  context.save();
-  context.font = `900 ${size}px Manrope, Arial, sans-serif`;
-  context.textAlign = align;
-  context.textBaseline = "middle";
-  context.lineJoin = "round";
-  context.strokeStyle = "rgba(0,0,0,.92)";
-  context.lineWidth = Math.max(3, size * 0.09);
-  context.strokeText(text, x, y, maxWidth);
-  context.fillStyle = "white";
-  context.fillText(text, x, y, maxWidth);
-  context.restore();
-}
-
 async function renderOne(slug, file, options, report, pixelBudget) {
   const limits = getToolLimits(slug);
   const bitmap = await fileToBitmap(file, limits);
@@ -239,6 +226,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   let imageUpscaleOutcome = null;
   let backgroundRemovalOutcome = null;
   let imageWatermarkPlan = null;
+  let imageMemePlan = null;
   let photoEditorPlan = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
@@ -362,9 +350,11 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       }
 
       if (slug === "meme-generator") {
-        const size = Math.max(24, Math.round(canvas.width * 0.07));
-        drawOutlinedText(context, String(options.topText || "WHEN THE FILE" ).toUpperCase(), canvas.width / 2, size * 0.85, canvas.width * 0.9, size);
-        drawOutlinedText(context, String(options.bottomText || "STAYS ON YOUR DEVICE").toUpperCase(), canvas.width / 2, canvas.height - size * 0.85, canvas.width * 0.9, size);
+        imageMemePlan = getImageMemePlan(canvas.width, canvas.height, options, (text, fontSize) => {
+          context.font = `900 ${fontSize}px Manrope, Arial, sans-serif`;
+          return context.measureText(text).width;
+        }, limits, `${file.name} meme`);
+        drawImageMeme(context, imageMemePlan);
       }
 
       if (slug === "photo-editor" && photoEditorPlan?.caption) {
@@ -385,7 +375,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
 
     report?.({ phase: "Encoding image", progress: 0.76 });
     const blob = await canvasToBlob(canvas, config.mime, quality);
-    const suffix = slug === "compress-image" ? "compressed" : slug === "convert-image" ? "converted" : slug.replace(/-image$|^convert-/g, "") || "edited";
+    const suffix = slug === "compress-image" ? "compressed" : slug === "convert-image" ? "converted" : slug === "meme-generator" ? "meme" : slug.replace(/-image$|^convert-/g, "") || "edited";
     const result = resultFromBlob(`${safeFileName(baseName(file.name))}-${safeFileName(suffix)}.${config.ext}`, blob, `${canvas.width} × ${canvas.height}`);
     return slug === "compress-image"
       ? {
@@ -414,6 +404,12 @@ async function renderOne(slug, file, options, report, pixelBudget) {
           ...result,
           details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${imageWatermarkPlan.opacity}% · ${imageWatermarkPlan.position.replace("-", " ")}`,
           imageWatermarkOutcome: createImageWatermarkOutcome(imageWatermarkPlan, config.ext, blob.size),
+        }
+      : slug === "meme-generator"
+        ? {
+          ...result,
+          details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${imageMemePlan.topLines.length + imageMemePlan.bottomLines.length} caption ${imageMemePlan.topLines.length + imageMemePlan.bottomLines.length === 1 ? "line" : "lines"}`,
+          imageMemeOutcome: createImageMemeOutcome(imageMemePlan, config.ext, blob.size),
         }
       : slug === "photo-editor"
         ? {
@@ -481,6 +477,40 @@ export async function createImageWatermarkPreview(file, options = {}) {
     context.drawImage(bitmap.source, 0, 0, dimensions.width, dimensions.height);
     const plan = getImageWatermarkPlan(dimensions.width, dimensions.height, options, limits, `${file.name} watermark preview`);
     drawImageWatermark(context, plan);
+    const blob = await canvasToBlob(canvas, "image/png");
+    assertOutputSize(blob.size, `${file.name} preview`, limits.maxOutputBytes);
+    return {
+      blob,
+      ...plan,
+      sourceWidth: bitmap.width,
+      sourceHeight: bitmap.height,
+      previewWidth: dimensions.width,
+      previewHeight: dimensions.height,
+      previewScale: dimensions.scale,
+    };
+  } finally {
+    bitmap.close?.();
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+  }
+}
+
+export async function createImageMemePreview(file, options = {}) {
+  const limits = getToolLimits("meme-generator");
+  const bitmap = await fileToBitmap(file, limits);
+  let canvas;
+  try {
+    const dimensions = getInteractiveImagePreviewDimensions(bitmap.width, bitmap.height, limits, `${file.name} preview`);
+    canvas = makeCanvas(dimensions.width, dimensions.height, `${file.name} preview`);
+    const context = canvas.getContext("2d");
+    context.drawImage(bitmap.source, 0, 0, dimensions.width, dimensions.height);
+    const plan = getImageMemePlan(dimensions.width, dimensions.height, options, (text, fontSize) => {
+      context.font = `900 ${fontSize}px Manrope, Arial, sans-serif`;
+      return context.measureText(text).width;
+    }, limits, `${file.name} meme preview`);
+    drawImageMeme(context, plan);
     const blob = await canvasToBlob(canvas, "image/png");
     assertOutputSize(blob.size, `${file.name} preview`, limits.maxOutputBytes);
     return {

@@ -62,6 +62,7 @@ import { getTiffDimensions } from "../src/lib/tiff-utils.js";
 import { clearSensitiveToolSettings } from "../src/lib/tool-settings.js";
 import { rankToolSearchResults, tools } from "../src/tools.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "../src/lib/image-watermark.js";
+import { IMAGE_MEME_CASES } from "../src/lib/image-meme.js";
 
 const MiB = 1024 * 1024;
 
@@ -729,6 +730,26 @@ test("Watermark Image uses one catalog contract and a bounded live preview", () 
   assert.equal(limits.maxInteractivePreviewPixels, 1_500_000);
   assert.equal(limits.maxInteractivePreviewEdge, 1600);
   assert.deepEqual(getInteractiveImagePreviewDimensions(6000, 4000, watermark), {
+    sourceWidth: 6000,
+    sourceHeight: 4000,
+    width: 1500,
+    height: 1000,
+    scale: 0.25,
+  });
+});
+
+test("Meme Generator exposes both captions, case choices, and a bounded live preview", () => {
+  const meme = tools.find(({ slug }) => slug === "meme-generator");
+  const settings = Object.fromEntries(meme.settings.map((setting) => [setting.key, setting]));
+  const limits = getToolLimits(meme);
+
+  assert.equal(settings.topText.default, "WHEN THE FILE");
+  assert.equal(settings.bottomText.default, "STAYS ON YOUR DEVICE");
+  assert.equal(settings.letterCase.default, "uppercase");
+  assert.deepEqual(settings.letterCase.options.map(({ value }) => value), IMAGE_MEME_CASES.map(({ value }) => value));
+  assert.equal(limits.maxInteractivePreviewPixels, 1_500_000);
+  assert.equal(limits.maxInteractivePreviewEdge, 1600);
+  assert.deepEqual(getInteractiveImagePreviewDimensions(6000, 4000, meme), {
     sourceWidth: 6000,
     sourceHeight: 4000,
     width: 1500,
