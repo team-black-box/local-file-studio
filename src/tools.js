@@ -5,6 +5,7 @@ import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN
 import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES } from "./lib/background-removal.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "./lib/image-watermark.js";
 import { IMAGE_MEME_CASES } from "./lib/image-meme.js";
+import { IMAGE_ROTATIONS } from "./lib/image-rotation.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -486,12 +487,8 @@ export const tools = withPhosphorExports([
         key: "angle",
         type: "select",
         label: "Rotation",
-        default: 90,
-        options: [
-          { value: 90, label: "90° clockwise", hint: "Turn right." },
-          { value: 180, label: "180°", hint: "Turn upside down." },
-          { value: 270, label: "90° counter-clockwise", hint: "Turn left." },
-        ],
+        default: IMAGE_ROTATIONS[0].value,
+        options: IMAGE_ROTATIONS.map(({ value, label, hint }) => ({ value, label, hint })),
       },
     ],
   },

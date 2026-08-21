@@ -21,6 +21,7 @@ import { createImageCompressionOutcome, hasNonFragmentSvgUrl, shouldRemoveSvgAtt
 import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, inspectBackgroundCorners } from "../src/lib/background-removal.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "../src/lib/image-watermark.js";
 import { IMAGE_MEME_CASES, IMAGE_MEME_MAX_LINES, createImageMemeOutcome, drawImageMeme, getImageMemePlan, wrapImageMemeCaption } from "../src/lib/image-meme.js";
+import { IMAGE_ROTATIONS, createImageRotationOutcome, getImageRotation, getImageRotationPlan } from "../src/lib/image-rotation.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -375,6 +376,52 @@ test("image meme contracts reject empty, oversized, unreadable, and invalid sett
     () => createImageMemeOutcome(getImageMemePlan(800, 600, { topText: "Top", bottomText: "", letterCase: "uppercase" }, measuredMemeText), "gif", 1),
     (error) => error instanceof FileLimitError && error.code === "invalid-meme-outcome",
   );
+});
+
+test("image rotation plans exact directions and output dimensions", () => {
+  assert.deepEqual(IMAGE_ROTATIONS.map(({ value, label }) => [value, label]), [
+    [90, "Turn right"],
+    [180, "Turn around"],
+    [270, "Turn left"],
+  ]);
+  assert.equal(getImageRotation("90").hint, "90° clockwise");
+  assert.deepEqual(getImageRotationPlan(1200, 800, 90), {
+    sourceWidth: 1200,
+    sourceHeight: 800,
+    width: 800,
+    height: 1200,
+    angle: 90,
+    label: "Turn right",
+    hint: "90° clockwise",
+    swapsDimensions: true,
+  });
+  assert.deepEqual(getImageRotationPlan(1200, 800, 180), {
+    sourceWidth: 1200,
+    sourceHeight: 800,
+    width: 1200,
+    height: 800,
+    angle: 180,
+    label: "Turn around",
+    hint: "180° flip",
+    swapsDimensions: false,
+  });
+  assert.deepEqual(createImageRotationOutcome(getImageRotationPlan(1200, 800, 270), "png", 45_000), {
+    sourceWidth: 1200,
+    sourceHeight: 800,
+    width: 800,
+    height: 1200,
+    angle: 270,
+    format: "png",
+    outputBytes: 45_000,
+  });
+});
+
+test("image rotation contracts reject unsupported angles and inconsistent outcomes", () => {
+  assert.throws(() => getImageRotation(0), (error) => error instanceof FileLimitError && error.code === "invalid-image-rotation");
+  assert.throws(() => getImageRotationPlan(800, 600, 45), (error) => error instanceof FileLimitError && error.code === "invalid-image-rotation");
+  const plan = getImageRotationPlan(800, 600, 90);
+  assert.throws(() => createImageRotationOutcome({ ...plan, width: 800 }, "png", 100), (error) => error instanceof FileLimitError && error.code === "invalid-image-rotation-outcome");
+  assert.throws(() => createImageRotationOutcome(plan, "gif", 100), (error) => error instanceof FileLimitError && error.code === "invalid-image-rotation-outcome");
 });
 
 test("PDF to JPG plans one direct image or an exact multi-page ZIP", () => {

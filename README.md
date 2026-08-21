@@ -77,6 +77,8 @@ Watermark Image shows a bounded live preview of the first selected image while t
 
 Meme Generator places editable top and bottom captions directly on a bounded live image preview. Captions can use classic meme capitals or preserve the typed case, wrap automatically without truncation, and stay outlined for contrast; a caption that cannot fit within four readable lines is rejected with guidance to shorten it. The full-resolution JPG/PNG/WebP export uses the same fit plan, keeps the source dimensions and format, and reports the exact caption line count and output size.
 
+Rotate Image replaces angle entry with three direct choices—turn right, turn around, or turn left—and shows the first queued image in that exact orientation before processing. The preview reports the original and rotated dimensions; batch exports apply the same direction to every image while preserving each source format and pixel count.
+
 Redact PDF shows the actual document pages and lets users draw, move, resize, review, and remove multiple black or white redaction areas on specific pages. Exact percentage controls remain available for keyboard and precision entry. The generated PDF rasterizes every page so covered pixels and hidden text are removed; this also means text is no longer selectable anywhere in the output.
 
 Compare PDF presents the bounded selectable-text difference directly in the workbench, with original/revised line numbers, changes-only and all-lines views, and local pagination. The optional HTML report is self-contained, scriptless, and generated locally. This is a text comparison: scans, images, fonts, layout, and visual movement are not compared.

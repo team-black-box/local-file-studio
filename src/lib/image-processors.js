@@ -6,6 +6,7 @@ import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOu
 import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./background-removal.js";
 import { createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "./image-watermark.js";
 import { createImageMemeOutcome, drawImageMeme, getImageMemePlan } from "./image-meme.js";
+import { createImageRotationOutcome, getImageRotationPlan } from "./image-rotation.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -227,6 +228,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   let backgroundRemovalOutcome = null;
   let imageWatermarkPlan = null;
   let imageMemePlan = null;
+  let imageRotationPlan = null;
   let photoEditorPlan = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
@@ -278,10 +280,9 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       canvas = makeCanvas(crop.width, crop.height);
       canvas.getContext("2d").drawImage(bitmap.source, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
     } else if (slug === "rotate-image") {
-      const angle = Number(options.angle || 90);
-      const radians = (angle * Math.PI) / 180;
-      const swap = Math.abs(angle % 180) === 90;
-      canvas = makeCanvas(swap ? bitmap.height : bitmap.width, swap ? bitmap.width : bitmap.height);
+      imageRotationPlan = getImageRotationPlan(bitmap.width, bitmap.height, options.angle, limits, `${file.name} after rotation`);
+      const radians = (imageRotationPlan.angle * Math.PI) / 180;
+      canvas = makeCanvas(imageRotationPlan.width, imageRotationPlan.height, `${file.name} after rotation`);
       const context = canvas.getContext("2d");
       context.translate(canvas.width / 2, canvas.height / 2);
       context.rotate(radians);
@@ -375,7 +376,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
 
     report?.({ phase: "Encoding image", progress: 0.76 });
     const blob = await canvasToBlob(canvas, config.mime, quality);
-    const suffix = slug === "compress-image" ? "compressed" : slug === "convert-image" ? "converted" : slug === "meme-generator" ? "meme" : slug.replace(/-image$|^convert-/g, "") || "edited";
+    const suffix = slug === "compress-image" ? "compressed" : slug === "convert-image" ? "converted" : slug === "meme-generator" ? "meme" : slug === "rotate-image" ? "rotated" : slug.replace(/-image$|^convert-/g, "") || "edited";
     const result = resultFromBlob(`${safeFileName(baseName(file.name))}-${safeFileName(suffix)}.${config.ext}`, blob, `${canvas.width} × ${canvas.height}`);
     return slug === "compress-image"
       ? {
@@ -410,6 +411,12 @@ async function renderOne(slug, file, options, report, pixelBudget) {
           ...result,
           details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${imageMemePlan.topLines.length + imageMemePlan.bottomLines.length} caption ${imageMemePlan.topLines.length + imageMemePlan.bottomLines.length === 1 ? "line" : "lines"}`,
           imageMemeOutcome: createImageMemeOutcome(imageMemePlan, config.ext, blob.size),
+        }
+      : slug === "rotate-image"
+        ? {
+          ...result,
+          details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${imageRotationPlan.label.toLowerCase()}`,
+          imageRotationOutcome: createImageRotationOutcome(imageRotationPlan, config.ext, blob.size),
         }
       : slug === "photo-editor"
         ? {
@@ -521,6 +528,41 @@ export async function createImageMemePreview(file, options = {}) {
       previewWidth: dimensions.width,
       previewHeight: dimensions.height,
       previewScale: dimensions.scale,
+    };
+  } finally {
+    bitmap.close?.();
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+  }
+}
+
+export async function createImageRotationPreview(file, angle = 90) {
+  const limits = getToolLimits("rotate-image");
+  const bitmap = await fileToBitmap(file, limits);
+  let canvas;
+  try {
+    const sourcePreview = getInteractiveImagePreviewDimensions(bitmap.width, bitmap.height, limits, `${file.name} preview`);
+    const plan = getImageRotationPlan(sourcePreview.width, sourcePreview.height, angle, limits, `${file.name} rotation preview`);
+    canvas = makeCanvas(plan.width, plan.height, `${file.name} rotation preview`);
+    const context = canvas.getContext("2d");
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.rotate((plan.angle * Math.PI) / 180);
+    context.drawImage(bitmap.source, -sourcePreview.width / 2, -sourcePreview.height / 2, sourcePreview.width, sourcePreview.height);
+    const blob = await canvasToBlob(canvas, "image/png");
+    assertOutputSize(blob.size, `${file.name} preview`, limits.maxOutputBytes);
+    const fullPlan = getImageRotationPlan(bitmap.width, bitmap.height, angle, limits, `${file.name} after rotation`);
+    return {
+      blob,
+      ...plan,
+      sourceWidth: bitmap.width,
+      sourceHeight: bitmap.height,
+      width: fullPlan.width,
+      height: fullPlan.height,
+      previewWidth: plan.width,
+      previewHeight: plan.height,
+      previewScale: sourcePreview.scale,
     };
   } finally {
     bitmap.close?.();
@@ -744,6 +786,20 @@ export async function processImageTool(slug, files, options = {}, report) {
         opacity: outcomes[0].opacity,
         angle: outcomes[0].angle,
         color: outcomes[0].color,
+        formats: [...new Set(outcomes.map((outcome) => outcome.format))].sort(),
+      },
+    }];
+  }
+  if (slug === "rotate-image" && results.length > 1 && finalResults.length === 1) {
+    const outcomes = results.map((result) => result.imageRotationOutcome).filter(Boolean);
+    if (outcomes.length !== results.length) {
+      throw new FileLimitError("invalid-image-rotation-outcome", "The rotation batch did not report complete output details. No result was kept; choose the images again and retry.");
+    }
+    return [{
+      ...finalResults[0],
+      imageRotationBatchOutcome: {
+        fileCount: results.length,
+        angle: outcomes[0].angle,
         formats: [...new Set(outcomes.map((outcome) => outcome.format))].sort(),
       },
     }];

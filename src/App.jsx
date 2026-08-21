@@ -94,6 +94,7 @@ import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, IMAGE_UPSCA
 import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./lib/background-removal.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, getImageWatermarkAngle, getImageWatermarkColor, getImageWatermarkPosition } from "./lib/image-watermark.js";
 import { IMAGE_MEME_CASES, getImageMemeCase } from "./lib/image-meme.js";
+import { IMAGE_ROTATIONS, getImageRotation } from "./lib/image-rotation.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
@@ -3140,6 +3141,32 @@ function MemeImageResultSummary({ result }) {
   );
 }
 
+function ImageRotationResultSummary({ result }) {
+  const batch = result?.imageRotationBatchOutcome;
+  const outcome = result?.imageRotationOutcome;
+  if (!batch && !outcome) return null;
+
+  if (batch) {
+    const rotation = getImageRotation(batch.angle);
+    return (
+      <div className="image-rotation-result-summary" role="status" aria-live="polite">
+        <span><ArrowClockwiseIcon size={23} weight="duotone" aria-hidden="true" /></span>
+        <div><strong>{batch.fileCount.toLocaleString()} images rotated</strong><small>{rotation.label} · {batch.formats.map((format) => format.toUpperCase()).join(" / ")} · original shapes preserved</small></div>
+        <b>{formatBytes(result.size)} ZIP</b>
+      </div>
+    );
+  }
+
+  const rotation = getImageRotation(outcome.angle);
+  return (
+    <div className="image-rotation-result-summary" role="status" aria-live="polite">
+      <span><ArrowClockwiseIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.sourceWidth.toLocaleString()} × {outcome.sourceHeight.toLocaleString()} <ArrowRightIcon size={15} aria-hidden="true" /> {outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px</strong><small>{rotation.label} · {rotation.hint} · {outcome.format.toUpperCase()}</small></div>
+      <b>{formatBytes(outcome.outputBytes)}</b>
+    </div>
+  );
+}
+
 function ImageCropResultSummary({ result }) {
   const batch = result?.imageCropBatchOutcome;
   const outcome = result?.imageCropOutcome;
@@ -5020,6 +5047,95 @@ function MemeImageControls({ file, settings, onChange, onSwap, preview }) {
   );
 }
 
+function useImageRotationPreview(file, angle, enabled, tool) {
+  const normalizedAngle = Number(angle || IMAGE_ROTATIONS[0].value);
+  const [preview, setPreview] = useState({ state: "idle", file: null, angle: normalizedAngle, outputUrl: "", result: null, message: "" });
+
+  useEffect(() => {
+    if (!file || !enabled) {
+      setPreview({ state: "idle", file: null, angle: normalizedAngle, outputUrl: "", result: null, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let outputUrl = "";
+    setPreview({ state: "loading", file, angle: normalizedAngle, outputUrl: "", result: null, message: "" });
+    const timer = window.setTimeout(() => {
+      (async () => {
+        await preflightToolFiles(tool, [file], { angle: normalizedAngle });
+        const { createImageRotationPreview } = await import("./lib/image-processors.js");
+        const result = await createImageRotationPreview(file, normalizedAngle);
+        outputUrl = URL.createObjectURL(result.blob);
+        if (cancelled) {
+          URL.revokeObjectURL(outputUrl);
+          outputUrl = "";
+          return;
+        }
+        setPreview({ state: "ready", file, angle: normalizedAngle, outputUrl, result, message: "" });
+      })().catch((error) => {
+        if (outputUrl) URL.revokeObjectURL(outputUrl);
+        outputUrl = "";
+        if (!cancelled) setPreview({ state: "error", file, angle: normalizedAngle, outputUrl: "", result: null, message: toFriendlyResourceError(error, "Rotate Image")?.message || "This rotation preview could not be created safely." });
+      });
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      if (outputUrl) URL.revokeObjectURL(outputUrl);
+    };
+  }, [enabled, file, normalizedAngle, tool]);
+
+  return preview;
+}
+
+const imageRotationIcons = Object.freeze({
+  90: ArrowClockwiseIcon,
+  180: RepeatIcon,
+  270: ClockCounterClockwiseIcon,
+});
+
+function ImageRotationControls({ files, angle, onChange, preview }) {
+  const file = files[0];
+  const batch = files.length > 1;
+  const outcome = preview.state === "ready" ? preview.result : null;
+  const rotation = getImageRotation(angle);
+
+  return (
+    <section className="image-rotation-controls" aria-labelledby="image-rotation-preview-title">
+      <div className="image-rotation-preview-heading">
+        <span><strong id="image-rotation-preview-title">Live rotation</strong><small>{file ? batch ? `${file.name}, first of ${files.length.toLocaleString()} images` : file.name : "Add an image to see its new direction"}</small></span>
+        <EyeIcon size={17} aria-hidden="true" />
+      </div>
+
+      <fieldset className="image-rotation-choices">
+        <legend>Choose a direction</legend>
+        <div>{IMAGE_ROTATIONS.map((option) => {
+          const Icon = imageRotationIcons[option.value];
+          const selected = option.value === rotation.value;
+          return <button type="button" key={option.value} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange(option.value)}><Icon size={21} weight={selected ? "bold" : "regular"} aria-hidden="true" /><span><strong>{option.label}</strong><small>{option.hint}</small></span></button>;
+        })}</div>
+      </fieldset>
+
+      {preview.state === "ready" && outcome ? (
+        <figure className="image-rotation-preview-figure">
+          <div><img src={preview.outputUrl} alt={`Preview of ${file.name} rotated ${rotation.hint.toLowerCase()}`} /></div>
+          <figcaption><span><strong>{outcome.sourceWidth.toLocaleString()} × {outcome.sourceHeight.toLocaleString()} <ArrowRightIcon size={14} aria-hidden="true" /> {outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px</strong><small>{rotation.label} · the full export keeps every source pixel.</small></span><b>{compressionInputFormat(file).toUpperCase()}</b></figcaption>
+        </figure>
+      ) : preview.state === "loading" ? (
+        <div className="image-rotation-preview-state" role="status"><SpinnerGapIcon size={20} className="spin" aria-hidden="true" /><span><strong>Turning the first image locally…</strong><small>The preview is bounded so every direction stays responsive.</small></span></div>
+      ) : preview.state === "error" ? (
+        <div className="image-rotation-preview-state error" role="alert"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><strong>Preview needs attention</strong><small>{preview.message}</small></span></div>
+      ) : (
+        <div className="image-rotation-preview-state"><ArrowClockwiseIcon size={21} weight="duotone" aria-hidden="true" /><span><strong>No image selected</strong><small>The first image will turn here before you export the batch.</small></span></div>
+      )}
+
+      {batch && preview.state === "ready" && <p className="image-rotation-batch-note"><StackIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>First-image preview, one direction for the batch.</strong> Every image turns {rotation.hint.toLowerCase()} and keeps its own dimensions and format.</span></p>}
+      <p className="image-rotation-private-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span>The originals stay untouched. Preview and full-resolution export run entirely in this tab; re-encoding removes image metadata.</span></p>
+    </section>
+  );
+}
+
 const cropRatioIcons = {
   free: CropIcon,
   "1:1": ImageSquareIcon,
@@ -5541,7 +5657,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "watermark-image", "meme-generator", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -5580,6 +5696,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const backgroundRemovalPreview = useBackgroundRemovalPreview(files[0], settings, tool.slug === "remove-image-background", tool);
   const imageWatermarkPreview = useImageWatermarkPreview(files[0], settings, tool.slug === "watermark-image", tool);
   const imageMemePreview = useImageMemePreview(files[0], settings, tool.slug === "meme-generator", tool);
+  const imageRotationPreview = useImageRotationPreview(files[0], settings.angle, tool.slug === "rotate-image", tool);
   const imageCropInspection = useImageSourceInspection(files, tool.slug === "crop-image", tool, "crop");
   const imageCropPlan = createImageCropPlan(imageCropInspection, settings, limits);
   const animatedGifInspection = useAnimatedGifInspection(files, tool.slug === "convert-from-jpg", tool);
@@ -5609,6 +5726,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     && imageMemePreview.topText === String(settings.topText ?? "")
     && imageMemePreview.bottomText === String(settings.bottomText ?? "")
     && imageMemePreview.letterCase === String(settings.letterCase || IMAGE_MEME_CASES[0].value);
+  const imageRotationPreviewMatches = imageRotationPreview.state === "ready"
+    && imageRotationPreview.file === files[0]
+    && imageRotationPreview.angle === Number(settings.angle || IMAGE_ROTATIONS[0].value);
 
   useEffect(() => {
     if (tool.slug !== "convert-image" || imageEncoderSupport.state !== "ready" || imageEncoderSupport.formats[settings.format] !== false) return;
@@ -5775,6 +5895,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const backgroundRemovalReady = tool.slug !== "remove-image-background" || !hasRequiredInput || backgroundRemovalPreviewMatches;
   const imageWatermarkReady = tool.slug !== "watermark-image" || !hasRequiredInput || imageWatermarkPreviewMatches;
   const imageMemeReady = tool.slug !== "meme-generator" || !hasRequiredInput || imageMemePreviewMatches;
+  const imageRotationReady = tool.slug !== "rotate-image" || !hasRequiredInput || imageRotationPreviewMatches;
   const imageCropReady = tool.slug !== "crop-image" || !hasRequiredInput || (imageCropInspection.files === files && imageCropPlan.state === "ready");
   const animatedGifReady = tool.slug !== "convert-from-jpg" || !hasRequiredInput || (animatedGifInspection.files === files && animatedGifPlan.state === "ready");
   const photoEditorReady = tool.slug !== "photo-editor" || !hasRequiredInput || (photoEditorInspection.files === files && photoEditorPlan.state === "ready");
@@ -5783,7 +5904,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && imageWatermarkReady && imageMemeReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -5837,6 +5958,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Fitting the meme captions to the local preview."
     : tool.slug === "meme-generator" && imageMemePreview.file === files[0] && imageMemePreview.state === "error"
       ? imageMemePreview.message
+    : tool.slug === "rotate-image" && imageRotationPreview.file === files[0] && imageRotationPreview.state === "loading"
+      ? "Turning the first-image preview locally."
+    : tool.slug === "rotate-image" && imageRotationPreview.file === files[0] && imageRotationPreview.state === "error"
+      ? imageRotationPreview.message
     : tool.slug === "crop-image" && imageCropInspection.files === files && imageCropPlan.state === "loading"
       ? "Reading the image dimensions locally."
     : tool.slug === "crop-image" && imageCropInspection.files === files && imageCropPlan.state === "error"
@@ -5967,6 +6092,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? files.length === 1 ? "Add watermark" : `Watermark ${files.length.toLocaleString()} images`
     : tool.slug === "meme-generator" && hasRequiredInput && imageMemePreviewMatches
       ? "Create meme"
+    : tool.slug === "rotate-image" && hasRequiredInput && imageRotationPreviewMatches
+      ? files.length === 1 ? getImageRotation(settings.angle).label : `${getImageRotation(settings.angle).label} · ${files.length.toLocaleString()} images`
     : tool.slug === "crop-image" && hasRequiredInput && imageCropPlan.state === "ready"
       ? files.length === 1
         ? `Crop to ${imageCropPlan.first.outputWidth.toLocaleString()} × ${imageCropPlan.first.outputHeight.toLocaleString()} px`
@@ -6035,7 +6162,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "upscale-image" ? "image-upscale-workbench" : tool.slug === "remove-image-background" ? "background-removal-workbench" : tool.slug === "watermark-image" ? "image-watermark-workbench" : tool.slug === "meme-generator" ? "image-meme-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "upscale-image" ? "image-upscale-workbench" : tool.slug === "remove-image-background" ? "background-removal-workbench" : tool.slug === "watermark-image" ? "image-watermark-workbench" : tool.slug === "meme-generator" ? "image-meme-workbench" : tool.slug === "rotate-image" ? "image-rotation-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -6049,7 +6176,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -6154,6 +6281,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "remove-image-background" && <BackgroundRemovalResultSummary result={results[0]} />}
                 {tool.slug === "watermark-image" && <WatermarkImageResultSummary result={results[0]} />}
                 {tool.slug === "meme-generator" && <MemeImageResultSummary result={results[0]} />}
+                {tool.slug === "rotate-image" && <ImageRotationResultSummary result={results[0]} />}
                 {tool.slug === "crop-image" && <ImageCropResultSummary result={results[0]} />}
                 {tool.slug === "convert-from-jpg" && <AnimatedGifResultSummary result={results[0]} />}
                 {tool.slug === "photo-editor" && <PhotoEditorResultSummary result={results[0]} />}
@@ -6184,7 +6312,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "watermark-image", "meme-generator", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -6219,6 +6347,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <WatermarkImageControls files={files} settings={settings} onChange={updateSetting} preview={imageWatermarkPreview} />
             ) : tool.slug === "meme-generator" ? (
               <MemeImageControls file={files[0]} settings={settings} onChange={updateSetting} onSwap={() => updateSettings({ topText: settings.bottomText, bottomText: settings.topText })} preview={imageMemePreview} />
+            ) : tool.slug === "rotate-image" ? (
+              <ImageRotationControls files={files} angle={settings.angle} onChange={(value) => updateSetting("angle", value)} preview={imageRotationPreview} />
             ) : tool.slug === "crop-image" ? (
               <ImageCropControls
                 files={files}
@@ -6371,6 +6501,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "meme-generator" && imageMemePreviewMatches && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{imageMemePreview.result.topLines.length + imageMemePreview.result.bottomLines.length} caption {imageMemePreview.result.topLines.length + imageMemePreview.result.bottomLines.length === 1 ? "line" : "lines"} · {getImageMemeCase(settings.letterCase).label}</strong>
+              )}
+              {tool.slug === "rotate-image" && imageRotationPreviewMatches && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{files.length.toLocaleString()} {files.length === 1 ? "image" : "images"} · {getImageRotation(settings.angle).label}</strong>
               )}
               {tool.slug === "crop-image" && imageCropPlan.state === "ready" && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{files.length.toLocaleString()} {files.length === 1 ? "image" : "images"} · {imageCropPlan.first.crop.retainedPercent.toLocaleString()}% retained</strong>
