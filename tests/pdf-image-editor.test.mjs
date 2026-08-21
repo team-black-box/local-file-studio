@@ -22,6 +22,7 @@ import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, inspectBa
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "../src/lib/image-watermark.js";
 import { IMAGE_MEME_CASES, IMAGE_MEME_MAX_LINES, createImageMemeOutcome, drawImageMeme, getImageMemePlan, wrapImageMemeCaption } from "../src/lib/image-meme.js";
 import { IMAGE_ROTATIONS, createImageRotationOutcome, getImageRotation, getImageRotationPlan } from "../src/lib/image-rotation.js";
+import { FACE_BLUR_DEFAULT_FOCUS, FACE_BLUR_STRENGTHS, createFaceBlurOutcome, createFaceBlurPlan, drawFaceBlur, validateFaceBlurPlan } from "../src/lib/face-blur.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -422,6 +423,70 @@ test("image rotation contracts reject unsupported angles and inconsistent outcom
   const plan = getImageRotationPlan(800, 600, 90);
   assert.throws(() => createImageRotationOutcome({ ...plan, width: 800 }, "png", 100), (error) => error instanceof FileLimitError && error.code === "invalid-image-rotation-outcome");
   assert.throws(() => createImageRotationOutcome(plan, "gif", 100), (error) => error instanceof FileLimitError && error.code === "invalid-image-rotation-outcome");
+});
+
+test("Blur Face plans detected regions or one movable centered fallback", () => {
+  assert.deepEqual(FACE_BLUR_STRENGTHS.map(({ value }) => value), [12, 24, 40]);
+  assert.deepEqual(FACE_BLUR_DEFAULT_FOCUS, { x: 50, y: 35 });
+  const detected = createFaceBlurPlan({
+    width: 1000,
+    height: 800,
+    strength: 40,
+    focusX: 50,
+    focusY: 35,
+    detectedRegions: [{ x: -20, y: 100, width: 220, height: 260 }, { x: 700, y: 50, width: 180, height: 210 }],
+  });
+  assert.equal(detected.mode, "detected");
+  assert.equal(detected.regions.length, 2);
+  assert.deepEqual(detected.regions[0], { x: 0, y: 100, width: 200, height: 260 });
+
+  const fallback = createFaceBlurPlan({ width: 1000, height: 800, strength: 24, focusX: 70, focusY: 60, fallbackReason: "unavailable" });
+  assert.equal(fallback.mode, "centered-fallback");
+  assert.equal(fallback.regions.length, 1);
+  assert.equal(fallback.focusX, 70);
+  assert.equal(fallback.focusY, 60);
+  assert.deepEqual(validateFaceBlurPlan(fallback, 1000, 800, 24), fallback);
+  assert.throws(() => validateFaceBlurPlan(fallback, 999, 800, 24), (error) => error instanceof FileLimitError && error.code === "stale-face-blur-plan");
+  assert.throws(() => validateFaceBlurPlan(fallback, 1000, 800, 24, 40, 50, 60), (error) => error instanceof FileLimitError && error.code === "stale-face-blur-plan");
+  assert.throws(() => createFaceBlurPlan({ width: 100, height: 100, detectedRegions: Array.from({ length: 41 }, () => ({ x: 1, y: 1, width: 2, height: 2 })) }), (error) => error instanceof FileLimitError && error.code === "face-count-limit");
+  assert.throws(() => createFaceBlurPlan({ width: 100, height: 100, strength: 49 }), (error) => error instanceof FileLimitError && error.code === "invalid-face-blur-strength");
+});
+
+test("Blur Face preview guides are separate from the validated export outcome", () => {
+  const plan = createFaceBlurPlan({ width: 400, height: 300, strength: 24, detectedRegions: [{ x: 100, y: 60, width: 120, height: 140 }] });
+  const calls = [];
+  const context = {
+    filter: "none",
+    lineWidth: 0,
+    shadowBlur: 0,
+    strokeStyle: "",
+    shadowColor: "",
+    drawImage: (...args) => calls.push(["drawImage", ...args.slice(1)]),
+    save: () => calls.push(["save"]),
+    restore: () => calls.push(["restore"]),
+    beginPath: () => calls.push(["beginPath"]),
+    ellipse: (...args) => calls.push(["ellipse", ...args]),
+    clip: () => calls.push(["clip"]),
+    setLineDash: (value) => calls.push(["setLineDash", value]),
+    stroke: () => calls.push(["stroke"]),
+  };
+  drawFaceBlur(context, {}, plan, { width: 200, height: 150, guides: true });
+  assert.equal(calls.filter(([name]) => name === "drawImage").length, 2);
+  assert.equal(calls.filter(([name]) => name === "ellipse").length, 2);
+  assert.equal(calls.some(([name]) => name === "stroke"), true);
+  assert.deepEqual(createFaceBlurOutcome(plan, "png", 12_345), {
+    width: 400,
+    height: 300,
+    strength: 24,
+    mode: "detected",
+    fallbackReason: "",
+    regionCount: 1,
+    focusX: 50,
+    focusY: 35,
+    format: "png",
+    outputBytes: 12_345,
+  });
+  assert.throws(() => createFaceBlurOutcome(plan, "gif", 12_345), (error) => error instanceof FileLimitError && error.code === "invalid-face-blur-outcome");
 });
 
 test("PDF to JPG plans one direct image or an exact multi-page ZIP", () => {

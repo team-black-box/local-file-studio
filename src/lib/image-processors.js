@@ -7,6 +7,7 @@ import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, getBackgr
 import { createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "./image-watermark.js";
 import { createImageMemeOutcome, drawImageMeme, getImageMemePlan } from "./image-meme.js";
 import { createImageRotationOutcome, getImageRotationPlan } from "./image-rotation.js";
+import { createFaceBlurOutcome, createFaceBlurPlan, drawFaceBlur, getFaceBlurStrength, validateFaceBlurPlan } from "./face-blur.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -217,6 +218,44 @@ function drawCover(context, source, sourceWidth, sourceHeight, width, height) {
   context.drawImage(source, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
 }
 
+async function detectFaceBlurPlan(source, width, height, options, limits) {
+  const strength = getFaceBlurStrength(options.strength ?? options.blur ?? 24);
+  const focusX = options.focusX ?? 50;
+  const focusY = options.focusY ?? 35;
+  if (!("FaceDetector" in window)) {
+    return createFaceBlurPlan({ width, height, strength, focusX, focusY, fallbackReason: "unavailable", maxDetectedFaces: limits.maxDetectedFaces });
+  }
+
+  try {
+    const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: limits.maxDetectedFaces + 1 });
+    const faces = await detector.detect(source);
+    if (faces.length > limits.maxDetectedFaces) {
+      throw new FileLimitError(
+        "face-count-limit",
+        `This image has more than ${limits.maxDetectedFaces.toLocaleString()} detected faces. Crop it into smaller groups so every detected face can be blurred and reviewed.`,
+      );
+    }
+    return createFaceBlurPlan({
+      width,
+      height,
+      strength,
+      focusX,
+      focusY,
+      detectedRegions: faces.map(({ boundingBox }) => ({
+        x: boundingBox?.x,
+        y: boundingBox?.y,
+        width: boundingBox?.width,
+        height: boundingBox?.height,
+      })),
+      fallbackReason: "not-found",
+      maxDetectedFaces: limits.maxDetectedFaces,
+    });
+  } catch (error) {
+    if (error instanceof FileLimitError) throw error;
+    return createFaceBlurPlan({ width, height, strength, focusX, focusY, fallbackReason: "detection-error", maxDetectedFaces: limits.maxDetectedFaces });
+  }
+}
+
 async function renderOne(slug, file, options, report, pixelBudget) {
   const limits = getToolLimits(slug);
   const bitmap = await fileToBitmap(file, limits);
@@ -229,6 +268,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
   let imageWatermarkPlan = null;
   let imageMemePlan = null;
   let imageRotationPlan = null;
+  let faceBlurPlan = null;
   let photoEditorPlan = null;
   const originalFormat = /jpe?g/i.test(file.type) ? "jpg" : /webp/i.test(file.type) ? "webp" : "png";
   let config = outputConfig(options, slug === "convert-image" ? "webp" : originalFormat);
@@ -298,38 +338,11 @@ async function renderOne(slug, file, options, report, pixelBudget) {
     } else if (slug === "blur-face") {
       canvas = makeCanvas(bitmap.width, bitmap.height);
       const context = canvas.getContext("2d");
-      context.drawImage(bitmap.source, 0, 0);
-      let regions = [];
-      if ("FaceDetector" in window) {
-        try {
-          const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: limits.maxDetectedFaces + 1 });
-          const faces = await detector.detect(bitmap.source);
-          if (faces.length > limits.maxDetectedFaces) {
-            throw new FileLimitError(
-              "face-count-limit",
-              `${file.name} has more than ${limits.maxDetectedFaces.toLocaleString()} detected faces. Crop it into smaller groups so every detected face can be blurred and reviewed.`,
-            );
-          }
-          regions = faces.map(({ boundingBox }) => boundingBox);
-        } catch (error) {
-          if (error instanceof FileLimitError) throw error;
-          regions = [];
-        }
-      }
-      if (!regions.length) {
-        const size = Math.min(bitmap.width, bitmap.height) * 0.34;
-        regions = [{ x: bitmap.width / 2 - size / 2, y: bitmap.height * 0.16, width: size, height: size * 1.12 }];
-      }
-      for (const region of regions) {
-        const pad = Math.max(region.width, region.height) * 0.14;
-        context.save();
-        context.beginPath();
-        context.ellipse(region.x + region.width / 2, region.y + region.height / 2, region.width / 2 + pad, region.height / 2 + pad, 0, 0, Math.PI * 2);
-        context.clip();
-        context.filter = `blur(${Number(options.blur || 22)}px)`;
-        context.drawImage(bitmap.source, 0, 0);
-        context.restore();
-      }
+      const reviewedPlan = options.faceBlurPreview?.file === file ? options.faceBlurPreview?.result?.faceBlurPlan : null;
+      faceBlurPlan = reviewedPlan
+        ? validateFaceBlurPlan(reviewedPlan, bitmap.width, bitmap.height, options.strength ?? options.blur ?? 24, limits.maxDetectedFaces, options.focusX ?? 50, options.focusY ?? 35)
+        : await detectFaceBlurPlan(bitmap.source, bitmap.width, bitmap.height, options, limits);
+      drawFaceBlur(context, bitmap.source, faceBlurPlan);
     } else {
       canvas = makeCanvas(bitmap.width, bitmap.height);
       const context = canvas.getContext("2d");
@@ -376,7 +389,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
 
     report?.({ phase: "Encoding image", progress: 0.76 });
     const blob = await canvasToBlob(canvas, config.mime, quality);
-    const suffix = slug === "compress-image" ? "compressed" : slug === "convert-image" ? "converted" : slug === "meme-generator" ? "meme" : slug === "rotate-image" ? "rotated" : slug.replace(/-image$|^convert-/g, "") || "edited";
+    const suffix = slug === "compress-image" ? "compressed" : slug === "convert-image" ? "converted" : slug === "meme-generator" ? "meme" : slug === "rotate-image" ? "rotated" : slug === "blur-face" ? "face-blurred" : slug.replace(/-image$|^convert-/g, "") || "edited";
     const result = resultFromBlob(`${safeFileName(baseName(file.name))}-${safeFileName(suffix)}.${config.ext}`, blob, `${canvas.width} × ${canvas.height}`);
     return slug === "compress-image"
       ? {
@@ -417,6 +430,12 @@ async function renderOne(slug, file, options, report, pixelBudget) {
           ...result,
           details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${imageRotationPlan.label.toLowerCase()}`,
           imageRotationOutcome: createImageRotationOutcome(imageRotationPlan, config.ext, blob.size),
+        }
+      : slug === "blur-face"
+        ? {
+          ...result,
+          details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${faceBlurPlan.mode === "detected" ? `${faceBlurPlan.regions.length.toLocaleString()} detected ${faceBlurPlan.regions.length === 1 ? "face" : "faces"}` : "reviewed privacy area"} · ${faceBlurPlan.strength.toLocaleString()} px blur`,
+          faceBlurOutcome: createFaceBlurOutcome(faceBlurPlan, config.ext, blob.size),
         }
       : slug === "photo-editor"
         ? {
@@ -463,6 +482,41 @@ export async function createBackgroundRemovalPreview(file, options = {}) {
       previewWidth: dimensions.width,
       previewHeight: dimensions.height,
       previewScale: dimensions.scale,
+    };
+  } finally {
+    bitmap.close?.();
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+  }
+}
+
+export async function createFaceBlurPreview(file, options = {}) {
+  const limits = getToolLimits("blur-face");
+  const bitmap = await fileToBitmap(file, limits);
+  let canvas;
+  try {
+    const plan = await detectFaceBlurPlan(bitmap.source, bitmap.width, bitmap.height, options, limits);
+    const dimensions = getInteractiveImagePreviewDimensions(bitmap.width, bitmap.height, limits, `${file.name} preview`);
+    canvas = makeCanvas(dimensions.width, dimensions.height, `${file.name} preview`);
+    drawFaceBlur(canvas.getContext("2d"), bitmap.source, plan, { width: canvas.width, height: canvas.height, guides: true });
+    const blob = await canvasToBlob(canvas, "image/png", 1);
+    assertOutputSize(blob.size, `${file.name} Blur Face preview`, limits.maxOutputBytes);
+    return {
+      blob,
+      faceBlurPlan: plan,
+      sourceWidth: bitmap.width,
+      sourceHeight: bitmap.height,
+      previewWidth: canvas.width,
+      previewHeight: canvas.height,
+      previewScale: dimensions.scale,
+      mode: plan.mode,
+      fallbackReason: plan.fallbackReason,
+      regionCount: plan.regions.length,
+      strength: plan.strength,
+      focusX: plan.focusX,
+      focusY: plan.focusY,
     };
   } finally {
     bitmap.close?.();
@@ -800,6 +854,23 @@ export async function processImageTool(slug, files, options = {}, report) {
       imageRotationBatchOutcome: {
         fileCount: results.length,
         angle: outcomes[0].angle,
+        formats: [...new Set(outcomes.map((outcome) => outcome.format))].sort(),
+      },
+    }];
+  }
+  if (slug === "blur-face" && results.length > 1 && finalResults.length === 1) {
+    const outcomes = results.map((result) => result.faceBlurOutcome).filter(Boolean);
+    if (outcomes.length !== results.length) {
+      throw new FileLimitError("invalid-face-blur-outcome", "The Blur Face batch did not report complete output details. No result was kept; choose the images again and retry.");
+    }
+    return [{
+      ...finalResults[0],
+      faceBlurBatchOutcome: {
+        fileCount: results.length,
+        strength: outcomes[0].strength,
+        detectedFiles: outcomes.filter((outcome) => outcome.mode === "detected").length,
+        fallbackFiles: outcomes.filter((outcome) => outcome.mode === "centered-fallback").length,
+        regionCount: outcomes.reduce((sum, outcome) => sum + outcome.regionCount, 0),
         formats: [...new Set(outcomes.map((outcome) => outcome.format))].sort(),
       },
     }];

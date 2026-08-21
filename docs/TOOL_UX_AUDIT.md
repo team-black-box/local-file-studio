@@ -70,14 +70,14 @@ Native text or number entry remains available when precision matters. Numeric li
 | Meme Generator | Real bounded image preview, counted top/bottom captions, caption swap, Meme caps/Keep typing choices, deterministic four-line auto-fit, honest fit/privacy disclosure, and matching result summary | Keep; continue long/non-ASCII caption, contrast, mobile, and browser-canvas QA |
 | Rotate Image | Real bounded first-image preview, direct Turn right/Turn around/Turn left choices with direction icons, exact original → rotated dimensions, batch rule, privacy/metadata disclosure, and matching result summary | Keep; continue mixed-orientation batch, transparency, mobile, and browser-canvas QA |
 | HTML to Image | Format dropdown and raw viewport number | Use format cards plus device-width presets and stepper |
-| Blur Face | Strength slider only | Add detected-region preview and explicit review before export |
+| Blur Face | Complete: bounded first-image privacy preview, auto-detected region guides or an explicitly movable centered fallback, direct Light/Balanced/Strong choices, exact fine-tuning, and single/batch outcomes | Re-test native detection across supported browsers as the Shape Detection API changes |
 
 ## Delivery waves
 
 1. **Shared foundation:** visual choice cards, number steppers/presets, meaningful range endpoints, and safe single-result automatic download.
 2. **PDF page editors:** Organize, representative single-operation previews, field-aware Forms, and per-page multi-region Redact are complete; continue targeted touch and large-document QA.
 3. **PDF conversions and readers:** pre-export page/text/output feedback plus inline Compare and Summary results.
-4. **Image canvas tools:** Resize, Crop, Photo Editor, Upscale, Remove Background, Watermark, Meme, and Rotate live previews are complete; continue with Blur Face.
+4. **Image canvas tools:** Resize, Crop, Photo Editor, Upscale, Remove Background, Watermark, Meme, Rotate, and Blur Face live previews are complete.
 5. **Final QA:** keyboard, screen-reader names, mobile reflow, large/boundary files, repeated runs, preview, automatic download, offline reload, and browser coverage.
 
 ## Current audit limits

@@ -64,6 +64,7 @@ import { rankToolSearchResults, tools } from "../src/tools.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "../src/lib/image-watermark.js";
 import { IMAGE_MEME_CASES } from "../src/lib/image-meme.js";
 import { IMAGE_ROTATIONS } from "../src/lib/image-rotation.js";
+import { FACE_BLUR_STRENGTHS } from "../src/lib/face-blur.js";
 
 const MiB = 1024 * 1024;
 
@@ -769,6 +770,27 @@ test("Rotate Image exposes exact direction choices and a bounded first-image pre
   assert.equal(limits.maxInteractivePreviewPixels, 1_500_000);
   assert.equal(limits.maxInteractivePreviewEdge, 1600);
   assert.deepEqual(getInteractiveImagePreviewDimensions(6000, 4000, rotate), {
+    sourceWidth: 6000,
+    sourceHeight: 4000,
+    width: 1500,
+    height: 1000,
+    scale: 0.25,
+  });
+});
+
+test("Blur Face exposes reviewable strength and fallback controls with a bounded preview", () => {
+  const blur = tools.find(({ slug }) => slug === "blur-face");
+  const settings = Object.fromEntries(blur.settings.map((setting) => [setting.key, setting]));
+  const limits = getToolLimits(blur);
+
+  assert.deepEqual({ min: settings.strength.min, max: settings.strength.max, step: settings.strength.step, default: settings.strength.default }, { min: 8, max: 48, step: 2, default: 24 });
+  assert.equal(FACE_BLUR_STRENGTHS.some(({ value }) => value === settings.strength.default), true);
+  assert.deepEqual({ min: settings.focusX.min, max: settings.focusX.max, default: settings.focusX.default }, { min: 10, max: 90, default: 50 });
+  assert.deepEqual({ min: settings.focusY.min, max: settings.focusY.max, default: settings.focusY.default }, { min: 10, max: 90, default: 35 });
+  assert.equal(limits.maxDetectedFaces, 40);
+  assert.equal(limits.maxInteractivePreviewPixels, 1_500_000);
+  assert.equal(limits.maxInteractivePreviewEdge, 1600);
+  assert.deepEqual(getInteractiveImagePreviewDimensions(6000, 4000, blur), {
     sourceWidth: 6000,
     sourceHeight: 4000,
     width: 1500,

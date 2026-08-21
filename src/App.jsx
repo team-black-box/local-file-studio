@@ -95,6 +95,7 @@ import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES, getBackgro
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, getImageWatermarkAngle, getImageWatermarkColor, getImageWatermarkPosition } from "./lib/image-watermark.js";
 import { IMAGE_MEME_CASES, getImageMemeCase } from "./lib/image-meme.js";
 import { IMAGE_ROTATIONS, getImageRotation } from "./lib/image-rotation.js";
+import { FACE_BLUR_STRENGTHS, getFaceBlurStrength } from "./lib/face-blur.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
@@ -3103,6 +3104,34 @@ function BackgroundRemovalResultSummary({ result }) {
   );
 }
 
+function FaceBlurResultSummary({ result }) {
+  const batch = result?.faceBlurBatchOutcome;
+  const outcome = result?.faceBlurOutcome;
+  if (!batch && !outcome) return null;
+
+  if (batch) {
+    const detection = [
+      batch.detectedFiles ? `${batch.detectedFiles.toLocaleString()} auto-detected` : "",
+      batch.fallbackFiles ? `${batch.fallbackFiles.toLocaleString()} reviewed fallback` : "",
+    ].filter(Boolean).join(" · ");
+    return (
+      <div className="face-blur-result-summary" role="status" aria-live="polite">
+        <span><EyeSlashIcon size={23} weight="duotone" aria-hidden="true" /></span>
+        <div><strong>{batch.regionCount.toLocaleString()} privacy {batch.regionCount === 1 ? "area" : "areas"} blurred</strong><small>{batch.fileCount.toLocaleString()} images · {detection} · {batch.strength.toLocaleString()} px strength</small></div>
+        <b>{formatBytes(result.size)} ZIP</b>
+      </div>
+    );
+  }
+
+  return (
+    <div className="face-blur-result-summary" role="status" aria-live="polite">
+      <span><EyeSlashIcon size={23} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.mode === "detected" ? `${outcome.regionCount.toLocaleString()} detected ${outcome.regionCount === 1 ? "face" : "faces"} blurred` : "Reviewed privacy area blurred"}</strong><small>{outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px · {outcome.strength.toLocaleString()} px strength · {outcome.format.toUpperCase()}</small></div>
+      <b>{formatBytes(outcome.outputBytes)}</b>
+    </div>
+  );
+}
+
 function WatermarkImageResultSummary({ result }) {
   const batch = result?.imageWatermarkBatchOutcome;
   const outcome = result?.imageWatermarkOutcome;
@@ -4820,6 +4849,150 @@ function BackgroundRemovalControls({ files, settings, onChange, preview }) {
   );
 }
 
+function useFaceBlurPreview(file, settings, enabled, tool) {
+  const strength = Number(settings.strength ?? 24);
+  const focusX = Number(settings.focusX ?? 50);
+  const focusY = Number(settings.focusY ?? 35);
+  const [preview, setPreview] = useState({ state: "idle", file: null, strength, focusX, focusY, outputUrl: "", result: null, message: "" });
+
+  useEffect(() => {
+    if (!file || !enabled) {
+      setPreview({ state: "idle", file: null, strength, focusX, focusY, outputUrl: "", result: null, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let outputUrl = "";
+    setPreview({ state: "loading", file, strength, focusX, focusY, outputUrl: "", result: null, message: "" });
+    const timer = window.setTimeout(() => {
+      (async () => {
+        await preflightToolFiles(tool, [file], { strength, focusX, focusY });
+        const { createFaceBlurPreview } = await import("./lib/image-processors.js");
+        const result = await createFaceBlurPreview(file, { strength, focusX, focusY });
+        outputUrl = URL.createObjectURL(result.blob);
+        if (cancelled) {
+          URL.revokeObjectURL(outputUrl);
+          outputUrl = "";
+          return;
+        }
+        setPreview({ state: "ready", file, strength, focusX, focusY, outputUrl, result, message: "" });
+      })().catch((error) => {
+        if (outputUrl) URL.revokeObjectURL(outputUrl);
+        outputUrl = "";
+        if (!cancelled) setPreview({ state: "error", file, strength, focusX, focusY, outputUrl: "", result: null, message: toFriendlyResourceError(error, "Blur Face")?.message || "This privacy preview could not be created safely." });
+      });
+    }, 160);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      if (outputUrl) URL.revokeObjectURL(outputUrl);
+    };
+  }, [enabled, file, focusX, focusY, strength, tool]);
+
+  return preview;
+}
+
+const faceBlurPresetIcons = Object.freeze({
+  12: FeatherIcon,
+  24: ScalesIcon,
+  40: EyeSlashIcon,
+});
+
+function FaceBlurControls({ files, settings, setting, onChange, onMove, preview }) {
+  const file = files[0];
+  const batch = files.length > 1;
+  const outcome = preview.state === "ready" ? preview.result : null;
+  const fallback = outcome?.mode === "centered-fallback";
+  const dragRef = useRef(false);
+
+  const moveFallback = (event) => {
+    if (!fallback) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const focusX = Math.max(10, Math.min(90, Math.round(((event.clientX - bounds.left) / bounds.width) * 100)));
+    const focusY = Math.max(10, Math.min(90, Math.round(((event.clientY - bounds.top) / bounds.height) * 100)));
+    onMove(focusX, focusY);
+  };
+
+  const fallbackReason = outcome?.fallbackReason === "unavailable"
+    ? "This browser does not provide native face detection."
+    : outcome?.fallbackReason === "detection-error"
+      ? "Native face detection could not inspect this image."
+      : "No face was found automatically in this image.";
+
+  return (
+    <section className="face-blur-controls" aria-labelledby="face-blur-preview-title">
+      <div className="face-blur-preview-heading">
+        <span><strong id="face-blur-preview-title">Review the privacy area</strong><small>{file ? batch ? `${file.name}, first of ${files.length.toLocaleString()} images` : file.name : "Add an image to inspect it locally"}</small></span>
+        <EyeSlashIcon size={18} weight="duotone" aria-hidden="true" />
+      </div>
+
+      {preview.state === "ready" && outcome ? (
+        <figure className="face-blur-preview-figure">
+          {fallback ? (
+            <button
+              type="button"
+              className="face-blur-preview-positioner"
+              style={{ "--face-preview-ratio": outcome.previewWidth / outcome.previewHeight }}
+              aria-label="Move the centered privacy area. Drag, click, or use the arrow keys."
+              onPointerDown={(event) => { dragRef.current = true; event.currentTarget.setPointerCapture?.(event.pointerId); moveFallback(event); }}
+              onPointerMove={(event) => { if (dragRef.current) moveFallback(event); }}
+              onPointerUp={(event) => { dragRef.current = false; event.currentTarget.releasePointerCapture?.(event.pointerId); }}
+              onPointerCancel={() => { dragRef.current = false; }}
+              onKeyDown={(event) => {
+                const directions = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, -2], ArrowDown: [0, 2] };
+                const delta = directions[event.key];
+                if (!delta) return;
+                event.preventDefault();
+                onMove(Math.max(10, Math.min(90, Number(settings.focusX) + delta[0])), Math.max(10, Math.min(90, Number(settings.focusY) + delta[1])));
+              }}
+            >
+              <img src={preview.outputUrl} alt={`Preview of ${file.name} with a movable centered privacy area`} draggable="false" />
+            </button>
+          ) : (
+            <div style={{ "--face-preview-ratio": outcome.previewWidth / outcome.previewHeight }}><img src={preview.outputUrl} alt={`Preview of ${file.name} with ${outcome.regionCount.toLocaleString()} detected face ${outcome.regionCount === 1 ? "area" : "areas"} blurred`} /></div>
+          )}
+          <figcaption><span><strong>{fallback ? "Centered privacy area" : `${outcome.regionCount.toLocaleString()} ${outcome.regionCount === 1 ? "face" : "faces"} found`}</strong><small>{fallback ? "Drag the orange guide onto the face before export." : "Orange guides show every area that will be blurred."}</small></span><b>{outcome.previewScale < 1 ? `${outcome.previewWidth.toLocaleString()} × ${outcome.previewHeight.toLocaleString()}` : "FULL-SIZE"}</b></figcaption>
+        </figure>
+      ) : preview.state === "loading" ? (
+        <div className="face-blur-preview-state" role="status"><SpinnerGapIcon size={20} className="spin" aria-hidden="true" /><span><strong>Checking the first image locally…</strong><small>Face detection and the bounded preview stay in this tab.</small></span></div>
+      ) : preview.state === "error" ? (
+        <div className="face-blur-preview-state error" role="alert"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><strong>Preview needs attention</strong><small>{preview.message}</small></span></div>
+      ) : (
+        <div className="face-blur-preview-state"><EyeSlashIcon size={21} weight="duotone" aria-hidden="true" /><span><strong>No image selected</strong><small>The exact blur area will appear here for review.</small></span></div>
+      )}
+
+      {fallback && (
+        <div className="face-blur-fallback-controls">
+          <p><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Position review required.</strong> {fallbackReason} Move the guide so it fully covers the face.</span></p>
+          <div>
+            <label htmlFor="face-blur-focus-x"><span><strong>Left / right</strong><output>{Number(settings.focusX).toLocaleString()}%</output></span><input id="face-blur-focus-x" type="range" min="10" max="90" step="1" value={settings.focusX} onChange={(event) => onChange("focusX", Number(event.target.value))} /></label>
+            <label htmlFor="face-blur-focus-y"><span><strong>Up / down</strong><output>{Number(settings.focusY).toLocaleString()}%</output></span><input id="face-blur-focus-y" type="range" min="10" max="90" step="1" value={settings.focusY} onChange={(event) => onChange("focusY", Number(event.target.value))} /></label>
+          </div>
+        </div>
+      )}
+
+      <fieldset className="face-blur-strength-choices">
+        <legend>Choose the blur strength</legend>
+        <div>{FACE_BLUR_STRENGTHS.map((option) => {
+          const Icon = faceBlurPresetIcons[option.value];
+          const selected = Number(settings.strength) === option.value;
+          return <button type="button" key={option.value} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange("strength", option.value)}><Icon size={19} weight="duotone" aria-hidden="true" /><span><strong>{option.label}</strong><small>{option.hint}</small></span></button>;
+        })}</div>
+      </fieldset>
+
+      <label className="face-blur-strength-range" htmlFor="face-blur-strength">
+        <span><strong>Fine-tune</strong><output>{getFaceBlurStrength(settings.strength).toLocaleString()} px</output></span>
+        <input id="face-blur-strength" type="range" min={setting.min} max={setting.max} step={setting.step} value={settings.strength} onChange={(event) => onChange("strength", Number(event.target.value))} />
+        <span aria-hidden="true"><small>{setting.minLabel}</small><small>{setting.maxLabel}</small></span>
+      </label>
+
+      {batch && preview.state === "ready" && <p className="face-blur-batch-note"><StackIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>Reviewing the first image only.</strong> Face detection runs separately on every image. Any image without a detected face uses this same relative fallback position.</span></p>}
+      <p className="face-blur-private-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Review before sharing.</strong> Detection is browser-dependent and cannot guarantee anonymity. Orange guides are preview-only; the saved image contains only the blur and is processed entirely in this tab.</span></p>
+    </section>
+  );
+}
+
 function useImageWatermarkPreview(file, settings, enabled, tool) {
   const text = String(settings.text ?? "");
   const position = String(settings.position || "bottom-right");
@@ -5657,7 +5830,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -5694,6 +5867,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageUpscaleInspection = useImageSourceInspection(files, tool.slug === "upscale-image", tool, "upscale");
   const imageUpscalePlan = createImageUpscaleUiPlan(imageUpscaleInspection, settings.scale, limits);
   const backgroundRemovalPreview = useBackgroundRemovalPreview(files[0], settings, tool.slug === "remove-image-background", tool);
+  const faceBlurPreview = useFaceBlurPreview(files[0], settings, tool.slug === "blur-face", tool);
   const imageWatermarkPreview = useImageWatermarkPreview(files[0], settings, tool.slug === "watermark-image", tool);
   const imageMemePreview = useImageMemePreview(files[0], settings, tool.slug === "meme-generator", tool);
   const imageRotationPreview = useImageRotationPreview(files[0], settings.angle, tool.slug === "rotate-image", tool);
@@ -5714,6 +5888,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     && backgroundRemovalPreview.file === files[0]
     && backgroundRemovalPreview.cleanup === settings.cleanup
     && backgroundRemovalPreview.background === settings.background;
+  const faceBlurPreviewMatches = faceBlurPreview.state === "ready"
+    && faceBlurPreview.file === files[0]
+    && faceBlurPreview.strength === Number(settings.strength)
+    && faceBlurPreview.focusX === Number(settings.focusX)
+    && faceBlurPreview.focusY === Number(settings.focusY);
   const imageWatermarkPreviewMatches = imageWatermarkPreview.state === "ready"
     && imageWatermarkPreview.file === files[0]
     && imageWatermarkPreview.text === String(settings.text ?? "")
@@ -5893,6 +6072,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageResizeReady = tool.slug !== "resize-image" || !hasRequiredInput || (imageResizeInspection.files === files && imageResizePlan.state === "ready");
   const imageUpscaleReady = tool.slug !== "upscale-image" || !hasRequiredInput || (imageUpscaleInspection.files === files && imageUpscalePlan.state === "ready");
   const backgroundRemovalReady = tool.slug !== "remove-image-background" || !hasRequiredInput || backgroundRemovalPreviewMatches;
+  const faceBlurReady = tool.slug !== "blur-face" || !hasRequiredInput || faceBlurPreviewMatches;
   const imageWatermarkReady = tool.slug !== "watermark-image" || !hasRequiredInput || imageWatermarkPreviewMatches;
   const imageMemeReady = tool.slug !== "meme-generator" || !hasRequiredInput || imageMemePreviewMatches;
   const imageRotationReady = tool.slug !== "rotate-image" || !hasRequiredInput || imageRotationPreviewMatches;
@@ -5904,7 +6084,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -5950,6 +6130,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Creating the first-image cutout preview locally."
     : tool.slug === "remove-image-background" && backgroundRemovalPreview.file === files[0] && backgroundRemovalPreview.state === "error"
       ? backgroundRemovalPreview.message
+    : tool.slug === "blur-face" && faceBlurPreview.file === files[0] && faceBlurPreview.state === "loading"
+      ? "Detecting and previewing the first-image privacy area locally."
+    : tool.slug === "blur-face" && faceBlurPreview.file === files[0] && faceBlurPreview.state === "error"
+      ? faceBlurPreview.message
     : tool.slug === "watermark-image" && imageWatermarkPreview.file === files[0] && imageWatermarkPreview.state === "loading"
       ? "Applying the watermark to the first-image preview locally."
     : tool.slug === "watermark-image" && imageWatermarkPreview.file === files[0] && imageWatermarkPreview.state === "error"
@@ -6027,6 +6211,12 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
           result: imageCompressionPreview.result,
         };
       }
+      if (tool.slug === "blur-face" && faceBlurPreviewMatches) {
+        processOptions.faceBlurPreview = {
+          file: files[0],
+          result: faceBlurPreview.result,
+        };
+      }
       setSettings((current) => clearSensitiveToolSettings(current, settingsList));
       const response = await runTool(tool, files, processOptions, (nextProgress) => {
         if (!dismissedRef.current) {
@@ -6088,6 +6278,12 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? files.length === 1
         ? `Create ${getBackgroundRemovalBackground(settings.background).label} PNG`
         : `Create ${files.length.toLocaleString()} PNG cutouts`
+    : tool.slug === "blur-face" && hasRequiredInput && faceBlurPreviewMatches
+      ? files.length === 1
+        ? faceBlurPreview.result.mode === "detected"
+          ? `Blur ${faceBlurPreview.result.regionCount.toLocaleString()} ${faceBlurPreview.result.regionCount === 1 ? "face" : "faces"}`
+          : "Blur reviewed area"
+        : `Blur faces in ${files.length.toLocaleString()} images`
     : tool.slug === "watermark-image" && hasRequiredInput && imageWatermarkPreviewMatches
       ? files.length === 1 ? "Add watermark" : `Watermark ${files.length.toLocaleString()} images`
     : tool.slug === "meme-generator" && hasRequiredInput && imageMemePreviewMatches
@@ -6162,7 +6358,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "upscale-image" ? "image-upscale-workbench" : tool.slug === "remove-image-background" ? "background-removal-workbench" : tool.slug === "watermark-image" ? "image-watermark-workbench" : tool.slug === "meme-generator" ? "image-meme-workbench" : tool.slug === "rotate-image" ? "image-rotation-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "upscale-image" ? "image-upscale-workbench" : tool.slug === "remove-image-background" ? "background-removal-workbench" : tool.slug === "blur-face" ? "face-blur-workbench" : tool.slug === "watermark-image" ? "image-watermark-workbench" : tool.slug === "meme-generator" ? "image-meme-workbench" : tool.slug === "rotate-image" ? "image-rotation-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -6176,7 +6372,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "blur-face" ? "face-blur-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -6279,6 +6475,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "resize-image" && <ImageResizeResultSummary result={results[0]} />}
                 {tool.slug === "upscale-image" && <ImageUpscaleResultSummary result={results[0]} />}
                 {tool.slug === "remove-image-background" && <BackgroundRemovalResultSummary result={results[0]} />}
+                {tool.slug === "blur-face" && <FaceBlurResultSummary result={results[0]} />}
                 {tool.slug === "watermark-image" && <WatermarkImageResultSummary result={results[0]} />}
                 {tool.slug === "meme-generator" && <MemeImageResultSummary result={results[0]} />}
                 {tool.slug === "rotate-image" && <ImageRotationResultSummary result={results[0]} />}
@@ -6312,7 +6509,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -6343,6 +6540,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <ImageUpscaleControls files={files} setting={settingsList.find((setting) => setting.key === "scale")} value={settings.scale} onChange={(value) => updateSetting("scale", value)} inspection={imageUpscaleInspection} plan={imageUpscalePlan} limits={limits} />
             ) : tool.slug === "remove-image-background" ? (
               <BackgroundRemovalControls files={files} settings={settings} onChange={updateSetting} preview={backgroundRemovalPreview} />
+            ) : tool.slug === "blur-face" ? (
+              <FaceBlurControls files={files} settings={settings} setting={settingsList.find((setting) => setting.key === "strength")} onChange={updateSetting} onMove={(focusX, focusY) => updateSettings({ focusX, focusY })} preview={faceBlurPreview} />
             ) : tool.slug === "watermark-image" ? (
               <WatermarkImageControls files={files} settings={settings} onChange={updateSetting} preview={imageWatermarkPreview} />
             ) : tool.slug === "meme-generator" ? (
@@ -6495,6 +6694,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "remove-image-background" && backgroundRemovalPreviewMatches && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{files.length.toLocaleString()} {files.length === 1 ? "image" : "images"} · {getBackgroundRemovalProfile(settings.cleanup).label} · {getBackgroundRemovalBackground(settings.background).label}</strong>
+              )}
+              {tool.slug === "blur-face" && faceBlurPreviewMatches && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{faceBlurPreview.result.mode === "detected" ? `${faceBlurPreview.result.regionCount.toLocaleString()} ${faceBlurPreview.result.regionCount === 1 ? "face" : "faces"} found` : "1 reviewed privacy area"} · {Number(settings.strength).toLocaleString()} px</strong>
               )}
               {tool.slug === "watermark-image" && imageWatermarkPreviewMatches && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{files.length.toLocaleString()} {files.length === 1 ? "image" : "images"} · {getImageWatermarkPosition(settings.position).label} · {settings.opacity}%</strong>
