@@ -20,6 +20,7 @@ import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { createImageCompressionOutcome, hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
 import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, inspectBackgroundCorners } from "../src/lib/background-removal.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "../src/lib/image-watermark.js";
+import { IMAGE_MEME_CASES, IMAGE_MEME_MAX_LINES, createImageMemeOutcome, drawImageMeme, getImageMemePlan, wrapImageMemeCaption } from "../src/lib/image-meme.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -288,6 +289,92 @@ test("image watermark contracts reject unsupported or unsafe settings", () => {
     assert.throws(() => getImageWatermarkPlan(800, 600, options), (error) => error instanceof FileLimitError && error.code === code);
   }
   assert.throws(() => createImageWatermarkOutcome(getImageWatermarkPlan(800, 600, valid), "gif", 100), (error) => error instanceof FileLimitError && error.code === "invalid-watermark-outcome");
+});
+
+const measuredMemeText = (text, fontSize) => Array.from(text).length * fontSize * 0.55;
+
+test("image meme captions auto-fit without truncation and preserve optional case", () => {
+  const classic = getImageMemePlan(1200, 800, {
+    topText: "when files stay here",
+    bottomText: "privacy wins",
+    letterCase: "uppercase",
+  }, measuredMemeText);
+  assert.equal(classic.topText, "WHEN FILES STAY HERE");
+  assert.equal(classic.bottomText, "PRIVACY WINS");
+  assert.deepEqual(classic.topLines, ["WHEN FILES STAY HERE"]);
+  assert.deepEqual(classic.bottomLines, ["PRIVACY WINS"]);
+  assert.equal(classic.fontSize, 72);
+  assert.equal(classic.maxWidth, 1080);
+  assert.equal(classic.x, 600);
+
+  const original = getImageMemePlan(720, 720, {
+    topText: "Keep My Case",
+    bottomText: "and wrap a much longer sentence across the lower edge",
+    letterCase: "original",
+  }, measuredMemeText);
+  assert.equal(original.topText, "Keep My Case");
+  assert.ok(original.bottomLines.length > 1);
+  assert.ok(original.bottomLines.length <= IMAGE_MEME_MAX_LINES);
+  assert.equal(original.bottomLines.join(" "), original.bottomText);
+
+  assert.deepEqual(wrapImageMemeCaption("SUPERCALIFRAGILISTIC", 60, (text) => text.length * 10), ["SUPERC", "ALIFRA", "GILIST", "IC"]);
+});
+
+test("image meme drawing and outcome reporting use the same exact caption plan", () => {
+  const plan = getImageMemePlan(600, 400, { topText: "Top", bottomText: "Bottom", letterCase: "original" }, measuredMemeText);
+  const calls = [];
+  const context = {
+    save: () => calls.push("save"),
+    strokeText: (...values) => calls.push(["stroke", ...values]),
+    fillText: (...values) => calls.push(["fill", ...values]),
+    restore: () => calls.push("restore"),
+  };
+  drawImageMeme(context, plan);
+  assert.equal(context.textAlign, "center");
+  assert.equal(context.textBaseline, "middle");
+  assert.equal(context.fillStyle, "#ffffff");
+  assert.equal(calls.filter((call) => Array.isArray(call) && call[0] === "stroke").length, 2);
+  assert.equal(calls.filter((call) => Array.isArray(call) && call[0] === "fill").length, 2);
+  assert.deepEqual(createImageMemeOutcome(plan, "webp", 32_000), {
+    width: 600,
+    height: 400,
+    topTextLength: 3,
+    bottomTextLength: 6,
+    topLineCount: 1,
+    bottomLineCount: 1,
+    fontSize: plan.fontSize,
+    letterCase: "original",
+    format: "webp",
+    outputBytes: 32_000,
+  });
+});
+
+test("image meme contracts reject empty, oversized, unreadable, and invalid settings", () => {
+  assert.deepEqual(IMAGE_MEME_CASES.map(({ value }) => value), ["uppercase", "original"]);
+  assert.throws(
+    () => getImageMemePlan(800, 600, { topText: " ", bottomText: "", letterCase: "uppercase" }, measuredMemeText),
+    (error) => error instanceof FileLimitError && error.code === "missing-meme-caption",
+  );
+  assert.throws(
+    () => getImageMemePlan(800, 600, { topText: "x".repeat(501), bottomText: "", letterCase: "uppercase" }, measuredMemeText),
+    (error) => error instanceof FileLimitError && error.code === "meme-caption-limit",
+  );
+  assert.throws(
+    () => getImageMemePlan(120, 80, { topText: "many words ".repeat(30), bottomText: "", letterCase: "uppercase" }, measuredMemeText),
+    (error) => error instanceof FileLimitError && error.code === "meme-caption-does-not-fit",
+  );
+  assert.throws(
+    () => getImageMemePlan(800, 600, { topText: "Top", bottomText: "Bottom", letterCase: "sentence" }, measuredMemeText),
+    (error) => error instanceof FileLimitError && error.code === "invalid-meme-case",
+  );
+  assert.throws(
+    () => getImageMemePlan(800, 600, { topText: "Top", bottomText: "", letterCase: "uppercase" }, () => Number.NaN),
+    (error) => error instanceof FileLimitError && error.code === "invalid-meme-layout",
+  );
+  assert.throws(
+    () => createImageMemeOutcome(getImageMemePlan(800, 600, { topText: "Top", bottomText: "", letterCase: "uppercase" }, measuredMemeText), "gif", 1),
+    (error) => error instanceof FileLimitError && error.code === "invalid-meme-outcome",
+  );
 });
 
 test("PDF to JPG plans one direct image or an exact multi-page ZIP", () => {

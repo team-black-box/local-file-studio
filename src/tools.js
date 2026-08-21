@@ -4,6 +4,7 @@
 import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS, IMAGE_UPSCALE_SCALES, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS } from "./lib/file-limits.js";
 import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES } from "./lib/background-removal.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "./lib/image-watermark.js";
+import { IMAGE_MEME_CASES } from "./lib/image-meme.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -1247,6 +1248,13 @@ export const tools = withPhosphorExports([
     settings: [
       { key: "topText", type: "text", label: "Top caption", default: "WHEN THE FILE" },
       { key: "bottomText", type: "text", label: "Bottom caption", default: "STAYS ON YOUR DEVICE" },
+      {
+        key: "letterCase",
+        type: "select",
+        label: "Letter case",
+        default: IMAGE_MEME_CASES[0].value,
+        options: IMAGE_MEME_CASES.map(({ value, label, hint }) => ({ value, label, hint })),
+      },
     ],
   },
   {
