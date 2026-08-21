@@ -23,6 +23,7 @@ import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIO
 import { IMAGE_MEME_CASES, IMAGE_MEME_MAX_LINES, createImageMemeOutcome, drawImageMeme, getImageMemePlan, wrapImageMemeCaption } from "../src/lib/image-meme.js";
 import { IMAGE_ROTATIONS, createImageRotationOutcome, getImageRotation, getImageRotationPlan } from "../src/lib/image-rotation.js";
 import { FACE_BLUR_DEFAULT_FOCUS, FACE_BLUR_STRENGTHS, createFaceBlurOutcome, createFaceBlurPlan, drawFaceBlur, validateFaceBlurPlan } from "../src/lib/face-blur.js";
+import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS, createHtmlImageOutcome, createHtmlImagePlan, getHtmlImageFormat, getHtmlImageViewport, hasNonFragmentHtmlImageUrl, shouldRemoveHtmlImageAttribute } from "../src/lib/html-image.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -487,6 +488,74 @@ test("Blur Face preview guides are separate from the validated export outcome", 
     outputBytes: 12_345,
   });
   assert.throws(() => createFaceBlurOutcome(plan, "gif", 12_345), (error) => error instanceof FileLimitError && error.code === "invalid-face-blur-outcome");
+});
+
+test("HTML to Image offers direct formats and familiar bounded viewport widths", () => {
+  const tool = tools.find((item) => item.slug === "html-to-image");
+  assert.deepEqual(tool.output, [".jpg", ".svg"]);
+  assert.deepEqual(tool.settings.find(({ key }) => key === "format")?.options.map(({ value }) => value), ["jpg", "svg"]);
+  assert.deepEqual(tool.settings.find(({ key }) => key === "viewportWidth")?.presets.map(({ value }) => value), [375, 768, 1440, 1920]);
+  assert.deepEqual(HTML_IMAGE_FORMATS.map(({ value }) => value), ["jpg", "svg"]);
+  assert.deepEqual(HTML_IMAGE_VIEWPORTS.map(({ value }) => value), [375, 768, 1440, 1920]);
+  assert.equal(getHtmlImageFormat("jpg").label, "JPG");
+  assert.equal(getHtmlImageViewport("1440"), 1440);
+  assert.throws(() => getHtmlImageFormat("png"), (error) => error instanceof FileLimitError && error.code === "invalid-html-image-format");
+  for (const width of [319, 3841, 1440.5, Number.NaN]) {
+    assert.throws(() => getHtmlImageViewport(width), (error) => error instanceof FileLimitError && error.code === "invalid-html-viewport");
+  }
+});
+
+test("HTML to Image plans exact JPG density and native-size SVG output", () => {
+  assert.deepEqual(createHtmlImagePlan({ format: "jpg", viewportWidth: 1440 }, 560), {
+    format: "jpg",
+    formatLabel: "JPG",
+    viewportWidth: 1440,
+    captureHeight: 560,
+    pixelRatio: 1.5,
+    outputWidth: 2160,
+    outputHeight: 840,
+    outputPixels: 1_814_400,
+  });
+  assert.deepEqual(createHtmlImagePlan({ format: "svg", viewportWidth: 768 }, 701.2), {
+    format: "svg",
+    formatLabel: "SVG",
+    viewportWidth: 768,
+    captureHeight: 702,
+    pixelRatio: 1,
+    outputWidth: 768,
+    outputHeight: 702,
+    outputPixels: 539_136,
+  });
+  assert.throws(() => createHtmlImagePlan({ format: "jpg", viewportWidth: 1440 }, 4097), (error) => error instanceof FileLimitError && error.code === "html-height-limit");
+  assert.throws(() => createHtmlImagePlan({ format: "jpg", viewportWidth: 3840 }, 4096), (error) => error instanceof FileLimitError && error.code === "output-dimensions-too-large");
+});
+
+test("HTML to Image sanitization contracts keep only bounded data images and local fragments", () => {
+  assert.equal(hasNonFragmentHtmlImageUrl("fill:url(#safe-gradient)"), false);
+  assert.equal(hasNonFragmentHtmlImageUrl("filter:url(https://tracker.example/filter.svg#x)"), true);
+  assert.equal(shouldRemoveHtmlImageAttribute("onclick", "alert(1)", "button"), true);
+  assert.equal(shouldRemoveHtmlImageAttribute("style", "color:red", "p"), true);
+  assert.equal(shouldRemoveHtmlImageAttribute("href", "https://example.com", "a"), true);
+  assert.equal(shouldRemoveHtmlImageAttribute("src", "https://example.com/photo.jpg", "img"), true);
+  assert.equal(shouldRemoveHtmlImageAttribute("src", "data:image/svg+xml;base64,PHN2Zz4=", "img"), true);
+  assert.equal(shouldRemoveHtmlImageAttribute("src", "data:image/png;base64,iVBORw0KGgo=", "img"), false);
+  assert.equal(shouldRemoveHtmlImageAttribute("fill", "url(#safe-gradient)", "path"), false);
+  assert.equal(shouldRemoveHtmlImageAttribute("filter", "url(//tracker.example/filter.svg)", "path"), true);
+});
+
+test("HTML to Image result reporting preserves the reviewed capture contract", () => {
+  const plan = createHtmlImagePlan({ format: "jpg", viewportWidth: 375 }, 560);
+  const prepared = { sourceCharacters: 120, elementCount: 5, removedElements: 2, removedAttributes: 3, removedResources: 1, keptDataImages: 1 };
+  assert.deepEqual(createHtmlImageOutcome(plan, prepared, 42_000), {
+    format: "jpg",
+    viewportWidth: 375,
+    captureHeight: 560,
+    outputWidth: 562,
+    outputHeight: 840,
+    outputBytes: 42_000,
+    ...prepared,
+  });
+  assert.throws(() => createHtmlImageOutcome(plan, prepared, 0), (error) => error instanceof FileLimitError && error.code === "invalid-html-image-outcome");
 });
 
 test("PDF to JPG plans one direct image or an exact multi-page ZIP", () => {

@@ -27,9 +27,11 @@ Compress PDF rebuilds pages as compressed images. This can substantially reduce 
 
 ### Images — 13 actions
 
-- Compress, Resize, Crop, Convert Image (PNG/JPG/WebP), JPG to GIF, Photo Editor, Upscale, Remove Background, Watermark, Meme Generator, Rotate, sanitized HTML to Image, and Blur Face.
+- Compress, Resize, Crop, Convert Image (PNG/JPG/WebP), JPG to GIF, Photo Editor, Upscale, Remove Background, Watermark, Meme Generator, Rotate, previewed and sanitized HTML to Image, and Blur Face.
 
 Tools whose output depends heavily on source layout, browser codecs, heuristics, or on-device recognition are labelled **Local beta** in the interface. Catalog copy and file pickers intentionally list only formats that the bundled browser processors can decode.
+
+HTML to Image accepts one local HTML file or pasted markup, removes scripts, forms, authored styles, classes, IDs, and remote references without loading them, and shows the same clean capture plus exact dimensions before creating JPG or SVG output. Self-contained base64 PNG/JPG/GIF/WebP images may remain; external assets are never fetched.
 
 Word to PDF checks the DOCX locally, previews a bounded sample with readable-text counts, and then reconstructs the complete extracted text as a clean PDF without preserving Word layout. Legacy symbol-font characters are kept visible as `[symbol …]` placeholders rather than being guessed incorrectly; a verified broader mapping is deferred in [TASKS.md](TASKS.md).
 
