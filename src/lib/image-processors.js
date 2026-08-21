@@ -8,6 +8,7 @@ import { createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan 
 import { createImageMemeOutcome, drawImageMeme, getImageMemePlan } from "./image-meme.js";
 import { createImageRotationOutcome, getImageRotationPlan } from "./image-rotation.js";
 import { createFaceBlurOutcome, createFaceBlurPlan, drawFaceBlur, getFaceBlurStrength, validateFaceBlurPlan } from "./face-blur.js";
+import { createHtmlImageCapture, createHtmlImageOutcome, createHtmlImagePlan, sanitizeHtmlImageSource } from "./html-image.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 const IMAGE_OUTPUTS = {
@@ -681,40 +682,21 @@ async function jpgsToAnimatedGif(files, options, report) {
 async function htmlToImage(files, options) {
   const limits = getToolLimits("html-to-image");
   const module = await import("html-to-image");
-  const source = files[0] ? await files[0].text() : String(options.html || "<h1>Private by design</h1><p>This image was rendered locally.</p>");
-  const parsed = new DOMParser().parseFromString(source, "text/html");
-  parsed.querySelectorAll("script, iframe, object, embed, form, link, meta, style").forEach((node) => node.remove());
-  parsed.querySelectorAll("*").forEach((node) => {
-    for (const attribute of [...node.attributes]) {
-      if (attribute.name.startsWith("on") || /^(src|srcset|href|xlink:href|poster|background|style)$/i.test(attribute.name)) {
-        node.removeAttribute(attribute.name);
-      }
-    }
-  });
-  const frame = document.createElement("div");
-  frame.className = "html-capture-frame";
-  const viewportWidth = Math.max(320, Math.min(3840, Number(options.viewportWidth || 900)));
-  frame.style.cssText = `position:fixed;left:-12000px;top:0;width:${viewportWidth}px;min-height:560px;padding:64px;background:#fff;color:#17171a;font:16px/1.55 Manrope,Arial,sans-serif`;
-  frame.append(...parsed.body.childNodes);
-  document.body.append(frame);
+  const source = files[0] ? await files[0].text() : String(options.html || "");
+  const prepared = sanitizeHtmlImageSource(source, limits, files[0]?.name || "Pasted HTML");
+  const { host, frame } = createHtmlImageCapture(prepared, options.viewportWidth, { offscreen: true });
+  document.body.append(host);
   try {
     const captureHeight = Math.max(1, frame.scrollHeight);
-    if (captureHeight > limits.maxHtmlHeight) {
-      throw new FileLimitError("html-height-limit", `The rendered HTML is ${captureHeight.toLocaleString()} px tall; local capture supports ${limits.maxHtmlHeight.toLocaleString()} px. Split the document into shorter sections.`);
-    }
-    assertOutputDimensions(
-      viewportWidth * 1.5,
-      captureHeight * 1.5,
-      { maxFileBytes: 1, maxOutputEdge: limits.maxOutputEdge, maxOutputPixels: limits.maxHtmlOutputPixels },
-      "The HTML capture",
-    );
-    const method = options.format === "svg" ? module.toSvg : options.format === "jpg" ? module.toJpeg : module.toPng;
-    const dataUrl = await method(frame, { cacheBust: false, pixelRatio: 1.5, backgroundColor: "#ffffff", quality: 0.92 });
+    const plan = createHtmlImagePlan(options, captureHeight, limits);
+    const method = plan.format === "svg" ? module.toSvg : module.toJpeg;
+    const dataUrl = await method(frame, { cacheBust: false, pixelRatio: plan.pixelRatio, backgroundColor: "#ffffff", quality: 0.92 });
     const blob = await (await fetch(dataUrl)).blob();
-    const ext = options.format === "svg" ? "svg" : options.format === "jpg" ? "jpg" : "png";
-    return [resultFromBlob(`local-html-capture.${ext}`, blob, `${viewportWidth} px local HTML capture`)];
+    assertOutputSize(blob.size, limits.maxOutputBytes, "The HTML capture");
+    const result = resultFromBlob(`local-html-capture.${plan.format}`, blob, `${plan.outputWidth.toLocaleString()} × ${plan.outputHeight.toLocaleString()} px · sanitized local capture`);
+    return [{ ...result, htmlImageOutcome: createHtmlImageOutcome(plan, prepared, blob.size) }];
   } finally {
-    frame.remove();
+    host.remove();
   }
 }
 

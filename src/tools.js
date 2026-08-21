@@ -6,6 +6,7 @@ import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES } from "./l
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "./lib/image-watermark.js";
 import { IMAGE_MEME_CASES } from "./lib/image-meme.js";
 import { IMAGE_ROTATIONS } from "./lib/image-rotation.js";
+import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS } from "./lib/html-image.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -1284,7 +1285,7 @@ export const tools = withPhosphorExports([
   {
     slug: "html-to-image",
     name: "HTML to Image",
-    description: "Render sanitized local HTML as a JPG or SVG without loading external assets.",
+    description: "Preview sanitized local HTML, then capture it as a clean JPG or SVG.",
     kind: "image",
     category: "convert",
     accepts: [".html", ".htm"],
@@ -1300,10 +1301,7 @@ export const tools = withPhosphorExports([
         type: "select",
         label: "Output format",
         default: "jpg",
-        options: [
-          { value: "jpg", label: "JPG", hint: "A widely compatible image." },
-          { value: "svg", label: "SVG", hint: "A scalable, self-contained graphic." },
-        ],
+        options: HTML_IMAGE_FORMATS.map(({ value, label, hint }) => ({ value, label, hint })),
       },
       {
         key: "viewportWidth",
@@ -1314,13 +1312,8 @@ export const tools = withPhosphorExports([
         max: 3840,
         step: 10,
         suffix: "px",
-        hint: "Choose how wide the virtual browser should be.",
-        presets: [
-          { value: 375, label: "Phone" },
-          { value: 768, label: "Tablet" },
-          { value: 1440, label: "Desktop" },
-          { value: 1920, label: "Wide" },
-        ],
+        hint: "Choose the layout width before the capture is rendered.",
+        presets: HTML_IMAGE_VIEWPORTS.map(({ value, label }) => ({ value, label })),
       },
     ],
   },

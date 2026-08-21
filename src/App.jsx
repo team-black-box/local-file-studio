@@ -37,6 +37,7 @@ import {
   FileMinusIcon,
   FilePdfIcon,
   FilePptIcon,
+  FileSvgIcon,
   FilePlusIcon,
   FileXlsIcon,
   FilesIcon,
@@ -81,6 +82,9 @@ import {
   TranslateIcon,
   TrashIcon,
   UploadSimpleIcon,
+  DeviceMobileIcon,
+  DeviceTabletIcon,
+  MonitorIcon,
   WarningCircleIcon,
   WifiHighIcon,
   WrenchIcon,
@@ -96,6 +100,7 @@ import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIO
 import { IMAGE_MEME_CASES, getImageMemeCase } from "./lib/image-meme.js";
 import { IMAGE_ROTATIONS, getImageRotation } from "./lib/image-rotation.js";
 import { FACE_BLUR_STRENGTHS, getFaceBlurStrength } from "./lib/face-blur.js";
+import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS, createHtmlImageCapture, createHtmlImagePlan, getHtmlImageFormat, sanitizeHtmlImageSource } from "./lib/html-image.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
@@ -964,6 +969,51 @@ function useHtmlDocumentPreview(file, markup, enabled, tool, limits, pageSize) {
     return { ...inspection.preview, state: "layout-loading", file, markup: activeMarkup, message: "Calculating the PDF page count locally…" };
   }
   return { ...layout.preview, state: "ready", file, markup: activeMarkup, message: "" };
+}
+
+function useHtmlImagePreview(file, markup, format, viewportWidth, enabled, tool, limits) {
+  const [preview, setPreview] = useState({ state: "idle", file: null, markup: "", format: "", viewportWidth: 0, prepared: null, plan: null, message: "" });
+
+  useEffect(() => {
+    const activeMarkup = file ? "" : String(markup || "");
+    if (!enabled || (!file && !activeMarkup.trim())) {
+      setPreview({ state: "idle", file: null, markup: "", format: "", viewportWidth: 0, prepared: null, plan: null, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let timer;
+    let measurementHost;
+    setPreview({ state: "loading", file, markup: activeMarkup, format, viewportWidth: Number(viewportWidth), prepared: null, plan: null, message: file ? "Reading and sanitizing the HTML file locally…" : "Sanitizing the pasted HTML locally…" });
+    timer = window.setTimeout(() => {
+      (async () => {
+        if (file) await preflightToolFiles(tool, [file], {});
+        const source = file ? await file.text() : activeMarkup;
+        const prepared = sanitizeHtmlImageSource(source, limits, file?.name || "Pasted HTML");
+        const capture = createHtmlImageCapture(prepared, viewportWidth, { offscreen: true });
+        measurementHost = capture.host;
+        document.body.append(measurementHost);
+        const plan = createHtmlImagePlan({ format, viewportWidth }, capture.frame.scrollHeight, limits);
+        measurementHost.remove();
+        measurementHost = null;
+        if (!cancelled) setPreview({ state: "ready", file, markup: activeMarkup, format: plan.format, viewportWidth: plan.viewportWidth, prepared, plan, message: "" });
+      })().catch((error) => {
+        measurementHost?.remove();
+        measurementHost = null;
+        if (cancelled) return;
+        const friendly = toFriendlyResourceError(error, tool.name);
+        setPreview({ state: "error", file, markup: activeMarkup, format, viewportWidth: Number(viewportWidth), prepared: null, plan: null, message: friendly?.message || "This HTML capture could not be prepared safely." });
+      });
+    }, file ? 0 : 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      measurementHost?.remove();
+    };
+  }, [enabled, file, format, limits, markup, tool, viewportWidth]);
+
+  return preview;
 }
 
 function usePdfFormInfo(file, enabled, limits) {
@@ -3582,6 +3632,168 @@ function HtmlPdfResultSummary({ result }) {
   );
 }
 
+const htmlImageViewportIcons = {
+  375: DeviceMobileIcon,
+  768: DeviceTabletIcon,
+  1440: MonitorIcon,
+  1920: MonitorIcon,
+};
+
+function HtmlImagePreviewFrame({ preview }) {
+  const viewportRef = useRef(null);
+  const mountRef = useRef(null);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const mount = mountRef.current;
+    if (preview.state !== "ready" || !viewport || !mount || !preview.prepared || !preview.plan) return undefined;
+
+    const { host } = createHtmlImageCapture(preview.prepared, preview.plan.viewportWidth);
+    host.style.position = "absolute";
+    host.style.inset = "0 auto auto 0";
+    mount.replaceChildren(host);
+
+    const resize = () => {
+      const availableWidth = Math.max(1, viewport.clientWidth - 24);
+      const scale = Math.min(1, availableWidth / preview.plan.viewportWidth);
+      host.style.transform = `scale(${scale})`;
+      mount.style.width = `${Math.ceil(preview.plan.viewportWidth * scale)}px`;
+      mount.style.height = `${Math.ceil(preview.plan.captureHeight * scale)}px`;
+    };
+    resize();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(resize) : null;
+    observer?.observe(viewport);
+
+    return () => {
+      observer?.disconnect();
+      host.remove();
+      mount.replaceChildren();
+    };
+  }, [preview]);
+
+  return (
+    <div className="html-image-preview-window">
+      <div className="html-image-preview-bar"><BrowserIcon size={15} weight="duotone" aria-hidden="true" /><strong>{preview.plan.viewportWidth.toLocaleString()} px clean viewport</strong><b>LOCAL</b></div>
+      <div ref={viewportRef} className="html-image-preview-viewport" tabIndex="0" aria-label={`Sanitized HTML capture preview at ${preview.plan.viewportWidth.toLocaleString()} pixels wide`}>
+        <div ref={mountRef} className="html-image-preview-mount" />
+      </div>
+      <p><ArrowsOutIcon size={14} aria-hidden="true" />Long captures can be scrolled here before export.</p>
+    </div>
+  );
+}
+
+function HtmlImageControls({ file, settings, settingsList, preview, onChange }) {
+  const format = HTML_IMAGE_FORMATS.find((option) => option.value === settings.format) || HTML_IMAGE_FORMATS[0];
+  const viewportSetting = settingsList.find((setting) => setting.key === "viewportWidth");
+  const htmlSetting = settingsList.find((setting) => setting.key === "html");
+  const width = Number(settings.viewportWidth);
+  const previewMatchesInput = preview.file === file
+    && preview.format === format.value
+    && preview.viewportWidth === width
+    && Boolean(file || preview.markup === String(settings.html || ""));
+  const plan = previewMatchesInput ? preview.plan : null;
+  const prepared = previewMatchesInput ? preview.prepared : null;
+  const removedCount = prepared ? prepared.removedElements + prepared.removedAttributes : 0;
+  const changeWidth = (next) => onChange("viewportWidth", Math.max(viewportSetting.min, Math.min(viewportSetting.max, Number(next))));
+
+  return (
+    <section className="html-image-controls" aria-labelledby="html-image-format-title">
+      <fieldset className="html-image-format-choices">
+        <legend id="html-image-format-title">Choose the finished image</legend>
+        <p>Both formats use the same clean local preview below.</p>
+        <div>
+          {HTML_IMAGE_FORMATS.map((option) => {
+            const selected = option.value === format.value;
+            const FormatIcon = option.value === "svg" ? FileSvgIcon : FileJpgIcon;
+            return (
+              <button type="button" key={option.value} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onChange("format", option.value)}>
+                <span><FormatIcon size={20} weight="duotone" aria-hidden="true" /></span>
+                <span><strong>{option.label}</strong><small>{option.hint}</small><b>{option.description}</b></span>
+                <CheckCircleIcon size={17} weight="fill" aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <fieldset className="html-image-viewport-choices">
+        <legend>Choose the layout width</legend>
+        <p>This changes line wrapping before the image is captured.</p>
+        <div>
+          {HTML_IMAGE_VIEWPORTS.map((option) => {
+            const selected = option.value === width;
+            const ViewportIcon = htmlImageViewportIcons[option.value];
+            return (
+              <button type="button" key={option.value} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => changeWidth(option.value)}>
+                <ViewportIcon size={18} weight="duotone" aria-hidden="true" />
+                <span><strong>{option.label}</strong><small>{option.hint}</small></span>
+              </button>
+            );
+          })}
+        </div>
+        <label className="html-image-width-fine-tune" htmlFor="html-image-viewport-width">
+          <span><strong>Exact width</strong><small>{viewportSetting.min.toLocaleString()}–{viewportSetting.max.toLocaleString()} px</small></span>
+          <span><button type="button" onClick={() => changeWidth(width - viewportSetting.step)} disabled={width <= viewportSetting.min} aria-label="Decrease HTML capture width">−</button><input id="html-image-viewport-width" type="number" min={viewportSetting.min} max={viewportSetting.max} step={viewportSetting.step} value={settings.viewportWidth} onChange={(event) => onChange("viewportWidth", event.target.value)} /><b>px</b><button type="button" onClick={() => changeWidth(width + viewportSetting.step)} disabled={width >= viewportSetting.max} aria-label="Increase HTML capture width">+</button></span>
+        </label>
+      </fieldset>
+
+      {file ? (
+        <div className="html-source-file" role="status">
+          <span><FileHtmlIcon size={19} weight="duotone" aria-hidden="true" /></span>
+          <div><strong title={file.name}>{file.name}</strong><small>This file is the source. Remove it from Files to paste HTML instead.</small></div>
+        </div>
+      ) : (
+        <SettingControl setting={htmlSetting} value={settings.html} onChange={(value) => onChange("html", value)} />
+      )}
+
+      {!file && !String(settings.html || "").trim() ? (
+        <div className="html-image-preview-state">
+          <BrowserIcon size={21} weight="duotone" aria-hidden="true" />
+          <span><strong>Your clean capture will appear here</strong><small>Add an HTML file or paste markup above.</small></span>
+        </div>
+      ) : preview.state === "loading" || !previewMatchesInput ? (
+        <div className="html-image-preview-state" aria-live="polite">
+          <SpinnerGapIcon size={20} className="spin" aria-hidden="true" />
+          <span><strong>Preparing the clean preview</strong><small>Scripts, styles, and remote references are being removed locally.</small></span>
+        </div>
+      ) : preview.state === "error" ? (
+        <div className="html-image-preview-state error" role="alert">
+          <WarningCircleIcon size={20} weight="fill" aria-hidden="true" />
+          <span><strong>Preview needs attention</strong><small>{preview.message}</small></span>
+        </div>
+      ) : (
+        <>
+          <HtmlImagePreviewFrame preview={preview} />
+          <dl className="html-image-preview-stats">
+            <div><dt>Layout</dt><dd>{plan.viewportWidth.toLocaleString()} × {plan.captureHeight.toLocaleString()} px</dd></div>
+            <div><dt>Output</dt><dd>{plan.outputWidth.toLocaleString()} × {plan.outputHeight.toLocaleString()} px</dd></div>
+            <div><dt>Markup</dt><dd>{prepared.sourceCharacters.toLocaleString()} chars</dd></div>
+          </dl>
+          <div className={`html-image-sanitizer-summary ${removedCount || prepared.removedResources ? "cleaned" : "clean"}`} role="status">
+            <ShieldCheckIcon size={18} weight="fill" aria-hidden="true" />
+            <span><strong>{removedCount ? `${removedCount.toLocaleString()} unsafe ${removedCount === 1 ? "item" : "items"} removed` : "No unsafe markup found"}</strong><small>{prepared.removedResources ? `${prepared.removedResources.toLocaleString()} external or embedded ${prepared.removedResources === 1 ? "reference was" : "references were"} removed without loading.` : "No external URL was loaded."}{prepared.keptDataImages ? ` ${prepared.keptDataImages.toLocaleString()} self-contained data ${prepared.keptDataImages === 1 ? "image was" : "images were"} kept.` : ""}</small></span>
+          </div>
+        </>
+      )}
+
+      <p className="html-image-safety-note"><WarningCircleIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>Clean capture, not a full webpage screenshot.</strong> Scripts, forms, styles, classes, IDs, and remote assets are removed. The preview and export use the same sanitized markup and never open a URL.</span></p>
+    </section>
+  );
+}
+
+function HtmlImageResultSummary({ result }) {
+  const outcome = result?.htmlImageOutcome;
+  if (!outcome) return null;
+  const cleanedCount = outcome.removedElements + outcome.removedAttributes;
+  return (
+    <div className="html-image-result-summary" role="status">
+      <span>{outcome.format === "svg" ? <FileSvgIcon size={23} weight="duotone" aria-hidden="true" /> : <FileJpgIcon size={23} weight="duotone" aria-hidden="true" />}</span>
+      <div><strong>{outcome.outputWidth.toLocaleString()} × {outcome.outputHeight.toLocaleString()} px {outcome.format.toUpperCase()} created</strong><small>{outcome.sourceCharacters.toLocaleString()} source characters · {outcome.elementCount.toLocaleString()} rendered elements · {cleanedCount.toLocaleString()} unsafe items removed</small></div>
+      <b>LOCAL</b>
+    </div>
+  );
+}
+
 function RepairPdfControls() {
   return (
     <section className="repair-explainer" aria-labelledby="repair-explainer-title">
@@ -5830,7 +6042,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -5846,6 +6058,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const powerpointPreview = usePowerPointDocumentPreview(files[0], tool.slug === "powerpoint-to-pdf", tool, limits);
   const spreadsheetPreview = useSpreadsheetDocumentPreview(files[0], tool.slug === "excel-to-pdf", tool, limits, settings.orientation);
   const htmlPreview = useHtmlDocumentPreview(files[0], files[0] ? "" : settings.html, tool.slug === "html-to-pdf", tool, limits, settings.pageSize);
+  const htmlImagePreview = useHtmlImagePreview(files[0], files[0] ? "" : settings.html, settings.format, settings.viewportWidth, tool.slug === "html-to-image", tool, limits);
   const splitInfo = tool.slug === "split-pdf" ? pageInfo : { state: "idle", pageCount: 0, message: "" };
   const splitPlan = useMemo(() => tool.slug === "split-pdf" ? getSplitPlan(settings, splitInfo, limits) : null, [limits, settings, splitInfo, tool.slug]);
   const removePlan = useMemo(() => tool.slug === "remove-pdf-pages" ? getRemovePlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
@@ -5908,6 +6121,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageRotationPreviewMatches = imageRotationPreview.state === "ready"
     && imageRotationPreview.file === files[0]
     && imageRotationPreview.angle === Number(settings.angle || IMAGE_ROTATIONS[0].value);
+  const htmlImagePreviewMatches = htmlImagePreview.state === "ready"
+    && htmlImagePreview.file === files[0]
+    && htmlImagePreview.format === String(settings.format || "jpg")
+    && htmlImagePreview.viewportWidth === Number(settings.viewportWidth)
+    && Boolean(files[0] || htmlImagePreview.markup === String(settings.html || ""));
 
   useEffect(() => {
     if (tool.slug !== "convert-image" || imageEncoderSupport.state !== "ready" || imageEncoderSupport.formats[settings.format] !== false) return;
@@ -6084,7 +6302,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const powerpointPreviewReady = tool.slug !== "powerpoint-to-pdf" || !hasRequiredInput || (powerpointPreview.state === "ready" && powerpointPreview.file === files[0]);
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && status !== "processing";
+  const htmlImagePreviewReady = tool.slug !== "html-to-image" || !hasRequiredInput || htmlImagePreviewMatches;
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -6178,6 +6397,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? htmlPreview.state === "loading" ? "Checking the readable HTML content locally before export." : "Calculating the PDF page count for this page size."
     : tool.slug === "html-to-pdf" && htmlPreview.state === "error"
       ? htmlPreview.message
+    : tool.slug === "html-to-image" && htmlImagePreview.state === "loading"
+      ? "Preparing the sanitized HTML capture preview locally."
+    : tool.slug === "html-to-image" && htmlImagePreview.state === "error"
+      ? htmlImagePreview.message
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "loading"
       ? "Checking whether this strength will reduce the file size locally."
     : tool.slug === "compress-pdf" && activeCompressionEstimate.state === "ready" && activeCompressionEstimate.status !== "reduced"
@@ -6254,6 +6477,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? `Create ${spreadsheetPreview.pageCount.toLocaleString()}-page PDF`
     : tool.slug === "html-to-pdf" && htmlPreview.state === "ready" && Number.isInteger(htmlPreview.pageCount)
       ? `Create ${htmlPreview.pageCount.toLocaleString()}-page PDF`
+    : tool.slug === "html-to-image" && htmlImagePreviewMatches
+      ? `Create ${htmlImagePreview.plan.outputWidth.toLocaleString()} × ${htmlImagePreview.plan.outputHeight.toLocaleString()} ${htmlImagePreview.plan.formatLabel}`
     : tool.slug === "pdf-to-jpg" && pdfJpgPlan
       ? pdfJpgPlan.actionLabel
     : tool.slug === "pdf-to-word" && pdfOfficeTextPreview.state === "ready"
@@ -6372,7 +6597,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "blur-face" ? "face-blur-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "blur-face" ? "face-blur-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : tool.slug === "html-to-image" ? "html-image-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -6490,6 +6715,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "powerpoint-to-pdf" && <PowerPointPdfResultSummary result={results[0]} />}
                 {tool.slug === "excel-to-pdf" && <SpreadsheetPdfResultSummary result={results[0]} />}
                 {tool.slug === "html-to-pdf" && <HtmlPdfResultSummary result={results[0]} />}
+                {tool.slug === "html-to-image" && <HtmlImageResultSummary result={results[0]} />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -6509,7 +6735,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -6629,6 +6855,14 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 html={settings.html}
                 onHtmlChange={(value) => updateSetting("html", value)}
               />
+            ) : tool.slug === "html-to-image" ? (
+              <HtmlImageControls
+                file={files[0]}
+                settings={settings}
+                settingsList={settingsList}
+                preview={htmlImagePreview}
+                onChange={updateSetting}
+              />
             ) : settingsList.length ? (
               <>
                 {pdfSettingPreviewTools.has(tool.slug) && <PdfSettingPreview tool={tool} settings={settings} info={pageInfo} />}
@@ -6643,7 +6877,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
             <div className="output-summary">
               <span>Output</span>
-              <strong>{tool.slug === "convert-image" ? `.${String(settings.format || "webp").toUpperCase()}` : tool.slug === "compare-pdf" ? "INLINE + .HTML" : tool.slug === "summarize-pdf" ? "INLINE + .TXT" : tool.output.join(" · ").toUpperCase()}</strong>
+              <strong>{["convert-image", "html-to-image"].includes(tool.slug) ? `.${String(settings.format || (tool.slug === "html-to-image" ? "jpg" : "webp")).toUpperCase()}` : tool.slug === "compare-pdf" ? "INLINE + .HTML" : tool.slug === "summarize-pdf" ? "INLINE + .TXT" : tool.output.join(" · ").toUpperCase()}</strong>
             </div>
             </div>
             <div className="process-action-stack">
@@ -6715,6 +6949,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "photo-editor" && photoEditorPlan.state === "ready" && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{photoEditorPlan.plan.changed ? "Edited" : "Original look"} · {photoEditorPlan.plan.width.toLocaleString()} × {photoEditorPlan.plan.height.toLocaleString()} px</strong>
+              )}
+              {tool.slug === "html-to-image" && htmlImagePreviewMatches && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{getHtmlImageFormat(settings.format).label} · {htmlImagePreview.plan.outputWidth.toLocaleString()} × {htmlImagePreview.plan.outputHeight.toLocaleString()} px</strong>
               )}
               {!((inlineReaderTools.has(tool.slug) || ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug)) && results.length) && (
                 <button className="process-button" onClick={process} aria-disabled={!canRun} aria-describedby={showProcessHint ? processHintId : undefined}>
