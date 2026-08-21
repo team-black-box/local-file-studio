@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArchiveIcon,
   ArrowClockwiseIcon,
@@ -109,6 +109,7 @@ import { MIN_REDACTION_REGION_PERCENT, clampRedactionRegion, createRedactionPlan
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
 import { clearSensitiveToolSettings } from "./lib/tool-settings.js";
+import { createBrowserTranslator, createTranslationSessionLease, getPdfTranslationLanguage, getPdfTranslationMode, inspectBrowserTranslator } from "./lib/pdf-translation.js";
 import { useProtectedPdfGate } from "./useProtectedPdfGate.js";
 
 const iconMap = {
@@ -743,7 +744,7 @@ function useMergePdfPreview(files, enabled, tool, limits) {
   return preview;
 }
 
-function usePdfOfficeTextPreview(file, password, enabled, limits, format) {
+function usePdfOfficeTextPreview(file, password, enabled, limits, format, toolName = "PDF to Word") {
   const [preview, setPreview] = useState({ state: "idle", file: null, pages: [], pageStats: [], message: "" });
 
   useEffect(() => {
@@ -771,7 +772,7 @@ function usePdfOfficeTextPreview(file, password, enabled, limits, format) {
       if (!cancelled) setPreview({ state: "ready", file, message: "", ...inspected });
     })().catch((error) => {
       if (cancelled || error?.name === "AbortError") return;
-      const friendly = toFriendlyResourceError(error, "PDF to Word");
+      const friendly = toFriendlyResourceError(error, toolName);
       setPreview({ state: "error", file, pages: [], pageStats: [], message: friendly?.message || "The selectable PDF text could not be inspected." });
     });
 
@@ -779,9 +780,102 @@ function usePdfOfficeTextPreview(file, password, enabled, limits, format) {
       cancelled = true;
       controller.abort();
     };
-  }, [enabled, file, format, limits, password]);
+  }, [enabled, file, format, limits, password, toolName]);
 
   return preview;
+}
+
+function releasePreparedTranslator(translator) {
+  if (!translator) return;
+  try {
+    Promise.resolve(translator.destroy?.()).catch(() => {});
+  } catch {
+    // Cleanup is best-effort; the translator reference is always dropped.
+  }
+}
+
+function useTranslationEngine(targetLanguage, enabled) {
+  const translatorRef = useRef(null);
+  const mountedRef = useRef(true);
+  const targetLanguageRef = useRef(targetLanguage);
+  const [engine, setEngine] = useState({ state: "idle", availability: null, progress: null, message: "" });
+  targetLanguageRef.current = targetLanguage;
+
+  const release = useCallback(() => {
+    const translator = translatorRef.current;
+    translatorRef.current = null;
+    releasePreparedTranslator(translator);
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      release();
+    };
+  }, [release]);
+
+  useEffect(() => {
+    release();
+    if (!enabled) {
+      setEngine({ state: "idle", availability: null, progress: null, message: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setEngine({ state: "checking", availability: null, progress: null, message: "Checking this browser’s local translation support…" });
+    inspectBrowserTranslator(targetLanguage).then((availability) => {
+      if (cancelled) return;
+      setEngine({ state: availability.state, availability, progress: null, message: availability.message || "" });
+    });
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [enabled, release, targetLanguage]);
+
+  const prepare = useCallback(async () => {
+    release();
+    const language = getPdfTranslationLanguage(targetLanguage);
+    const requestedLanguage = language.value;
+    setEngine((current) => ({ ...current, state: "preparing", progress: null, message: `Preparing English-to-${language.label} translation in this browser…` }));
+    const pendingTranslator = createBrowserTranslator(targetLanguage, (progress) => {
+      setEngine((current) => ({ ...current, state: "preparing", progress, message: `Downloading the ${language.label} language pack in this browser…` }));
+    });
+    try {
+      const translator = await pendingTranslator;
+      if (!mountedRef.current || targetLanguageRef.current !== requestedLanguage) {
+        releasePreparedTranslator(translator);
+        return false;
+      }
+      translatorRef.current = translator;
+      setEngine((current) => ({ ...current, state: "ready", progress: 1, message: `Full English-to-${language.label} translation is ready in this tab.` }));
+      return true;
+    } catch {
+      translatorRef.current = null;
+      setEngine((current) => ({
+        ...current,
+        state: "error",
+        progress: null,
+        message: `Full English-to-${language.label} translation could not be prepared here. Choose Basic glossary or try again.`,
+      }));
+      return false;
+    }
+  }, [release, targetLanguage]);
+
+  const take = useCallback(() => {
+    const translator = translatorRef.current;
+    translatorRef.current = null;
+    setEngine((current) => ({
+      ...current,
+      state: current.availability?.state || "available",
+      progress: null,
+      message: "The prepared translator was used and released. Prepare it again for another PDF.",
+    }));
+    return translator ? createTranslationSessionLease(translator) : null;
+  }, []);
+
+  return { ...engine, prepare, release, take };
 }
 
 function useWordDocumentPreview(file, enabled, tool, limits) {
@@ -3097,6 +3191,9 @@ function MarkdownPreview({ text, limits }) {
 function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
   const markdown = tool.slug === "pdf-to-markdown";
   const summary = tool.slug === "summarize-pdf";
+  const translation = tool.slug === "translate-pdf";
+  const translationOutcome = translation ? result?.translationOutcome : null;
+  const fullTranslation = translationOutcome?.mode === "full";
   const text = String(result?.textContent || "");
   const [activeTab, setActiveTab] = useState("text");
   const [copyState, setCopyState] = useState({ kind: "idle", message: "" });
@@ -3117,8 +3214,20 @@ function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
       <header className="ocr-reader-header text-reader-header">
         <span>{markdown ? <MarkdownLogoIcon size={24} weight="duotone" aria-hidden="true" /> : summary ? <SparkleIcon size={24} weight="duotone" aria-hidden="true" /> : <TranslateIcon size={24} weight="duotone" aria-hidden="true" />}</span>
         <div><h3 id={`${tool.slug}-reader-title`} ref={headingRef} tabIndex="-1">{markdown ? "Markdown result" : summary ? "Extractive summary" : "Translated text"}</h3><p>{result.details} · held only in this tab</p></div>
-        <b>{markdown ? "MARKDOWN" : summary ? "EXTRACTIVE" : "LOCAL"}</b>
+        <b>{markdown ? "MARKDOWN" : summary ? "EXTRACTIVE" : fullTranslation ? "FULL MODEL" : "BASIC GLOSSARY"}</b>
       </header>
+
+      {translationOutcome && (
+        <div className={`translation-result-note ${fullTranslation ? "full" : "glossary"}`} role="note">
+          {fullTranslation ? <CheckCircleIcon size={19} weight="fill" aria-hidden="true" /> : <WarningCircleIcon size={19} weight="fill" aria-hidden="true" />}
+          <span>
+            <strong>{fullTranslation ? `Full English-to-${translationOutcome.targetLabel} translation` : `Basic ${translationOutcome.targetLabel} glossary output`}</strong>
+            <small>{fullTranslation
+              ? `${translationOutcome.pageCount.toLocaleString()} ${translationOutcome.pageCount === 1 ? "page" : "pages"} translated by the browser model on this device.`
+              : `${translationOutcome.replacementCount.toLocaleString()} ${translationOutcome.replacementCount === 1 ? "term was" : "terms were"} replaced from a ${translationOutcome.glossarySize.toLocaleString()}-term glossary; all other English remains unchanged.`}</small>
+          </span>
+        </div>
+      )}
 
       {markdown && (
         <div className="text-reader-tabs" role="tablist" aria-label="Markdown result views">
@@ -3129,7 +3238,7 @@ function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
 
       {(!markdown || activeTab === "text") && (
         <div className="ocr-text-panel" id={textPanelId} role={markdown ? "tabpanel" : undefined} aria-labelledby={markdown ? `${textPanelId}-tab` : undefined}>
-          <label htmlFor={`${tool.slug}-result-value`}>{markdown ? "Markdown text" : summary ? "Summary text" : "Translated text"}</label>
+          <label htmlFor={`${tool.slug}-result-value`}>{markdown ? "Markdown text" : summary ? "Summary text" : fullTranslation ? `${translationOutcome?.targetLabel || "Translated"} text` : "Glossary output"}</label>
           <textarea id={`${tool.slug}-result-value`} readOnly value={text} spellCheck="false" />
         </div>
       )}
@@ -3140,7 +3249,7 @@ function TextReaderResult({ tool, result, limits, headingRef, onReset }) {
       <footer className="ocr-reader-actions text-reader-actions">
         <span className={`ocr-copy-status ${copyState.kind}`} role="status" aria-live="polite">{copyState.message || "Text stays local until you copy or download it."}</span>
         <button type="button" onClick={() => downloadResult(result)}><DownloadSimpleIcon size={16} aria-hidden="true" />Download {markdown ? ".md" : ".txt"}</button>
-        <button type="button" className="primary" onClick={copy} disabled={!text}><FilesIcon size={16} aria-hidden="true" />Copy {markdown ? "Markdown" : summary ? "summary" : "translation"}</button>
+        <button type="button" className="primary" onClick={copy} disabled={!text}><FilesIcon size={16} aria-hidden="true" />Copy {markdown ? "Markdown" : summary ? "summary" : fullTranslation ? `${translationOutcome?.targetLabel || "translated"} text` : "glossary output"}</button>
       </footer>
       <button className="start-another ocr-start-another" onClick={onReset}>{markdown ? "Convert another PDF" : summary ? "Summarize another PDF" : "Translate another PDF"}</button>
     </section>
@@ -3159,6 +3268,124 @@ function SummaryPlan({ settings }) {
         <small>{prose ? "Presented as one readable paragraph." : "Presented as scannable key points."}</small>
         <p>This is extractive: it selects existing PDF sentences instead of inventing or rewriting claims.</p>
       </div>
+    </div>
+  );
+}
+
+function TranslationSourceStatus({ file, preview }) {
+  if (!file) {
+    return (
+      <section className="translation-source-state" aria-labelledby="translation-source-title">
+        <TextTIcon size={19} weight="duotone" aria-hidden="true" />
+        <span><strong id="translation-source-title">English source preview</strong><small>Add a PDF to check its selectable text before translation.</small></span>
+      </section>
+    );
+  }
+  if (preview.state === "loading" || preview.file !== file) {
+    return (
+      <section className="translation-source-state" role="status" aria-live="polite">
+        <SpinnerGapIcon size={19} className="spin" aria-hidden="true" />
+        <span><strong>Reading selectable text</strong><small>{preview.message || "Checking every PDF page locally."}</small></span>
+      </section>
+    );
+  }
+  if (preview.state === "error") {
+    return (
+      <section className="translation-source-state error" role="alert">
+        <WarningCircleIcon size={19} weight="fill" aria-hidden="true" />
+        <span><strong>English source unavailable</strong><small>{preview.message}</small></span>
+      </section>
+    );
+  }
+
+  const firstTextPage = preview.pageStats.find((page) => page.hasText);
+  const excerpt = String(firstTextPage?.previewText || "").replace(/\s+/gu, " ").trim().slice(0, 260);
+  return (
+    <section className="translation-source-card" aria-labelledby="translation-source-title">
+      <div>
+        <span><TextTIcon size={18} weight="duotone" aria-hidden="true" /></span>
+        <span><strong id="translation-source-title">English source found</strong><small>{preview.pageCount.toLocaleString()} {preview.pageCount === 1 ? "page" : "pages"} · {preview.wordCount.toLocaleString()} {preview.wordCount === 1 ? "word" : "words"} · {preview.characterCount.toLocaleString()} characters</small></span>
+      </div>
+      {excerpt && <blockquote><small>Page {firstTextPage.pageNumber} sample</small>{excerpt}{firstTextPage.truncated || firstTextPage.previewText.length > 260 ? "…" : ""}</blockquote>}
+      {preview.emptyPageCount > 0 && <p><WarningCircleIcon size={14} weight="fill" aria-hidden="true" />{preview.emptyPageCount.toLocaleString()} {preview.emptyPageCount === 1 ? "page has" : "pages have"} no selectable text and will be empty in the result.</p>}
+    </section>
+  );
+}
+
+function TranslationControls({ file, settings, settingsList, preview, engine, onChange, onPrepare }) {
+  const languageSetting = settingsList.find((setting) => setting.key === "targetLanguage");
+  const language = getPdfTranslationLanguage(settings.targetLanguage);
+  const mode = getPdfTranslationMode(settings.translationMode);
+  const preparing = engine.state === "preparing";
+  const modelReady = engine.state === "ready";
+  const modelUnavailable = ["unsupported", "unavailable"].includes(engine.state);
+  const progress = Number.isFinite(engine.progress) ? Math.round(engine.progress * 100) : null;
+  const modelStatus = modelReady
+    ? `Full English-to-${language.label} translation is ready in this tab.`
+    : preparing
+      ? progress === null ? `Preparing the ${language.label} model…` : `Preparing the ${language.label} model · ${progress}%`
+      : engine.state === "checking"
+        ? "Checking this browser’s language model…"
+        : engine.state === "downloadable"
+          ? `A one-time ${language.label} language-pack download is needed.`
+          : engine.state === "available"
+            ? `The ${language.label} model is available in this browser.`
+            : engine.state === "downloading"
+              ? `The browser is already downloading its ${language.label} language pack.`
+              : engine.state === "unknown"
+                ? `This browser offers translation, but its ${language.label} model status is unclear.`
+                : engine.state === "error"
+                  ? engine.message
+                  : `Full ${language.label} translation is unavailable in this browser.`;
+
+  return (
+    <div className="translation-controls">
+      <fieldset className="translation-language-picker">
+        <legend>{languageSetting.label}</legend>
+        <div>
+          {languageSetting.options.map((option) => (
+            <label key={option.value} className={settings.targetLanguage === option.value ? "selected" : ""}>
+              <input type="radio" name="translation-language" value={option.value} checked={settings.targetLanguage === option.value} onChange={() => onChange("targetLanguage", option.value)} />
+              <strong>{option.label}</strong>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="translation-engine-picker">
+        <legend>Choose how to translate</legend>
+        <div>
+          <label className={`${mode === "full" ? "selected" : ""} ${modelUnavailable ? "unavailable" : ""}`}>
+            <input type="radio" name="translation-engine" value="full" checked={mode === "full"} disabled={modelUnavailable} onChange={() => onChange("translationMode", "full")} />
+            <BrainIcon size={20} weight="duotone" aria-hidden="true" />
+            <span><strong>Full translation</strong><small>Best result · browser model</small></span>
+            <b>{modelReady ? "READY" : modelUnavailable ? "UNAVAILABLE" : "MODEL"}</b>
+          </label>
+          <label className={mode === "glossary" ? "selected" : ""}>
+            <input type="radio" name="translation-engine" value="glossary" checked={mode === "glossary"} onChange={() => onChange("translationMode", "glossary")} />
+            <ListIcon size={20} weight="duotone" aria-hidden="true" />
+            <span><strong>Basic glossary</strong><small>10 terms · other English stays</small></span>
+            <b>OFFLINE</b>
+          </label>
+        </div>
+      </fieldset>
+
+      {mode === "full" ? (
+        <section className={`translation-engine-status ${modelReady ? "ready" : modelUnavailable || engine.state === "error" ? "warning" : ""}`} role="status" aria-live="polite">
+          <span>{modelReady ? <CheckCircleIcon size={19} weight="fill" aria-hidden="true" /> : preparing ? <SpinnerGapIcon size={19} className="spin" aria-hidden="true" /> : <BrainIcon size={19} weight="duotone" aria-hidden="true" />}</span>
+          <div><strong>{modelReady ? "Full translation ready" : preparing ? "Preparing full translation" : "Browser model status"}</strong><small>{modelStatus}</small></div>
+          {!modelReady && !modelUnavailable && !preparing && <button type="button" onClick={onPrepare}><DownloadSimpleIcon size={15} aria-hidden="true" />Prepare full {language.label}</button>}
+          {preparing && progress !== null && <div className="translation-model-progress" role="progressbar" aria-label={`${language.label} language pack download`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>}
+          {!modelReady && <p><ShieldCheckIcon size={14} weight="fill" aria-hidden="true" />The browser may download a language pack. PDF text remains on this device.</p>}
+        </section>
+      ) : (
+        <section className="translation-engine-status glossary" role="note">
+          <span><WarningCircleIcon size={19} weight="fill" aria-hidden="true" /></span>
+          <div><strong>Basic glossary—not a full translation</strong><small>Only 10 common English terms are replaced. Every other word stays unchanged and the TXT result is labeled accordingly.</small></div>
+        </section>
+      )}
+
+      <TranslationSourceStatus file={file} preview={preview} />
     </div>
   );
 }
@@ -6157,6 +6384,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const limitsPrimaryId = `${limitsId}-primary`;
   const [settings, setSettings] = useState(() => Object.fromEntries(settingsList.map((setting) => [setting.key, setting.default])));
   const imageEncoderSupport = useImageEncoderSupport(tool.slug === "convert-image");
+  const translationEngine = useTranslationEngine(settings.targetLanguage, tool.slug === "translate-pdf");
   const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState("idle");
@@ -6172,7 +6400,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const mergePdfPreview = useMergePdfPreview(files, tool.slug === "merge-pdf" && passwordGate.ready, tool, limits);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["merge-pdf", "scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image", "pdf-forms", "redact-pdf", "compare-pdf"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["merge-pdf", "scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image", "pdf-forms", "redact-pdf", "compare-pdf", "translate-pdf"].includes(tool.slug);
   const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
@@ -6203,7 +6431,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   }, [limits, pdfFormInfo, settings.flatten, settings.values, tool.slug]);
   const redactionPlan = useMemo(() => tool.slug === "redact-pdf" ? getRedactionPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
-  const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits, tool.output[0]?.slice(1));
+  const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits, tool.output[0]?.slice(1), tool.name);
+  const translationSourcePreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], tool.slug === "translate-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits, "translation", tool.name);
   const imageCompressionPreview = useImageCompressionPreview(files[0], settings.quality, tool.slug === "compress-image", tool);
   const imageResizeInspection = useImageSourceInspection(files, tool.slug === "resize-image", tool, "resize");
   const imageResizePlan = createImageResizePlan(imageResizeInspection, settings.width, limits);
@@ -6265,6 +6494,15 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     const fallback = imageFormatChoices.find(({ value }) => imageEncoderSupport.formats[value])?.value;
     if (fallback) setSettings((current) => ({ ...current, format: fallback }));
   }, [imageEncoderSupport, settings.format, tool.slug]);
+
+  useEffect(() => {
+    if (tool.slug !== "translate-pdf") return;
+    if (["unsupported", "unavailable"].includes(translationEngine.state) && getPdfTranslationMode(settings.translationMode) === "full") {
+      setSettings((current) => ({ ...current, translationMode: "glossary" }));
+      return;
+    }
+    if (getPdfTranslationMode(settings.translationMode) === "glossary") translationEngine.release();
+  }, [settings.translationMode, tool.slug, translationEngine.release, translationEngine.state]);
 
   const getFileId = (file) => {
     if (!fileIdsRef.current.has(file)) fileIdsRef.current.set(file, crypto.randomUUID());
@@ -6437,7 +6675,11 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const spreadsheetPreviewReady = tool.slug !== "excel-to-pdf" || !hasRequiredInput || (spreadsheetPreview.state === "ready" && spreadsheetPreview.file === files[0]);
   const htmlPreviewReady = tool.slug !== "html-to-pdf" || !hasRequiredInput || (htmlPreview.state === "ready" && htmlPreview.file === files[0] && Boolean(files[0] || htmlPreview.markup === String(settings.html || "")));
   const htmlImagePreviewReady = tool.slug !== "html-to-image" || !hasRequiredInput || htmlImagePreviewMatches;
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && mergePdfReady && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && status !== "processing";
+  const translationSourceReady = tool.slug !== "translate-pdf" || !hasRequiredInput || (translationSourcePreview.state === "ready" && translationSourcePreview.file === files[0]);
+  const translationEngineReady = tool.slug !== "translate-pdf"
+    || getPdfTranslationMode(settings.translationMode) === "glossary"
+    || translationEngine.state === "ready";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && mergePdfReady && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && translationSourceReady && translationEngineReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -6447,6 +6689,12 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? passwordGate.active?.status === "checking"
         ? "Checking PDF protection locally."
         : "Enter the PDF password above to continue."
+    : tool.slug === "translate-pdf" && hasRequiredInput && translationSourcePreview.file === files[0] && translationSourcePreview.state === "loading"
+      ? "Reading the selectable English text before translation."
+    : tool.slug === "translate-pdf" && hasRequiredInput && translationSourcePreview.file === files[0] && translationSourcePreview.state === "error"
+      ? translationSourcePreview.message
+    : tool.slug === "translate-pdf" && getPdfTranslationMode(settings.translationMode) === "full" && translationEngine.state !== "ready"
+      ? `Prepare full ${getPdfTranslationLanguage(settings.targetLanguage).label} translation above, or choose Basic glossary.`
     : tool.slug === "merge-pdf" && hasRequiredInput && (!mergePdfPreviewMatches || mergePdfPreview.state === "loading")
       ? "Reading every PDF page count before merging."
     : tool.slug === "merge-pdf" && mergePdfPreview.state === "error"
@@ -6551,6 +6799,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   const process = async () => {
     if (!canRun) return;
+    let activeTranslationSession = null;
     setStatus("processing");
     setProcessError("");
     setFileIssue(null);
@@ -6563,6 +6812,14 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         inputPasswords: passwordGate.inputPasswords,
         outputPassword: passwordGate.outputPassword,
       };
+      if (tool.slug === "translate-pdf" && getPdfTranslationMode(settings.translationMode) === "full") {
+        activeTranslationSession = translationEngine.take();
+        if (!activeTranslationSession) throw new Error(`Prepare full ${getPdfTranslationLanguage(settings.targetLanguage).label} translation before processing.`);
+        processOptions.translationSession = activeTranslationSession;
+      }
+      if (tool.slug === "translate-pdf" && translationSourcePreview.state === "ready" && translationSourcePreview.file === files[0]) {
+        processOptions.pdfTranslationTextPages = translationSourcePreview.pages;
+      }
       if (usesPdfOfficeTextPreview && pdfOfficeTextPreview.state === "ready" && pdfOfficeTextPreview.file === files[0]) {
         processOptions.pdfOfficeTextPages = pdfOfficeTextPreview.pages;
       }
@@ -6598,6 +6855,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       setStatus("error");
       setProcessError(error?.message || "The local processor could not finish this file.");
     } finally {
+      releasePreparedTranslator(activeTranslationSession);
       if (!dismissedRef.current) passwordGate.clearCredentials({ resetPreference: true });
     }
   };
@@ -6607,6 +6865,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     : "Drop files here or choose files";
   const processButtonLabel = tool.slug === "merge-pdf" && mergePdfPreviewMatches
     ? mergePdfPreview.plan.actionLabel
+    : tool.slug === "translate-pdf" && hasRequiredInput
+      ? getPdfTranslationMode(settings.translationMode) === "full"
+        ? `Translate to ${getPdfTranslationLanguage(settings.targetLanguage).label}`
+        : `Apply basic ${getPdfTranslationLanguage(settings.targetLanguage).label} glossary`
     : tool.slug === "ocr-pdf" && hasRequiredInput
       ? "Recognize text"
     : tool.slug === "summarize-pdf" && hasRequiredInput
@@ -6698,6 +6960,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     : tool.name;
 
   const updateSetting = (key, value) => {
+    if (tool.slug === "translate-pdf" && ["targetLanguage", "translationMode"].includes(key)) translationEngine.release();
     setSettings((current) => ({ ...current, [key]: value }));
     clearResults();
     setStatus("idle");
@@ -6713,6 +6976,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   const resetWorkbenchState = () => {
     passwordGate.resetForFileChange();
+    translationEngine.release();
     clearResults();
     setFiles([]);
     setStatus("idle");
@@ -6723,7 +6987,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "upscale-image" ? "image-upscale-workbench" : tool.slug === "remove-image-background" ? "background-removal-workbench" : tool.slug === "blur-face" ? "face-blur-workbench" : tool.slug === "watermark-image" ? "image-watermark-workbench" : tool.slug === "meme-generator" ? "image-meme-workbench" : tool.slug === "rotate-image" ? "image-rotation-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "translate-pdf" ? "translate-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "upscale-image" ? "image-upscale-workbench" : tool.slug === "remove-image-background" ? "background-removal-workbench" : tool.slug === "blur-face" ? "face-blur-workbench" : tool.slug === "watermark-image" ? "image-watermark-workbench" : tool.slug === "meme-generator" ? "image-meme-workbench" : tool.slug === "rotate-image" ? "image-rotation-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -6737,7 +7001,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "blur-face" ? "face-blur-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : tool.slug === "html-to-image" ? "html-image-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "translate-pdf" ? "translation-preview-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "blur-face" ? "face-blur-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : tool.slug === "html-to-image" ? "html-image-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -6886,8 +7150,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{tool.slug === "merge-pdf" ? <FilesIcon size={19} /> : ["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "merge-pdf" ? "Merge plan" : tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "merge-pdf" ? "Check every source and the final page order before merging." : tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
-            {tool.slug === "merge-pdf" ? (
+            <div className="settings-heading"><span>{tool.slug === "translate-pdf" ? <TranslateIcon size={19} /> : tool.slug === "merge-pdf" ? <FilesIcon size={19} /> : ["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "translate-pdf" ? "Translation plan" : tool.slug === "merge-pdf" ? "Merge plan" : tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "translate-pdf" ? "Choose the target, confirm the engine, and check the English source." : tool.slug === "merge-pdf" ? "Check every source and the final page order before merging." : tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
+            {tool.slug === "translate-pdf" ? (
+              <TranslationControls file={files[0]} settings={settings} settingsList={settingsList} preview={translationSourcePreview} engine={translationEngine} onChange={updateSetting} onPrepare={translationEngine.prepare} />
+            ) : tool.slug === "merge-pdf" ? (
               <MergePdfControls files={files} preview={mergePdfPreview} />
             ) : tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
@@ -7024,7 +7290,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               </>
             ) : <div className="no-settings"><CheckCircleIcon size={20} /><span><strong>Nothing to configure</strong>This tool uses sensible local defaults.</span></div>}
 
-            {tool.maturity === "beta" && (
+            {tool.maturity === "beta" && tool.slug !== "translate-pdf" && (
               <div className="beta-note"><SparkleIcon size={18} /><span><strong>Local beta</strong>Complex layouts, rare formats, and very large files may vary by browser.</span></div>
             )}
 
@@ -7048,6 +7314,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "merge-pdf" && mergePdfPreviewMatches && mergePdfPreview.plan.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{mergePdfPreview.plan.readyLabel}</strong>
+              )}
+              {tool.slug === "translate-pdf" && translationSourcePreview.state === "ready" && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{getPdfTranslationLanguage(settings.targetLanguage).label} · {getPdfTranslationMode(settings.translationMode) === "full" ? translationEngine.state === "ready" ? "full model ready" : "prepare full model" : "basic 10-term glossary"}</strong>
               )}
               {tool.slug === "extract-pdf-pages" && extractPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{settings.combine === false ? `${extractPlan.outputCount.toLocaleString()} ${extractPlan.outputCount === 1 ? "PDF" : "PDFs"} in ZIP` : "1 PDF"} ready</strong>

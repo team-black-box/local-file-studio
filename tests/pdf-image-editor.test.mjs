@@ -15,7 +15,7 @@ import {
   validatePdfOverlayPlacements,
 } from "../src/lib/file-limits.js";
 import { preflightPdfOverlayImages } from "../src/lib/file-preflight.js";
-import { createOcrReaderResult, createPdfOfficeTextPreview, createPdfSpreadsheetPlan, createTextReaderResult, extractiveSummary, processPdfTool } from "../src/lib/pdf-processors.js";
+import { createOcrReaderResult, createPdfOfficeTextPreview, createPdfSpreadsheetPlan, createTextReaderResult, extractiveSummary, processPdfTool, translateLocally } from "../src/lib/pdf-processors.js";
 import { destroyPdfJsDocument } from "../src/lib/pdfjs-utils.js";
 import { createImageCompressionOutcome, hasNonFragmentSvgUrl, shouldRemoveSvgAttribute } from "../src/lib/image-processors.js";
 import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, inspectBackgroundCorners } from "../src/lib/background-removal.js";
@@ -24,6 +24,7 @@ import { IMAGE_MEME_CASES, IMAGE_MEME_MAX_LINES, createImageMemeOutcome, drawIma
 import { IMAGE_ROTATIONS, createImageRotationOutcome, getImageRotation, getImageRotationPlan } from "../src/lib/image-rotation.js";
 import { FACE_BLUR_DEFAULT_FOCUS, FACE_BLUR_STRENGTHS, createFaceBlurOutcome, createFaceBlurPlan, drawFaceBlur, validateFaceBlurPlan } from "../src/lib/face-blur.js";
 import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS, createHtmlImageOutcome, createHtmlImagePlan, getHtmlImageFormat, getHtmlImageViewport, hasNonFragmentHtmlImageUrl, shouldRemoveHtmlImageAttribute } from "../src/lib/html-image.js";
+import { applyBasicTranslationGlossary, createBrowserTranslator, createTranslationSessionLease, getPdfTranslationLanguage, inspectBrowserTranslator, splitTranslationText } from "../src/lib/pdf-translation.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { tools } from "../src/tools.js";
@@ -759,6 +760,91 @@ test("Summary, Translate, and Markdown results expose complete copyable text bes
   assert.match(markdown.textContent, /^# Page 1/m);
   assert.match(markdown.textContent, /^## PRIVATE DOCUMENT/m);
   assert.equal(await markdown.blob.text(), markdown.textContent);
+});
+
+test("Translate PDF labels its deterministic 10-term glossary without pretending it is full translation", () => {
+  const translated = applyBasicTranslationGlossary("The private document and uncommon file.", "es");
+  assert.equal(translated.targetLabel, "Spanish");
+  assert.equal(translated.glossarySize, 10);
+  assert.equal(translated.replacementCount, 5);
+  assert.equal(translated.body, "el privado documento y uncommon archivo.");
+  assert.match(translated.text, /^BASIC SPANISH GLOSSARY — NOT A FULL TRANSLATION/m);
+  assert.match(translated.text, /all other text stays unchanged/i);
+  assert.equal(getPdfTranslationLanguage("not-a-language").value, "es");
+  assert.deepEqual(splitTranslationText("ab😀cd", 4), ["ab😀", "cd"]);
+});
+
+test("Translate PDF detects browser model states and prepares a model only through an explicit call", async () => {
+  assert.equal((await inspectBrowserTranslator("fr", null)).state, "unsupported");
+  assert.equal((await inspectBrowserTranslator("de", { create() {}, availability: async () => "available" })).state, "available");
+  assert.equal((await inspectBrowserTranslator("hi", { create() {}, availability: async () => "downloadable" })).state, "downloadable");
+  assert.equal((await inspectBrowserTranslator("es", { create() {}, availability: async () => "unavailable" })).canPrepare, false);
+  assert.equal((await inspectBrowserTranslator("fr", { create() {}, capabilities: async () => ({ languagePairAvailable: () => "after-download" }) })).state, "downloadable");
+
+  let createOptions;
+  let progress = 0;
+  const translator = { translate: async (text) => `FR:${text}`, destroy: async () => {} };
+  const prepared = await createBrowserTranslator("fr", (value) => { progress = value; }, {
+    async create(options) {
+      createOptions = options;
+      options.monitor({ addEventListener: (_name, listener) => listener({ loaded: 0.625 }) });
+      return translator;
+    },
+  });
+  assert.equal(prepared, translator);
+  assert.equal(createOptions.sourceLanguage, "en");
+  assert.equal(createOptions.targetLanguage, "fr");
+  assert.equal(progress, 0.625);
+
+  let leaseDestroyCount = 0;
+  const lease = createTranslationSessionLease({
+    translate: async (text) => `LEASE:${text}`,
+    destroy: async () => { leaseDestroyCount += 1; },
+  });
+  assert.equal(await lease.translate("private"), "LEASE:private");
+  await lease.destroy();
+  await lease.destroy();
+  assert.equal(leaseDestroyCount, 1);
+  assert.throws(() => lease.translate("released"), (error) => error instanceof FileLimitError && error.code === "translation-model-released");
+});
+
+test("Translate PDF requires a prepared full model and records the exact engine used", async () => {
+  await assert.rejects(
+    () => translateLocally("Private document", "de", { translationMode: "full" }),
+    (error) => error instanceof FileLimitError && error.code === "translation-model-not-ready",
+  );
+
+  const source = await PDFDocument.create();
+  source.addPage([420, 240]);
+  const file = namedBlob(await source.save(), "private-notes.pdf", "application/pdf");
+  const checkedPages = ["The private document and file stay local."];
+
+  const [glossaryResult] = await processPdfTool("translate-pdf", [file], { translationMode: "glossary", targetLanguage: "es", pdfTranslationTextPages: checkedPages });
+  assert.equal(glossaryResult.translationOutcome.mode, "glossary");
+  assert.equal(glossaryResult.translationOutcome.targetLabel, "Spanish");
+  assert.equal(glossaryResult.translationOutcome.pageCount, 1);
+  assert.equal(glossaryResult.translationOutcome.glossarySize, 10);
+  assert.ok(glossaryResult.translationOutcome.replacementCount >= 5);
+  assert.match(glossaryResult.details, /basic 10-term glossary/i);
+  assert.match(glossaryResult.textContent, /NOT A FULL TRANSLATION/);
+
+  let destroyed = 0;
+  const [fullResult] = await processPdfTool("translate-pdf", [file], {
+    translationMode: "full",
+    targetLanguage: "fr",
+    pdfTranslationTextPages: checkedPages,
+    translationSession: {
+      translate: async (text) => `TRADUIT: ${text}`,
+      destroy: async () => { destroyed += 1; },
+    },
+  });
+  assert.equal(fullResult.translationOutcome.mode, "full");
+  assert.equal(fullResult.translationOutcome.targetLabel, "French");
+  assert.equal(fullResult.translationOutcome.glossarySize, 0);
+  assert.equal(fullResult.translationOutcome.replacementCount, null);
+  assert.match(fullResult.details, /full browser translation/i);
+  assert.match(fullResult.textContent, /^TRADUIT:/);
+  assert.equal(destroyed, 1);
 });
 
 test("extractive summaries treat PDF lines as candidates and do not repeat identical source sentences", () => {

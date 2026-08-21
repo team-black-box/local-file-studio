@@ -41,6 +41,7 @@ import { runBoundedLineDiff } from "./diff-worker-client.js";
 import { createComparisonHtml, createComparisonView } from "./pdf-comparison.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./pdfjs-utils.js";
 import { protectGeneratedPdfResults } from "./pdf-output-protection.js";
+import { applyBasicTranslationGlossary, getPdfTranslationLanguage, getPdfTranslationMode, splitTranslationText } from "./pdf-translation.js";
 
 const WIN_ANSI_EXTRA_CODE_POINTS = new Set([
   0x0152, 0x0153, 0x0160, 0x0161, 0x0178, 0x017d, 0x017e, 0x0192,
@@ -1030,38 +1031,58 @@ export function createTextReaderResult(name, text, viewer) {
   throw new FileLimitError("invalid-text-viewer", "The local text result could not be prepared. Reload the app and try again.");
 }
 
-async function translateLocally(text, targetLanguage, report) {
-  const TranslatorApi = globalThis.Translator || globalThis.ai?.translator;
-  if (TranslatorApi?.create) {
-    report?.({ phase: "Using the device language model", progress: 0.72 });
-    const translator = await TranslatorApi.create({ sourceLanguage: "en", targetLanguage });
-    try {
-      const chunks = text.match(/[\s\S]{1,3500}/g) || [text];
-      const translated = [];
-      for (const chunk of chunks) translated.push(await translator.translate(chunk));
-      return translated.join("\n");
-    } finally {
-      await translator.destroy?.();
-    }
+export async function translateLocally(text, targetLanguage, options = {}, report) {
+  const language = getPdfTranslationLanguage(targetLanguage);
+  const mode = getPdfTranslationMode(options.translationMode);
+  if (mode === "glossary") return applyBasicTranslationGlossary(text, language.value);
+
+  const translator = options.translationSession;
+  if (!translator || typeof translator.translate !== "function") {
+    throw new FileLimitError(
+      "translation-model-not-ready",
+      `Prepare the full English-to-${language.label} translator in this tab before processing, or choose the Basic glossary option.`,
+    );
   }
 
-  const dictionaries = {
-    es: { document: "documento", page: "página", private: "privado", local: "local", file: "archivo", image: "imagen", text: "texto", with: "con", and: "y", the: "el" },
-    fr: { document: "document", page: "page", private: "privé", local: "local", file: "fichier", image: "image", text: "texte", with: "avec", and: "et", the: "le" },
-    de: { document: "Dokument", page: "Seite", private: "privat", local: "lokal", file: "Datei", image: "Bild", text: "Text", with: "mit", and: "und", the: "die" },
-    hi: { document: "दस्तावेज़", page: "पृष्ठ", private: "निजी", local: "स्थानीय", file: "फ़ाइल", image: "छवि", text: "पाठ", with: "के साथ", and: "और", the: "यह" },
-  };
-  const dictionary = dictionaries[targetLanguage] || {};
-  const translated = text.replace(/\b[a-z]+\b/gi, (word) => {
-    const replacement = dictionary[word.toLowerCase()];
-    return replacement || word;
+  report?.({ phase: `Translating to ${language.label} on this device`, progress: 0.72 });
+  const chunks = splitTranslationText(text);
+  const translated = [];
+  try {
+    for (let index = 0; index < chunks.length; index += 1) {
+      report?.({
+        phase: `Translating text ${index + 1} of ${chunks.length}`,
+        progress: 0.72 + ((index / Math.max(1, chunks.length)) * 0.22),
+      });
+      translated.push(await translator.translate(chunks[index]));
+    }
+  } catch (error) {
+    throw new FileLimitError(
+      "translation-model-failed",
+      `Full English-to-${language.label} translation stopped locally. Try preparing the browser model again, or choose the Basic glossary option.`,
+      { cause: error?.name || "translator-error" },
+    );
+  } finally {
+    await translator.destroy?.();
+  }
+
+  return Object.freeze({
+    mode: "full",
+    sourceLanguage: "en",
+    targetLanguage: language.value,
+    targetLabel: language.label,
+    glossarySize: 0,
+    replacementCount: null,
+    body: translated.join("\n"),
+    text: translated.join("\n"),
   });
-  return `[Limited built-in glossary used. Enable your browser's on-device Translator model for full translation.]\n\n${translated}`;
 }
 
 async function intelligenceTool(slug, file, options, report) {
   const limits = getToolLimits(slug);
-  const pages = await extractPdfPagesText(file, options.inputPassword, report, limits.maxExtractedCharactersTotal);
+  const pages = slug === "translate-pdf" && Array.isArray(options.pdfTranslationTextPages)
+    ? options.pdfTranslationTextPages
+    : await extractPdfPagesText(file, options.inputPassword, report, limits.maxExtractedCharactersTotal);
+  if (slug === "translate-pdf") validatePdfOfficeTextPages(pages, file, limits);
   const text = pages.join("\n\n");
   if (!text.trim()) throw new Error("No selectable text was found. Use OCR Reader to recognize and copy scanned text page by page.");
   const name = safeFileName(baseName(file.name));
@@ -1075,8 +1096,23 @@ async function intelligenceTool(slug, file, options, report) {
     return [{ ...createTextReaderResult(name, summary, "summary"), details: `${selectedSentences.toLocaleString()} source ${selectedSentences === 1 ? "sentence" : "sentences"} selected locally` }];
   }
   if (slug === "translate-pdf") {
-    const translated = await translateLocally(text, options.language || options.targetLanguage || "es", report);
-    return [createTextReaderResult(name, translated, "translation")];
+    const translated = await translateLocally(text, options.language || options.targetLanguage || "es", options, report);
+    const details = translated.mode === "full"
+      ? `${translated.targetLabel} · full browser translation`
+      : `${translated.targetLabel} · basic ${translated.glossarySize.toLocaleString()}-term glossary · ${translated.replacementCount.toLocaleString()} ${translated.replacementCount === 1 ? "replacement" : "replacements"}`;
+    const result = createTextReaderResult(name, translated.text, "translation");
+    result.details = details;
+    result.translationOutcome = {
+      mode: translated.mode,
+      sourceLanguage: translated.sourceLanguage,
+      targetLanguage: translated.targetLanguage,
+      targetLabel: translated.targetLabel,
+      pageCount: pages.length,
+      sourceCharacterCount: text.length,
+      glossarySize: translated.glossarySize,
+      replacementCount: translated.replacementCount,
+    };
+    return [result];
   }
   const markdown = markdownFromPages(pages, options.pageBreaks === true || options.pageBreaks === "true");
   return [createTextReaderResult(name, markdown, "markdown")];

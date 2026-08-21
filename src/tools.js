@@ -7,6 +7,7 @@ import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY
 import { IMAGE_MEME_CASES } from "./lib/image-meme.js";
 import { IMAGE_ROTATIONS } from "./lib/image-rotation.js";
 import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS } from "./lib/html-image.js";
+import { PDF_TRANSLATION_LANGUAGES } from "./lib/pdf-translation.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -854,7 +855,7 @@ export const tools = withPhosphorExports([
   {
     slug: "translate-pdf",
     name: "Translate PDF",
-    description: "Translate selectable English PDF text with an on-device model or a limited offline glossary.",
+    description: "Translate selectable English PDF text with a supported browser model, or apply a clearly limited 10-term glossary.",
     kind: "pdf",
     category: "intelligence",
     accepts: [".pdf"],
@@ -871,11 +872,16 @@ export const tools = withPhosphorExports([
         label: "Translate to",
         default: "es",
         compactChoices: true,
+        options: PDF_TRANSLATION_LANGUAGES,
+      },
+      {
+        key: "translationMode",
+        type: "select",
+        label: "Translation engine",
+        default: "full",
         options: [
-          { value: "hi", label: "Hindi" },
-          { value: "es", label: "Spanish" },
-          { value: "de", label: "German" },
-          { value: "fr", label: "French" },
+          { value: "full", label: "Full browser translation", hint: "Uses a supported language model supplied by your browser." },
+          { value: "glossary", label: "Basic glossary", hint: "Replaces only 10 common terms and leaves all other English unchanged." },
         ],
       },
     ],

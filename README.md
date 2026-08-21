@@ -21,7 +21,7 @@ The catalog provides 47 common PDF and image workflows in one independent, offli
 - Convert from PDF: JPG, DOCX, PPTX, XLSX, archival rewrite, and Markdown.
 - Edit: Rotate, Page Numbers, Watermark, Crop, text annotation, visual image/signature placement, and Forms.
 - Protect: Unlock, AES-256 Protect, Sign, permanent raster Redact, and text Compare.
-- Smart local helpers: extractive Summarizer and glossary-assisted Translate.
+- Smart local helpers: extractive Summarizer and an explicitly chosen browser-model or limited-glossary Translate.
 
 Compress PDF rebuilds pages as compressed images. This can substantially reduce image-heavy documents, but searchable text, links, forms, and annotations are flattened, fine detail may soften, and an already-optimized PDF can become larger.
 
@@ -88,6 +88,8 @@ Redact PDF shows the actual document pages and lets users draw, move, resize, re
 Compare PDF presents the bounded selectable-text difference directly in the workbench, with original/revised line numbers, changes-only and all-lines views, and local pagination. The optional HTML report is self-contained, scriptless, and generated locally. This is a text comparison: scans, images, fonts, layout, and visual movement are not compared.
 
 Local Summarizer selects up to 3, 5, or 9 source sentences and shows the extractive result in a copyable in-tab reader. It does not generate new claims or rewrite the document. An optional TXT download contains the same complete text shown in the reader.
+
+Translate PDF first previews the selectable English source with exact page, word, and character counts. Full translation uses a supported desktop browser's on-device Translator API and is prepared only after an explicit click; the browser may download a language pack on first use, but PDF text stays on the device. The fallback Basic glossary is deliberately not presented as full translation: it replaces only 10 documented common terms, leaves every other English word unchanged, and labels both the reader and optional TXT accordingly. A browser-model failure does not silently switch engines.
 
 ## Visible local safety limits
 
