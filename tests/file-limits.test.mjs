@@ -765,7 +765,7 @@ test("Rotate Image exposes exact direction choices and a bounded first-image pre
   const limits = getToolLimits(rotate);
 
   assert.equal(settings.angle.default, 90);
-  assert.deepEqual(settings.angle.options.map(({ value }) => value), IMAGE_ROTATIONS.map(({ value }) => value));
+  assert.deepEqual(settings.angle.options, IMAGE_ROTATIONS.map(({ value, label, hint }) => ({ value, label, hint })));
   assert.equal(limits.maxInteractivePreviewPixels, 1_500_000);
   assert.equal(limits.maxInteractivePreviewEdge, 1600);
   assert.deepEqual(getInteractiveImagePreviewDimensions(6000, 4000, rotate), {
