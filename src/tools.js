@@ -8,6 +8,7 @@ import { IMAGE_MEME_CASES } from "./lib/image-meme.js";
 import { IMAGE_ROTATIONS } from "./lib/image-rotation.js";
 import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS } from "./lib/html-image.js";
 import { PDF_TRANSLATION_LANGUAGES } from "./lib/pdf-translation.js";
+import { PDF_SIGNATURE_DEFAULTS, PDF_SIGNATURE_LIMITS } from "./lib/pdf-signature.js";
 import { PDF_TEXT_ANNOTATION_DEFAULTS, PDF_TEXT_ANNOTATION_LIMITS, PDF_TEXT_ANNOTATION_SCOPES } from "./lib/pdf-text-annotation.js";
 
 const withPhosphorExports = (entries) =>
@@ -739,7 +740,7 @@ export const tools = withPhosphorExports([
   {
     slug: "sign-pdf",
     name: "Sign PDF",
-    description: "Place a typed signature and optional date on the final PDF page.",
+    description: "Place a typed signature exactly where you want it on the final PDF page.",
     kind: "pdf",
     category: "security",
     accepts: [".pdf"],
@@ -754,14 +755,28 @@ export const tools = withPhosphorExports([
         key: "name",
         type: "text",
         label: "Typed signature",
-        default: "Signed locally",
-        hint: "Added to the final page above a signature line.",
+        default: PDF_SIGNATURE_DEFAULTS.name,
+        hint: "A typed visual mark—not a certificate-backed digital signature.",
       },
       {
         key: "includeDate",
         type: "toggle",
         label: "Include signing date",
-        default: true,
+        default: PDF_SIGNATURE_DEFAULTS.includeDate,
+      },
+      { key: "x", type: "number", label: "Horizontal position", default: PDF_SIGNATURE_DEFAULTS.x, min: PDF_SIGNATURE_LIMITS.minPosition, max: PDF_SIGNATURE_LIMITS.maxPosition, step: 0.5, suffix: "%" },
+      { key: "y", type: "number", label: "Vertical position", default: PDF_SIGNATURE_DEFAULTS.y, min: PDF_SIGNATURE_LIMITS.minPosition, max: PDF_SIGNATURE_LIMITS.maxPosition, step: 0.5, suffix: "%" },
+      {
+        key: "fontSize",
+        type: "range",
+        label: "Signature size",
+        default: PDF_SIGNATURE_DEFAULTS.fontSize,
+        min: PDF_SIGNATURE_LIMITS.minFontSize,
+        max: PDF_SIGNATURE_LIMITS.maxFontSize,
+        step: 1,
+        suffix: "pt",
+        minLabel: "Small",
+        maxLabel: "Large",
       },
     ],
   },

@@ -15276,7 +15276,6 @@ body {
 
 .preview-page-number,
 .preview-edit-text,
-.preview-signature,
 .preview-watermark,
 .preview-crop {
   position: absolute;
@@ -15329,19 +15328,6 @@ body {
 .preview-edit-text.center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
 .preview-edit-text.bottom-left { bottom: 12%; left: 10%; }
 .preview-edit-text.bottom-right { right: 10%; bottom: 12%; }
-
-.preview-signature {
-  right: 10%;
-  bottom: 13%;
-  left: 10%;
-  overflow: hidden;
-  border-bottom: 1px solid #6c6d70;
-  padding-bottom: 2px;
-  color: #202226;
-  font: italic 800 9px/1.1 Georgia, serif;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .pdf-setting-preview > p {
   margin: 0;
@@ -17290,6 +17276,17 @@ body {
   font: 650 10px/1.45 Manrope, sans-serif;
 }
 
+.signature-placement-copy input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: italic 700 12px/1.2 Georgia, "Times New Roman", serif;
+}
+
 .text-annotation-scope {
   min-width: 0;
   margin: 0;
@@ -17457,6 +17454,37 @@ body {
   outline: 2px solid rgb(240 94 59 / 26%);
   outline-offset: 2px;
   background: rgb(255 255 255 / 82%);
+}
+
+.text-annotation-preview-label.signature {
+  width: max-content;
+  min-width: 34%;
+  max-width: 62%;
+  display: grid;
+  gap: 5px;
+  padding: 3px 4px;
+  color: #202226;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  white-space: normal;
+}
+
+.text-annotation-preview-label.signature > strong {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  border-bottom: 1px solid #6c6d70;
+  padding: 0 3px 4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-annotation-preview-label.signature > small {
+  padding-inline: 3px;
+  color: #66696d;
+  font: 600 7px/1.1 Manrope, sans-serif;
+  white-space: nowrap;
 }
 
 .text-annotation-tip {
