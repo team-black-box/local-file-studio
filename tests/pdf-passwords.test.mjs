@@ -7,6 +7,7 @@ import { PDF, rgb } from "@libpdf/core";
 import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 import { createUnlockedPdfFile, getPdfAccessMode, inspectPdfAccess } from "../src/lib/pdf-passwords.js";
+import { assertPdfProtectionPasswordPlan, createPdfProtectionPasswordPlan } from "../src/lib/pdf-protection-password.js";
 import { protectGeneratedPdfResults } from "../src/lib/pdf-output-protection.js";
 import { processPdfTool } from "../src/lib/pdf-processors.js";
 
@@ -36,6 +37,41 @@ test("password access modes cover structural, render, text, repair, and explicit
   assert.equal(getPdfAccessMode("pdf-to-word"), "text");
   assert.equal(getPdfAccessMode("repair-pdf"), "repair");
   assert.equal(getPdfAccessMode("unlock-pdf"), null);
+});
+
+test("Protect PDF requires an exact confirmation and labels password length without overclaiming strength", () => {
+  assert.deepEqual(
+    ["", "short", "eight888", "a genuinely long passphrase"].map((password) => createPdfProtectionPasswordPlan({ password, passwordConfirm: password }).guide.id),
+    ["empty", "short", "good", "long"],
+  );
+  assert.equal(createPdfProtectionPasswordPlan({ password: "correct", passwordConfirm: "" }).code, "missing-confirmation");
+  assert.equal(createPdfProtectionPasswordPlan({ password: "correct", passwordConfirm: "incorrect" }).code, "password-mismatch");
+  const ready = assertPdfProtectionPasswordPlan({ password: "correct horse battery staple", passwordConfirm: "correct horse battery staple" });
+  assert.equal(ready.valid, true);
+  assert.equal(ready.actionLabel, "Protect with AES-256");
+  assert.throws(
+    () => assertPdfProtectionPasswordPlan({ password: "correct", passwordConfirm: "incorrect" }),
+    (error) => error.code === "protect-pdf-password-mismatch" && /do not match/i.test(error.message),
+  );
+});
+
+test("Protect PDF encrypts only after confirmation and never exposes the password in its result", async () => {
+  const plain = await PDFDocument.create();
+  plain.addPage([300, 400]);
+  const file = namedPdf(await plain.save(), "plain.pdf");
+
+  await assert.rejects(
+    () => processPdfTool("protect-pdf", [file], { password: "local secret", passwordConfirm: "different" }),
+    /do not match/i,
+  );
+
+  const [result] = await processPdfTool("protect-pdf", [file], { password: "local secret", passwordConfirm: "local secret" });
+  assert.equal(result.details, "AES-256 password protection added locally");
+  assert.deepEqual(result.protectionOutcome, { algorithm: "AES-256" });
+  assert.doesNotMatch(JSON.stringify(result), /local secret/);
+  const protectedBytes = await result.blob.arrayBuffer();
+  await assert.rejects(() => PDFDocument.load(protectedBytes), /encrypted/i);
+  assert.equal((await inspectPdfAccess(namedPdf(protectedBytes, result.name), "render", "local secret")).status, "verified");
 });
 
 test("the gate distinguishes missing, wrong, reader-restricted, and owner passwords", async () => {

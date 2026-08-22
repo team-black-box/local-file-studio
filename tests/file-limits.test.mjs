@@ -240,11 +240,11 @@ test("single-page TIFF dimensions are available before pixel decoding", async ()
 });
 
 test("password settings clear without changing non-sensitive tool options", () => {
-  const current = { password: "memory-only", quality: "balanced" };
-  const settings = [{ key: "password", type: "password" }, { key: "quality", type: "select" }];
-  assert.deepEqual(clearSensitiveToolSettings(current, settings), { password: "", quality: "balanced" });
-  assert.deepEqual(current, { password: "memory-only", quality: "balanced" });
-  const alreadyClear = { password: "", quality: "balanced" };
+  const current = { password: "memory-only", passwordConfirm: "memory-only", quality: "balanced" };
+  const settings = [{ key: "password", type: "password" }, { key: "passwordConfirm", type: "password" }, { key: "quality", type: "select" }];
+  assert.deepEqual(clearSensitiveToolSettings(current, settings), { password: "", passwordConfirm: "", quality: "balanced" });
+  assert.deepEqual(current, { password: "memory-only", passwordConfirm: "memory-only", quality: "balanced" });
+  const alreadyClear = { password: "", passwordConfirm: "", quality: "balanced" };
   assert.strictEqual(clearSensitiveToolSettings(alreadyClear, settings), alreadyClear);
 });
 
@@ -525,11 +525,20 @@ test("Compare worker uses policy budgets, terminates on success, and maps budget
 test("Unlock and Protect expose and enforce the shared 1,024-character password cap", () => {
   assert.equal(MAX_PDF_PASSWORD_CHARACTERS, 1_024);
   for (const [slug, name] of [["unlock-pdf", "Unlock PDF"], ["protect-pdf", "Protect PDF"]]) {
-    const subject = { ...tool(slug, { name }), settings: [{ key: "password", label: "Password" }] };
+    const settings = [{ key: "password", label: "Password" }];
+    if (slug === "protect-pdf") settings.push({ key: "passwordConfirm", label: "Confirm password" });
+    const subject = { ...tool(slug, { name }), settings };
     assert.equal(getTextSettingLimit(subject, "password"), MAX_PDF_PASSWORD_CHARACTERS);
     assert.doesNotThrow(() => assertTextSettingLengths(subject, { password: "x".repeat(1_024) }));
     assert.throws(() => assertTextSettingLengths(subject, { password: "x".repeat(1_025) }), /1,025 characters.*1,024/s);
-    assert.match(describeToolLimits(subject).secondary, /1,024 characters max in (current|new) password/);
+    if (slug === "protect-pdf") {
+      assert.equal(getTextSettingLimit(subject, "passwordConfirm"), MAX_PDF_PASSWORD_CHARACTERS);
+      assert.doesNotThrow(() => assertTextSettingLengths(subject, { password: "x", passwordConfirm: "x".repeat(1_024) }));
+      assert.throws(() => assertTextSettingLengths(subject, { password: "x", passwordConfirm: "x".repeat(1_025) }), /Confirm password contains 1,025 characters.*1,024/s);
+      assert.match(describeToolLimits(subject).secondary, /1,024 characters max in each field: new password and password confirmation/);
+    } else {
+      assert.match(describeToolLimits(subject).secondary, /1,024 characters max in current password/);
+    }
   }
 });
 

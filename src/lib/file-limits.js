@@ -85,7 +85,7 @@ const TEXT_SETTING_LIMITS = {
   "pdf-forms": { values: 256 * 1024 },
   "redact-pdf": { regions: 64 * 1024 },
   "unlock-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS },
-  "protect-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS },
+  "protect-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS, passwordConfirm: MAX_PDF_PASSWORD_CHARACTERS },
   "watermark-image": { text: 500 },
   "photo-editor": { text: 500 },
   "meme-generator": { topText: 500, bottomText: 500 },
@@ -102,7 +102,7 @@ const TEXT_SETTING_LABELS = {
   "pdf-forms": { values: "advanced field JSON" },
   "redact-pdf": { regions: "redaction area data" },
   "unlock-pdf": { password: "current password" },
-  "protect-pdf": { password: "new password" },
+  "protect-pdf": { password: "new password", passwordConfirm: "password confirmation" },
   "watermark-image": { text: "watermark text" },
   "photo-editor": { text: "caption" },
   "meme-generator": { topText: "each caption", bottomText: "each caption" },
@@ -461,7 +461,12 @@ export function describeToolLimits(tool) {
     const uniqueLimits = new Set(settingEntries.map(([, maxLength]) => maxLength));
     if (uniqueLimits.size === 1) {
       const [[key, maxLength]] = settingEntries;
-      details.push(`${maxLength.toLocaleString()} characters max in ${TEXT_SETTING_LABELS[tool.slug]?.[key] || "each text field"}`);
+      if (settingEntries.length === 1) {
+        details.push(`${maxLength.toLocaleString()} characters max in ${TEXT_SETTING_LABELS[tool.slug]?.[key] || "each text field"}`);
+      } else {
+        const labels = settingEntries.map(([settingKey]) => TEXT_SETTING_LABELS[tool.slug]?.[settingKey] || settingKey);
+        details.push(`${maxLength.toLocaleString()} characters max in each field: ${labels.join(" and ")}`);
+      }
     } else {
       details.push(settingEntries.map(([key, maxLength]) => `${maxLength.toLocaleString()} characters in ${TEXT_SETTING_LABELS[tool.slug]?.[key] || key}`).join(" · "));
     }
