@@ -19,6 +19,13 @@ import {
 import { protectPdf, repairPdf, unlockPdf } from "./libpdf.js";
 import { fillPdfFormFields } from "./pdf-form-fields.js";
 import { createRedactionPlan } from "./pdf-redactions.js";
+import {
+  PDF_SIGNATURE_LIMITS,
+  createPdfSignatureDrawOperations,
+  createPdfSignatureLayout,
+  createPdfSignaturePlan,
+  getPdfSignaturePageGeometry,
+} from "./pdf-signature.js";
 import { createPdfTextAnnotationDrawOperation, createPdfTextAnnotationLayout, createPdfTextAnnotationPlan, getPdfTextAnnotationPageGeometry } from "./pdf-text-annotation.js";
 import {
   FileLimitError,
@@ -414,9 +421,15 @@ async function mutatePdf(slug, file, options) {
   const pdf = await loadPdfLib(file);
   const pages = pdf.getPages();
   const font = await pdf.embedFont(slug === "sign-pdf" ? StandardFonts.TimesRomanItalic : StandardFonts.Helvetica);
+  const detailFont = slug === "sign-pdf" ? await pdf.embedFont(StandardFonts.Helvetica) : font;
   const textAnnotationPlan = slug === "edit-pdf" ? createPdfTextAnnotationPlan(options, pages.length) : null;
   const textAnnotationPages = textAnnotationPlan ? new Set(textAnnotationPlan.pageIndices) : null;
+  const signaturePlan = slug === "sign-pdf" ? createPdfSignaturePlan(options, pages.length) : null;
   if (textAnnotationPlan) assertPdfTextFontCompatibility(textAnnotationPlan.text, "Text to add");
+  if (signaturePlan) {
+    assertPdfTextFontCompatibility(signaturePlan.name, "Typed signature");
+    if (signaturePlan.includeDate) assertPdfTextFontCompatibility(signaturePlan.dateLabel, "Signing date");
+  }
 
   for (let index = 0; index < pages.length; index += 1) {
     const page = pages[index];
@@ -479,12 +492,40 @@ async function mutatePdf(slug, file, options) {
       });
     }
 
-    if (slug === "sign-pdf" && index === pages.length - 1) {
-      const signature = String(options.name || options.signature || "Signed locally");
-      const size = Number(options.fontSize || 24);
-      page.drawLine({ start: { x: 42, y: 76 }, end: { x: Math.min(width - 42, 280), y: 76 }, thickness: 0.7, color: rgb(0.38, 0.38, 0.42) });
-      page.drawText(signature, { x: 48, y: 88, size, font, color: rgb(0.12, 0.12, 0.18), maxWidth: 250 });
-      if (options.includeDate !== false) page.drawText(`Signed on ${new Date().toLocaleDateString()}`, { x: 48, y: 61, size: 8, font, color: rgb(0.42, 0.42, 0.46) });
+    if (signaturePlan && index === signaturePlan.pageIndex) {
+      const geometry = getPdfSignaturePageGeometry(width, height, page.getRotation().angle);
+      const layout = createPdfSignatureLayout(
+        signaturePlan,
+        geometry.visualWidth,
+        geometry.visualHeight,
+        (text) => font.widthOfTextAtSize(text, signaturePlan.fontSize),
+        (text) => detailFont.widthOfTextAtSize(text, PDF_SIGNATURE_LIMITS.dateFontSize),
+      );
+      const operations = createPdfSignatureDrawOperations(layout, geometry, signaturePlan.includeDate);
+      page.drawLine({
+        start: operations.line.start,
+        end: operations.line.end,
+        thickness: 0.7,
+        color: rgb(0.38, 0.38, 0.42),
+      });
+      page.drawText(signaturePlan.name, {
+        x: operations.signature.x,
+        y: operations.signature.y,
+        size: signaturePlan.fontSize,
+        font,
+        color: rgb(0.12, 0.12, 0.18),
+        rotate: degrees(operations.signature.rotation),
+      });
+      if (signaturePlan.includeDate) {
+        page.drawText(signaturePlan.dateLabel, {
+          x: operations.date.x,
+          y: operations.date.y,
+          size: PDF_SIGNATURE_LIMITS.dateFontSize,
+          font: detailFont,
+          color: rgb(0.42, 0.42, 0.46),
+          rotate: degrees(operations.date.rotation),
+        });
+      }
     }
   }
 
@@ -505,6 +546,23 @@ async function mutatePdf(slug, file, options) {
       fontSize: textAnnotationPlan.fontSize,
       x: textAnnotationPlan.x,
       y: textAnnotationPlan.y,
+    };
+    return [result];
+  }
+  if (signaturePlan) {
+    const result = pdfResult(
+      `${safeFileName(baseName(file.name))}-${safeFileName(slug)}.pdf`,
+      bytes,
+      `Final page signed · ${signaturePlan.fontSize.toLocaleString()} pt${signaturePlan.includeDate ? " · date included" : " · signature only"}`,
+    );
+    result.signatureOutcome = {
+      pageCount: signaturePlan.pageCount,
+      pageNumber: signaturePlan.pageCount,
+      fontSize: signaturePlan.fontSize,
+      includeDate: signaturePlan.includeDate,
+      signingDate: signaturePlan.includeDate ? signaturePlan.signingDate : null,
+      x: signaturePlan.x,
+      y: signaturePlan.y,
     };
     return [result];
   }

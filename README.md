@@ -91,6 +91,8 @@ Local Summarizer selects up to 3, 5, or 9 source sentences and shows the extract
 
 Translate PDF first previews the selectable English source with exact page, word, and character counts. Full translation uses a supported desktop browser's on-device Translator API and is prepared only after an explicit click; the browser may download a language pack on first use, but PDF text stays on the device. The fallback Basic glossary is deliberately not presented as full translation: it replaces only 10 documented common terms, leaves every other English word unchanged, and labels both the reader and optional TXT accordingly. A browser-model failure does not silently switch engines.
 
+Sign PDF shows the real final document page and lets users drag, click, or keyboard-position a typed signature with an optional local date. Exact position and size controls remain available, rotated pages preserve the reviewed visual placement, and the finished PDF stays previewable before reuse. This is a visible typed mark, not a certificate-backed digital signature.
+
 ## Visible local safety limits
 
 Every workbench shows its exact file-count, per-file, combined-size, page/pixel, and result limits next to the file picker. These deterministic limits protect browsers with roughly a 4 GB device-memory budget; files are validated before local engines allocate large canvases, page buffers, or ZIP archives.

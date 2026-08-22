@@ -52,7 +52,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | PDF Forms | Dynamic field-aware editor with search, paging, exact controls, change count, editable/flattened export choice, and optional advanced JSON | Keep; continue protected-form, browser, and unusual-widget QA |
 | Unlock PDF | Clear password gate and previewable result | Keep |
 | Protect PDF | Clear memory-only password control and previewable result | Keep |
-| Sign PDF | Typed signature, date choice, and representative placement preview | Build final-page drag placement only if preset placement tests poorly |
+| Sign PDF | Real final-page canvas with direct drag/click/keyboard placement, explicit Signature only/Signature + date choices, live local date, bounded size and exact-position controls, reset, rotation-aware output, exact result feedback, automatic download, and shared PDF Preview | Keep; continue protected-input, rotated/landscape final-page, long-name, touch, mobile, and boundary QA |
 | Redact PDF | Real per-page canvas with drag-to-draw, multiple movable/resizable areas, page counts, black/white preview, exact controls, undo, page/all reset, and flattened-result preview | Keep; continue touch, protected-input, and large-document QA |
 | Compare PDF | Inline paginated text diff with original/revised order, changes/all views, exact counts, and optional scriptless HTML export | Keep; continue protected-input, mobile, and boundary QA |
 | Local Summarizer | Visual length/format choices, exact extractive plan, and copyable in-tab summary with optional TXT | Keep; continue protected-input, short-source, mobile, and boundary QA |
