@@ -19,6 +19,7 @@ import {
 import { protectPdf, repairPdf, unlockPdf } from "./libpdf.js";
 import { fillPdfFormFields } from "./pdf-form-fields.js";
 import { createRedactionPlan } from "./pdf-redactions.js";
+import { createPdfTextAnnotationDrawOperation, createPdfTextAnnotationLayout, createPdfTextAnnotationPlan, getPdfTextAnnotationPageGeometry } from "./pdf-text-annotation.js";
 import {
   FileLimitError,
   assertExtractedTextLength,
@@ -413,6 +414,9 @@ async function mutatePdf(slug, file, options) {
   const pdf = await loadPdfLib(file);
   const pages = pdf.getPages();
   const font = await pdf.embedFont(slug === "sign-pdf" ? StandardFonts.TimesRomanItalic : StandardFonts.Helvetica);
+  const textAnnotationPlan = slug === "edit-pdf" ? createPdfTextAnnotationPlan(options, pages.length) : null;
+  const textAnnotationPages = textAnnotationPlan ? new Set(textAnnotationPlan.pageIndices) : null;
+  if (textAnnotationPlan) assertPdfTextFontCompatibility(textAnnotationPlan.text, "Text to add");
 
   for (let index = 0; index < pages.length; index += 1) {
     const page = pages[index];
@@ -453,20 +457,26 @@ async function mutatePdf(slug, file, options) {
       page.setCropBox(width * margin, height * margin, width * (1 - margin * 2), height * (1 - margin * 2));
     }
 
-    if (slug === "edit-pdf") {
-      const text = String(options.text || "Reviewed locally");
-      const size = Number(options.fontSize || 16);
-      const positionMap = {
-        "top-left": [10, 10],
-        "top-right": [70, 10],
-        center: [35, 50],
-        "bottom-left": [10, 90],
-        "bottom-right": [70, 90],
-      };
-      const [positionX, positionY] = positionMap[options.position] || [Number(options.x || 10), Number(options.y || 10)];
-      const x = Math.max(12, Math.min(width - 12, (positionX / 100) * width));
-      const y = Math.max(12, Math.min(height - 12, height - (positionY / 100) * height));
-      page.drawText(text, { x, y, size, font, color: rgb(0.12, 0.12, 0.16), maxWidth: width - x - 18 });
+    if (slug === "edit-pdf" && textAnnotationPages.has(index)) {
+      const geometry = getPdfTextAnnotationPageGeometry(width, height, page.getRotation().angle);
+      const layout = createPdfTextAnnotationLayout(
+        textAnnotationPlan,
+        geometry.visualWidth,
+        geometry.visualHeight,
+        (text) => font.widthOfTextAtSize(text, textAnnotationPlan.fontSize),
+      );
+      layout.lines.forEach((line, lineIndex) => {
+        if (!line) return;
+        const operation = createPdfTextAnnotationDrawOperation(layout, geometry, lineIndex, textAnnotationPlan.fontSize);
+        page.drawText(line, {
+          x: operation.x,
+          y: operation.y,
+          size: textAnnotationPlan.fontSize,
+          font,
+          color: rgb(0.12, 0.12, 0.16),
+          rotate: degrees(operation.rotation),
+        });
+      });
     }
 
     if (slug === "sign-pdf" && index === pages.length - 1) {
@@ -481,6 +491,23 @@ async function mutatePdf(slug, file, options) {
   pdf.setProducer("Local File Studio — browser-local processing");
   pdf.setModificationDate(new Date());
   const bytes = await pdf.save({ useObjectStreams: true });
+  if (textAnnotationPlan) {
+    const result = pdfResult(
+      `${safeFileName(baseName(file.name))}-${safeFileName(slug)}.pdf`,
+      bytes,
+      `${textAnnotationPlan.affectedPageCount.toLocaleString()} ${textAnnotationPlan.affectedPageCount === 1 ? "page" : "pages"} annotated · ${textAnnotationPlan.fontSize.toLocaleString()} pt`,
+    );
+    result.textAnnotationOutcome = {
+      scope: textAnnotationPlan.scope,
+      targetPage: textAnnotationPlan.targetPage,
+      affectedPageCount: textAnnotationPlan.affectedPageCount,
+      pageCount: textAnnotationPlan.pageCount,
+      fontSize: textAnnotationPlan.fontSize,
+      x: textAnnotationPlan.x,
+      y: textAnnotationPlan.y,
+    };
+    return [result];
+  }
   return [pdfResult(`${safeFileName(baseName(file.name))}-${safeFileName(slug)}.pdf`, bytes, `${pages.length} pages updated`)];
 }
 

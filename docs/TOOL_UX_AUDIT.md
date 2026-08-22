@@ -47,7 +47,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Add Page Numbers | Visual position grid, accessible starting-number stepper, and first-page preview | Keep; continue real-document/mobile QA |
 | Add Watermark | Text, visual opacity scale, and representative first-page preview | Keep; continue real-document/mobile QA |
 | Crop PDF | Visible trim control and representative page-edge preview | Keep; continue boundary QA |
-| Edit PDF | Visible text, position, size, and representative first-page preview | Build direct drag placement only if the preset positions test poorly |
+| Edit PDF | Direct text-note placement on a real page canvas, every-page/one-page scope, uniform six-page strip with trackpad navigation, accessible manual page entry, drag/click/keyboard placement, reset and exact-position controls, rotation-aware output, exact action/result feedback, automatic download, and shared PDF Preview | Keep; continue protected-input, mixed page-size/rotation, touch, long-note, mobile, and boundary QA |
 | Add Image to PDF | Strong page canvas, placement, resize, and rotation | Keep; continue browser and touch QA |
 | PDF Forms | Dynamic field-aware editor with search, paging, exact controls, change count, editable/flattened export choice, and optional advanced JSON | Keep; continue protected-form, browser, and unusual-widget QA |
 | Unlock PDF | Clear password gate and previewable result | Keep |

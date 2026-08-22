@@ -106,6 +106,7 @@ import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
 import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf-form-fields.js";
 import { COMPARISON_ROWS_PER_PAGE } from "./lib/pdf-comparison.js";
 import { MIN_REDACTION_REGION_PERCENT, clampRedactionRegion, createRedactionPlan, parseRedactionRegions, serializeRedactionRegions } from "./lib/pdf-redactions.js";
+import { PDF_TEXT_ANNOTATION_DEFAULTS, PDF_TEXT_ANNOTATION_SCOPES, createPdfTextAnnotationPlan } from "./lib/pdf-text-annotation.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
 import { clearSensitiveToolSettings } from "./lib/tool-settings.js";
@@ -187,7 +188,7 @@ function updatePageMetadata(tool) {
 
 const modelTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "upscale-image", "remove-image-background", "blur-face"]);
 const inlineReaderTools = new Set(["ocr-pdf", "summarize-pdf", "translate-pdf", "pdf-to-markdown", "compare-pdf"]);
-const pdfSettingPreviewTools = new Set(["rotate-pdf", "add-pdf-page-numbers", "watermark-pdf", "crop-pdf", "edit-pdf", "sign-pdf"]);
+const pdfSettingPreviewTools = new Set(["rotate-pdf", "add-pdf-page-numbers", "watermark-pdf", "crop-pdf", "sign-pdf"]);
 const TOOL_SLUG_ALIASES = Object.freeze({ "convert-to-jpg": "convert-image" });
 const contextualSettings = {
   "remove-pdf-pages": [
@@ -1265,6 +1266,17 @@ function getRedactionPlan(settings, info, limits) {
   }
 }
 
+function getTextAnnotationPlan(settings, info) {
+  if (info.state === "idle") return { valid: false, message: "Add one PDF to place the text note." };
+  if (info.state === "loading") return { valid: false, message: "Reading the PDF pages locally…" };
+  if (info.state === "error") return { valid: false, message: info.message };
+  try {
+    return { valid: true, ...createPdfTextAnnotationPlan(settings, info.pageCount), message: "" };
+  } catch (error) {
+    return { valid: false, message: error?.message || "Check the text, page, size, and position before continuing." };
+  }
+}
+
 function PdfPageSourceStatus({ info }) {
   return (
     <div className={`split-source-status ${info.state}`} role="status" aria-live="polite">
@@ -2234,6 +2246,280 @@ function RedactPdfControls({ settings, onChange, info, plan, limits }) {
   );
 }
 
+function PdfTextAnnotationCanvas({ document, pageIndex, text, fontSize, x, y, onMove }) {
+  const canvasRef = useRef(null);
+  const frameRef = useRef(null);
+  const draggingRef = useRef(false);
+  const [renderState, setRenderState] = useState("loading");
+  const [aspectRatio, setAspectRatio] = useState("8.5 / 11");
+
+  useEffect(() => {
+    if (!document || !canvasRef.current) return undefined;
+    let cancelled = false;
+    let page;
+    let renderTask;
+    setRenderState("loading");
+    (async () => {
+      page = await document.getPage(pageIndex + 1);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(1.7, 720 / base.width, 920 / base.height);
+      const viewport = page.getViewport({ scale });
+      const canvas = canvasRef.current;
+      if (!canvas || cancelled) return;
+      canvas.width = Math.max(1, Math.ceil(viewport.width));
+      canvas.height = Math.max(1, Math.ceil(viewport.height));
+      setAspectRatio(`${viewport.width} / ${viewport.height}`);
+      const context = canvas.getContext("2d", { alpha: false });
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      renderTask = page.render({ canvasContext: context, viewport });
+      await renderTask.promise;
+      if (!cancelled) setRenderState("ready");
+    })().catch((error) => {
+      if (!cancelled && error?.name !== "RenderingCancelledException") setRenderState("error");
+    });
+    return () => {
+      cancelled = true;
+      try { renderTask?.cancel(); } catch { /* Rendering already completed. */ }
+      page?.cleanup();
+    };
+  }, [document, pageIndex]);
+
+  const positionFromEvent = (event) => {
+    const bounds = frameRef.current?.getBoundingClientRect();
+    if (!bounds?.width || !bounds?.height) return null;
+    return {
+      x: Math.round(Math.max(0, Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100)) * 10) / 10,
+      y: Math.round(Math.max(0, Math.min(100, ((event.clientY - bounds.top) / bounds.height) * 100)) * 10) / 10,
+    };
+  };
+
+  const beginMove = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    draggingRef.current = true;
+    const position = positionFromEvent(event);
+    if (position) onMove(position.x, position.y);
+    try { frameRef.current?.setPointerCapture(event.pointerId); } catch { /* Pointer may already be captured. */ }
+  };
+
+  const move = (event) => {
+    if (!draggingRef.current) return;
+    event.preventDefault();
+    const position = positionFromEvent(event);
+    if (position) onMove(position.x, position.y);
+  };
+
+  const finishMove = (event) => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    try { frameRef.current?.releasePointerCapture(event.pointerId); } catch { /* Pointer capture already ended. */ }
+  };
+
+  const moveWithKeyboard = (event) => {
+    const step = event.shiftKey ? 5 : 1;
+    const deltas = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
+    if (!deltas[event.key]) return;
+    event.preventDefault();
+    const [deltaX, deltaY] = deltas[event.key];
+    onMove(Math.max(0, Math.min(100, Number(x) + deltaX)), Math.max(0, Math.min(100, Number(y) + deltaY)));
+  };
+
+  return (
+    <div className={`text-annotation-page-shell ${renderState}`}>
+      <div
+        ref={frameRef}
+        className="text-annotation-page-frame"
+        style={{ aspectRatio }}
+        onPointerDown={beginMove}
+        onPointerMove={move}
+        onPointerUp={finishMove}
+        onPointerCancel={finishMove}
+        onLostPointerCapture={() => { draggingRef.current = false; }}
+      >
+        <canvas ref={canvasRef} aria-hidden="true" />
+        {renderState === "loading" && <span className="text-annotation-canvas-state"><SpinnerGapIcon size={22} className="spin" />Rendering page locally…</span>}
+        {renderState === "error" && <span className="text-annotation-canvas-state"><WarningCircleIcon size={22} />This page preview could not be rendered.</span>}
+        <span
+          className="text-annotation-preview-label"
+          role="button"
+          tabIndex="0"
+          aria-label={`Text note at ${Number(x).toLocaleString()} percent from the left and ${Number(y).toLocaleString()} percent from the top. Drag it, click the page, or use arrow keys to move it. Hold Shift to move faster.`}
+          style={{ left: `${x}%`, top: `${y}%`, fontSize: `${Math.max(7, Math.min(34, Number(fontSize) * 0.68))}px` }}
+          onPointerDown={(event) => { event.stopPropagation(); beginMove(event); }}
+          onKeyDown={moveWithKeyboard}
+        >{String(text || "Text note")}</span>
+      </div>
+    </div>
+  );
+}
+
+function EditPdfControls({ settings, settingsList, onChange, onApply, info, plan }) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageWindowStart, setPageWindowStart] = useState(0);
+  const pageRailRef = useRef(null);
+  const pendingRailAlignmentRef = useRef(null);
+  const lastWheelPageTurnRef = useRef(0);
+  const pagesPerWindow = 6;
+  const pageCount = info.pageCount || 0;
+  const textSetting = settingsList.find((setting) => setting.key === "text");
+  const fontSizeSetting = settingsList.find((setting) => setting.key === "fontSize");
+  const visiblePages = Array.from(
+    { length: Math.min(pagesPerWindow, Math.max(0, pageCount - pageWindowStart)) },
+    (_, index) => pageWindowStart + index,
+  );
+
+  useEffect(() => {
+    setPageIndex(0);
+    setPageWindowStart(0);
+  }, [info.document]);
+
+  useEffect(() => {
+    if (!pageCount || pageIndex < pageCount) return;
+    setPageIndex(pageCount - 1);
+  }, [pageCount, pageIndex]);
+
+  useEffect(() => {
+    if (settings.scope !== "single") return;
+    const targetIndex = Number(settings.targetPage) - 1;
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= pageCount || targetIndex === pageIndex) return;
+    setPageIndex(targetIndex);
+    setPageWindowStart(Math.floor(targetIndex / pagesPerWindow) * pagesPerWindow);
+  }, [pageCount, pageIndex, settings.scope, settings.targetPage]);
+
+  useEffect(() => {
+    const alignment = pendingRailAlignmentRef.current;
+    const rail = pageRailRef.current;
+    if (!alignment || !rail) return;
+    rail.scrollLeft = alignment === "end" ? Math.max(0, rail.scrollWidth - rail.clientWidth) : 0;
+    pendingRailAlignmentRef.current = null;
+  }, [pageWindowStart]);
+
+  const showPageWindow = (nextStart, alignment = "start") => {
+    const maxStart = Math.max(0, Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow);
+    pendingRailAlignmentRef.current = alignment;
+    setPageWindowStart(Math.max(0, Math.min(maxStart, nextStart)));
+  };
+
+  const movePageRailHorizontally = (event) => {
+    const rail = pageRailRef.current;
+    if (!rail) return;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (!delta) return;
+    const next = Math.max(0, Math.min(rail.scrollWidth - rail.clientWidth, rail.scrollLeft + delta));
+    if (next !== rail.scrollLeft) {
+      event.preventDefault();
+      rail.scrollLeft = next;
+      return;
+    }
+    const maxStart = Math.max(0, Math.floor((pageCount - 1) / pagesPerWindow) * pagesPerWindow);
+    const nextWindow = delta > 0 ? Math.min(maxStart, pageWindowStart + pagesPerWindow) : Math.max(0, pageWindowStart - pagesPerWindow);
+    if (nextWindow === pageWindowStart) return;
+    event.preventDefault();
+    const now = performance.now();
+    if (now - lastWheelPageTurnRef.current < 220) return;
+    lastWheelPageTurnRef.current = now;
+    showPageWindow(nextWindow, delta > 0 ? "start" : "end");
+  };
+
+  const choosePreviewPage = (index) => {
+    setPageIndex(index);
+    if (settings.scope === "single") onChange("targetPage", index + 1);
+  };
+
+  const chooseScope = (scope) => {
+    onApply({ scope, ...(scope === "single" ? { targetPage: pageIndex + 1 } : {}) });
+  };
+
+  const updatePosition = (x, y) => onApply({ x, y });
+  const resetPosition = () => onApply({ x: PDF_TEXT_ANNOTATION_DEFAULTS.x, y: PDF_TEXT_ANNOTATION_DEFAULTS.y });
+  const ready = info.state === "ready" && info.document;
+
+  return (
+    <section className="text-annotation-editor" aria-labelledby="text-annotation-editor-title">
+      <div className="text-annotation-editor-heading">
+        <span><strong id="text-annotation-editor-title">Add a text note</strong><small>This adds new text—it does not change existing PDF text.</small></span>
+        {plan.valid && <b aria-live="polite">{plan.affectedPageCount.toLocaleString()} {plan.affectedPageCount === 1 ? "page" : "pages"}</b>}
+      </div>
+
+      <div className="text-annotation-copy">
+        <label htmlFor="edit-pdf-text"><strong>{textSetting.label}</strong><small>{String(settings.text || "").length.toLocaleString()} / {Number(textSetting.maxLength).toLocaleString()}</small></label>
+        <textarea id="edit-pdf-text" rows="3" maxLength={textSetting.maxLength} value={settings.text} onChange={(event) => onChange("text", event.target.value)} />
+      </div>
+
+      <fieldset className="text-annotation-scope">
+        <legend>Where should it appear?</legend>
+        <div>
+          {Object.values(PDF_TEXT_ANNOTATION_SCOPES).map((scope) => (
+            <button type="button" key={scope.value} className={settings.scope === scope.value ? "selected" : ""} aria-pressed={settings.scope === scope.value} onClick={() => chooseScope(scope.value)}>
+              <span>{scope.value === "all" ? <StackIcon size={19} weight="duotone" /> : <FilePdfIcon size={19} weight="duotone" />}</span>
+              <span><strong>{scope.label}</strong><small>{scope.description}</small></span>
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      {!ready ? <PdfPageSourceStatus info={info} /> : (
+        <>
+          <div className="text-annotation-canvas-heading">
+            <span><strong>Page {pageIndex + 1} of {pageCount}</strong><small>{settings.scope === "single" ? `The note will be added only to page ${Number(settings.targetPage).toLocaleString()}.` : "Move the note here; the same position is used on every page."}</small></span>
+            <button type="button" onClick={resetPosition}><ClockCounterClockwiseIcon size={15} />Reset position</button>
+          </div>
+          <PdfTextAnnotationCanvas document={info.document} pageIndex={pageIndex} text={settings.text} fontSize={settings.fontSize} x={settings.x} y={settings.y} onMove={updatePosition} />
+          <p className="text-annotation-tip"><ArrowsOutIcon size={16} weight="fill" aria-hidden="true" /><span>Drag the note or click anywhere on the page. Focus the note and use arrow keys for 1% steps; hold Shift for 5%.</span></p>
+
+          <div className="text-annotation-page-strip-heading">
+            <span><strong>{settings.scope === "single" ? "Choose the output page" : "Preview another page"}</strong><small>Scroll sideways with a trackpad or swipe.</small></span>
+            <span className="text-annotation-page-strip-actions">
+            {settings.scope === "single" && (
+              <label><span>Page</span><input type="number" min="1" max={pageCount} step="1" value={settings.targetPage} aria-label={`Output page from 1 to ${pageCount}`} onChange={(event) => onChange("targetPage", event.target.value)} /><small>of {pageCount}</small></label>
+            )}
+            {pageCount > pagesPerWindow && (
+              <span className="text-annotation-page-window-controls">
+                <button type="button" onClick={() => showPageWindow(pageWindowStart - pagesPerWindow, "end")} disabled={pageWindowStart === 0} aria-label="Show previous PDF pages"><ArrowLeftIcon size={14} /></button>
+                <b aria-live="polite">{pageWindowStart + 1}–{Math.min(pageWindowStart + pagesPerWindow, pageCount)} of {pageCount}</b>
+                <button type="button" onClick={() => showPageWindow(pageWindowStart + pagesPerWindow)} disabled={pageWindowStart + pagesPerWindow >= pageCount} aria-label="Show next PDF pages"><ArrowRightIcon size={14} /></button>
+              </span>
+            )}
+            </span>
+          </div>
+          <div ref={pageRailRef} className="text-annotation-page-strip" role="group" aria-label="PDF pages for text placement" onWheel={movePageRailHorizontally}>
+            {visiblePages.map((index) => {
+              const selectedForOutput = settings.scope === "all" || Number(settings.targetPage) === index + 1;
+              return (
+                <button type="button" key={index} className={`${index === pageIndex ? "selected" : ""} ${selectedForOutput ? "included" : ""}`} aria-pressed={index === pageIndex} aria-label={`Page ${index + 1}${selectedForOutput ? ", receives the text note" : ", preview only"}`} onClick={() => choosePreviewPage(index)}>
+                  <span><PdfPageThumbnail document={info.document} pageIndex={index} />{selectedForOutput && <b aria-hidden="true"><CheckCircleIcon size={13} weight="fill" /></b>}</span>
+                  <small>Page {index + 1}</small>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <SettingControl setting={fontSizeSetting} value={settings.fontSize} onChange={(value) => onChange("fontSize", value)} />
+      <details className="text-annotation-exact-controls">
+        <summary><KeyboardIcon size={15} aria-hidden="true" /><span>Exact position</span><CaretRightIcon size={13} aria-hidden="true" /></summary>
+        <p>Measured from the page’s top-left corner. The output keeps the whole note inside safe page margins.</p>
+        <div>
+          {[{ key: "x", label: "From left" }, { key: "y", label: "From top" }].map(({ key, label }) => (
+            <label key={key}><span>{label}</span><span><input type="number" min="0" max="100" step="0.5" value={settings[key]} onChange={(event) => onChange(key, event.target.value)} /><small>%</small></span></label>
+          ))}
+        </div>
+      </details>
+      <div className={`text-annotation-plan ${plan.valid ? "ready" : "waiting"}`} role="status" aria-live="polite">
+        {plan.valid ? <CheckCircleIcon size={17} weight="fill" /> : <WarningCircleIcon size={17} />}
+        <span>{plan.valid ? `${plan.scopeLabel} will receive this ${plan.fontSize.toLocaleString()} pt note.` : plan.message}</span>
+      </div>
+    </section>
+  );
+}
+
 function PdfSettingPreview({ tool, settings, info }) {
   if (info.state === "idle") return null;
   if (info.state !== "ready") {
@@ -2242,7 +2528,6 @@ function PdfSettingPreview({ tool, settings, info }) {
 
   const slug = tool.slug;
   const position = settings.position || "bottom-center";
-  const editPosition = settings.position || "top-left";
   const rotation = Number(settings.angle || 90);
   const previewDescription = slug === "rotate-pdf"
     ? `The first page turns ${rotation === 270 ? "90 degrees counter-clockwise" : `${rotation} degrees clockwise`}.`
@@ -2252,9 +2537,7 @@ function PdfSettingPreview({ tool, settings, info }) {
         ? `The first page shows the watermark “${String(settings.text || "PRIVATE")}” at ${Number(settings.opacity || 24)} percent opacity.`
         : slug === "crop-pdf"
           ? `${Number(settings.margin || 0)} percent is trimmed from every edge.`
-          : slug === "edit-pdf"
-            ? `“${String(settings.text || "Reviewed locally")}” appears at the ${editPosition.replace("-", " ")}.`
-            : slug === "sign-pdf"
+          : slug === "sign-pdf"
               ? `The typed signature “${String(settings.name || "Signed locally")}” appears near the bottom of the final page.`
               : "The selected change is shown on the first page.";
 
@@ -2270,7 +2553,6 @@ function PdfSettingPreview({ tool, settings, info }) {
           {slug === "add-pdf-page-numbers" && <span className={`preview-page-number ${position}`}>{Number(settings.startAt || 1)}</span>}
           {slug === "watermark-pdf" && <span className="preview-watermark" style={{ opacity: Math.max(0.12, Number(settings.opacity || 24) / 100) }}>{String(settings.text || "PRIVATE")}</span>}
           {slug === "crop-pdf" && <span className="preview-crop" style={{ inset: `${Math.max(0, Math.min(42, Number(settings.margin || 0)))}%` }} />}
-          {slug === "edit-pdf" && <span className={`preview-edit-text ${editPosition}`} style={{ fontSize: `${Math.max(7, Math.min(16, Number(settings.fontSize || 16) * 0.38))}px` }}>{String(settings.text || "Reviewed locally")}</span>}
           {slug === "sign-pdf" && <span className="preview-signature">{String(settings.name || "Signed locally")}</span>}
         </div>
       </div>
@@ -2344,6 +2626,21 @@ function MergePdfResultSummary({ result }) {
     <div className="merge-result-summary" role="status">
       <span><FilesIcon size={20} weight="duotone" aria-hidden="true" /></span>
       <div><strong>{outcome.fileCount.toLocaleString()} PDFs merged in order</strong><small>{outcome.totalPages.toLocaleString()} {outcome.totalPages === 1 ? "page" : "pages"} in the finished PDF · source files unchanged</small></div>
+      <b>LOCAL</b>
+    </div>
+  );
+}
+
+function TextAnnotationResultSummary({ result }) {
+  const outcome = result?.textAnnotationOutcome;
+  if (!outcome) return null;
+  const scope = outcome.scope === "single"
+    ? `Page ${outcome.targetPage.toLocaleString()} only`
+    : `All ${outcome.pageCount.toLocaleString()} pages`;
+  return (
+    <div className="text-annotation-result-summary" role="status">
+      <span><TextboxIcon size={20} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{scope} annotated</strong><small>{outcome.fontSize.toLocaleString()} pt text · placed at {outcome.x.toLocaleString()}% left, {outcome.y.toLocaleString()}% top · original PDF unchanged</small></div>
       <b>LOCAL</b>
     </div>
   );
@@ -6400,8 +6697,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const mergePdfPreview = useMergePdfPreview(files, tool.slug === "merge-pdf" && passwordGate.ready, tool, limits);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
-  const usesStickySettings = usesPagePicker || ["merge-pdf", "scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image", "pdf-forms", "redact-pdf", "compare-pdf", "translate-pdf"].includes(tool.slug);
-  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
+  const usesStickySettings = usesPagePicker || ["merge-pdf", "scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image", "pdf-forms", "redact-pdf", "edit-pdf", "compare-pdf", "translate-pdf"].includes(tool.slug);
+  const needsPdfPageInfo = usesPagePicker || pdfSettingPreviewTools.has(tool.slug) || ["redact-pdf", "edit-pdf", "pdf-to-jpg", "pdf-to-pdfa"].includes(tool.slug);
   const pageInfo = usePdfPageInfo(files[0], needsPdfPageInfo && passwordGate.ready, limits, tool.name);
   const pdfJpgPlan = useMemo(() => {
     if (tool.slug !== "pdf-to-jpg" || pageInfo.state !== "ready") return null;
@@ -6430,6 +6727,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     return createPdfFormPlan(settings.values, pdfFormInfo.fields, settings.flatten, limits);
   }, [limits, pdfFormInfo, settings.flatten, settings.values, tool.slug]);
   const redactionPlan = useMemo(() => tool.slug === "redact-pdf" ? getRedactionPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
+  const textAnnotationPlan = useMemo(() => tool.slug === "edit-pdf" ? getTextAnnotationPlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
   const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits, tool.output[0]?.slice(1), tool.name);
   const translationSourcePreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], tool.slug === "translate-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits, "translation", tool.name);
@@ -6571,6 +6869,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       passwordGate.resetForFileChange();
       if (tool.slug === "pdf-forms") setSettings((current) => ({ ...current, values: "" }));
       if (tool.slug === "redact-pdf") setSettings((current) => ({ ...current, regions: "[]" }));
+      if (tool.slug === "edit-pdf") setSettings((current) => ({ ...current, targetPage: PDF_TEXT_ANNOTATION_DEFAULTS.targetPage }));
       setFiles(validation.nextFiles);
       clearResults();
       setStatus("idle");
@@ -6656,6 +6955,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const imageEncoderReady = tool.slug !== "convert-image" || (imageEncoderSupport.state === "ready" && imageEncoderSupport.formats[settings.format] === true);
   const pdfFormReady = tool.slug !== "pdf-forms" || !hasRequiredInput || Boolean(pdfFormPlan?.valid);
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
+  const textAnnotationReady = tool.slug !== "edit-pdf" || !hasRequiredInput || Boolean(textAnnotationPlan?.valid);
   const pdfJpgReady = tool.slug !== "pdf-to-jpg" || !hasRequiredInput || Boolean(pdfJpgPlan);
   const archiveRewriteReady = tool.slug !== "pdf-to-pdfa" || !hasRequiredInput || pageInfo.state === "ready";
   const imageCompressionReady = tool.slug !== "compress-image" || !hasRequiredInput || imageCompressionPreviewMatches;
@@ -6679,7 +6979,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const translationEngineReady = tool.slug !== "translate-pdf"
     || getPdfTranslationMode(settings.translationMode) === "glossary"
     || translationEngine.state === "ready";
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && mergePdfReady && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && translationSourceReady && translationEngineReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && mergePdfReady && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && textAnnotationReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && translationSourceReady && translationEngineReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -6711,6 +7011,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? pdfFormPlan?.message
     : tool.slug === "redact-pdf" && !redactionPlan?.valid
       ? redactionPlan?.message
+    : tool.slug === "edit-pdf" && !textAnnotationPlan?.valid
+      ? textAnnotationPlan?.message
     : tool.slug === "pdf-to-jpg" && pageInfo.state === "loading"
       ? "Reading the PDF page count before JPG conversion."
     : tool.slug === "pdf-to-jpg" && pageInfo.state === "error"
@@ -6949,6 +7251,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
         : "Flatten PDF form"
     : tool.slug === "redact-pdf" && redactionPlan?.valid
       ? `Redact ${redactionPlan.regionCount.toLocaleString()} ${redactionPlan.regionCount === 1 ? "area" : "areas"}`
+    : tool.slug === "edit-pdf" && textAnnotationPlan?.valid
+      ? textAnnotationPlan.actionLabel
     : ["scan-to-pdf", "jpg-to-pdf"].includes(tool.slug) && hasRequiredInput
       ? `Create ${files.length.toLocaleString()}-page PDF`
     : tool.slug === "compare-pdf" && hasRequiredInput
@@ -6987,7 +7291,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
   return (
     <>
-    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "translate-pdf" ? "translate-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "upscale-image" ? "image-upscale-workbench" : tool.slug === "remove-image-background" ? "background-removal-workbench" : tool.slug === "blur-face" ? "face-blur-workbench" : tool.slug === "watermark-image" ? "image-watermark-workbench" : tool.slug === "meme-generator" ? "image-meme-workbench" : tool.slug === "rotate-image" ? "image-rotation-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
+    <dialog ref={dialogRef} className={`workbench-dialog ${tool.slug === "split-pdf" ? "split-pdf-workbench" : ["remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug) ? "remove-pages-workbench" : tool.slug === "redact-pdf" ? "redact-pdf-workbench" : tool.slug === "edit-pdf" ? "edit-pdf-workbench" : tool.slug === "compare-pdf" ? "compare-pdf-workbench" : tool.slug === "translate-pdf" ? "translate-pdf-workbench" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-workbench" : tool.slug === "compress-image" ? "image-compression-workbench" : tool.slug === "resize-image" ? "image-resize-workbench" : tool.slug === "upscale-image" ? "image-upscale-workbench" : tool.slug === "remove-image-background" ? "background-removal-workbench" : tool.slug === "blur-face" ? "face-blur-workbench" : tool.slug === "watermark-image" ? "image-watermark-workbench" : tool.slug === "meme-generator" ? "image-meme-workbench" : tool.slug === "rotate-image" ? "image-rotation-workbench" : tool.slug === "crop-image" ? "image-crop-workbench" : tool.slug === "convert-from-jpg" ? "image-gif-workbench" : tool.slug === "photo-editor" ? "photo-editor-workbench" : usesPdfOfficeTextPreview ? "pdf-office-text-workbench" : ["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf"].includes(tool.slug) ? "word-pdf-workbench" : ""}`} onCancel={(event) => { event.preventDefault(); closeWorkbench(); }} aria-labelledby="workbench-title" aria-describedby="workbench-description">
       <div className="workbench-shell">
         <header className="workbench-header">
           <div className={`workbench-icon accent-${categoryById[tool.category].accent}`}><ToolIcon tool={tool} size={27} /></div>
@@ -7001,7 +7305,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
         <div className="local-reassurance"><ShieldCheckIcon size={17} weight="fill" /><span><strong>Private session.</strong> Files stay in this tab and are cleared when you close it.</span><span className="engine-badge">{modelTools.has(tool.slug) ? "LOCAL ENGINE" : "ON-DEVICE"}</span></div>
 
-        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "translate-pdf" ? "translation-preview-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "blur-face" ? "face-blur-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : tool.slug === "html-to-image" ? "html-image-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
+        <div className={`workbench-body ${usesPagePicker ? "page-picker-body" : ""} ${tool.slug === "split-pdf" ? "split-planner-body" : tool.slug === "remove-pdf-pages" ? "remove-pages-planner-body" : tool.slug === "extract-pdf-pages" ? "extract-pages-planner-body" : tool.slug === "organize-pdf" ? "organize-pages-planner-body" : tool.slug === "redact-pdf" ? "redact-planner-body" : tool.slug === "edit-pdf" ? "text-annotation-body" : tool.slug === "compare-pdf" ? "compare-planner-body" : tool.slug === "translate-pdf" ? "translation-preview-body" : tool.slug === "pdf-to-jpg" ? "pdf-jpg-preview-body" : tool.slug === "compress-image" ? "image-compression-preview-body" : tool.slug === "resize-image" ? "image-resize-preview-body" : tool.slug === "upscale-image" ? "image-upscale-preview-body" : tool.slug === "remove-image-background" ? "background-removal-preview-body" : tool.slug === "blur-face" ? "face-blur-preview-body" : tool.slug === "watermark-image" ? "image-watermark-preview-body" : tool.slug === "meme-generator" ? "image-meme-preview-body" : tool.slug === "rotate-image" ? "image-rotation-preview-body" : tool.slug === "crop-image" ? "image-crop-preview-body" : tool.slug === "convert-from-jpg" ? "image-gif-preview-body" : tool.slug === "photo-editor" ? "photo-editor-preview-body" : tool.slug === "html-to-image" ? "html-image-preview-body" : usesPdfOfficeTextPreview ? "pdf-office-text-preview-body" : ""}`}>
           <section className="file-stage" aria-label="Files">
             <button
               ref={dropzoneRef}
@@ -7131,6 +7435,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "html-to-pdf" && <HtmlPdfResultSummary result={results[0]} />}
                 {tool.slug === "html-to-image" && <HtmlImageResultSummary result={results[0]} />}
                 {tool.slug === "merge-pdf" && <MergePdfResultSummary result={results[0]} />}
+                {tool.slug === "edit-pdf" && <TextAnnotationResultSummary result={results[0]} />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -7150,7 +7455,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{tool.slug === "translate-pdf" ? <TranslateIcon size={19} /> : tool.slug === "merge-pdf" ? <FilesIcon size={19} /> : ["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "translate-pdf" ? "Translation plan" : tool.slug === "merge-pdf" ? "Merge plan" : tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "translate-pdf" ? "Choose the target, confirm the engine, and check the English source." : tool.slug === "merge-pdf" ? "Check every source and the final page order before merging." : tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{tool.slug === "translate-pdf" ? <TranslateIcon size={19} /> : tool.slug === "merge-pdf" ? <FilesIcon size={19} /> : tool.slug === "edit-pdf" ? <TextboxIcon size={19} /> : ["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "translate-pdf" ? "Translation plan" : tool.slug === "merge-pdf" ? "Merge plan" : tool.slug === "edit-pdf" ? "Text placement" : tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "translate-pdf" ? "Choose the target, confirm the engine, and check the English source." : tool.slug === "merge-pdf" ? "Check every source and the final page order before merging." : tool.slug === "edit-pdf" ? "Write one note, choose its pages, and place it directly." : tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "translate-pdf" ? (
               <TranslationControls file={files[0]} settings={settings} settingsList={settingsList} preview={translationSourcePreview} engine={translationEngine} onChange={updateSetting} onPrepare={translationEngine.prepare} />
             ) : tool.slug === "merge-pdf" ? (
@@ -7247,6 +7552,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <PdfFormControls file={files[0]} info={pdfFormInfo} settings={settings} limits={limits} plan={pdfFormPlan} onChange={updateSetting} />
             ) : tool.slug === "redact-pdf" ? (
               <RedactPdfControls settings={settings} onChange={updateSetting} info={pageInfo} plan={redactionPlan} limits={limits} />
+            ) : tool.slug === "edit-pdf" ? (
+              <EditPdfControls settings={settings} settingsList={settingsList} onChange={updateSetting} onApply={updateSettings} info={pageInfo} plan={textAnnotationPlan} />
             ) : tool.slug === "compare-pdf" ? (
               <ComparePdfControls files={files} result={results[0]} />
             ) : tool.slug === "repair-pdf" ? (
@@ -7326,6 +7633,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "redact-pdf" && redactionPlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{redactionPlan.regionCount.toLocaleString()} {redactionPlan.regionCount === 1 ? "area" : "areas"} on {redactionPlan.affectedPageCount.toLocaleString()} {redactionPlan.affectedPageCount === 1 ? "page" : "pages"}</strong>
+              )}
+              {tool.slug === "edit-pdf" && textAnnotationPlan?.valid && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">{textAnnotationPlan.readyLabel}</strong>
               )}
               {tool.slug === "pdf-to-jpg" && pdfJpgPlan && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{pdfJpgPlan.readyLabel}</strong>
