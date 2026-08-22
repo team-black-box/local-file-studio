@@ -8,6 +8,7 @@ import { IMAGE_MEME_CASES } from "./lib/image-meme.js";
 import { IMAGE_ROTATIONS } from "./lib/image-rotation.js";
 import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS } from "./lib/html-image.js";
 import { PDF_TRANSLATION_LANGUAGES } from "./lib/pdf-translation.js";
+import { PDF_TEXT_ANNOTATION_DEFAULTS, PDF_TEXT_ANNOTATION_LIMITS, PDF_TEXT_ANNOTATION_SCOPES } from "./lib/pdf-text-annotation.js";
 
 const withPhosphorExports = (entries) =>
   Object.freeze(
@@ -604,7 +605,7 @@ export const tools = withPhosphorExports([
   {
     slug: "edit-pdf",
     name: "Edit PDF",
-    description: "Place a text annotation at the same position on every PDF page.",
+    description: "Place one text note exactly where you want it on every page or one selected page.",
     kind: "pdf",
     category: "edit",
     accepts: [".pdf"],
@@ -617,33 +618,29 @@ export const tools = withPhosphorExports([
     settings: [
       {
         key: "text",
-        type: "text",
+        type: "textarea",
         label: "Text to add",
-        default: "Reviewed locally",
+        default: PDF_TEXT_ANNOTATION_DEFAULTS.text,
       },
       {
-        key: "position",
+        key: "scope",
         type: "select",
-        label: "Position",
-        default: "top-left",
-        compactChoices: true,
-        options: [
-          { value: "top-left", label: "Top left" },
-          { value: "top-right", label: "Top right" },
-          { value: "center", label: "Center" },
-          { value: "bottom-left", label: "Bottom left" },
-          { value: "bottom-right", label: "Bottom right" },
-        ],
+        label: "Apply to",
+        default: PDF_TEXT_ANNOTATION_DEFAULTS.scope,
+        options: Object.values(PDF_TEXT_ANNOTATION_SCOPES).map(({ value, label }) => ({ value, label })),
       },
+      { key: "targetPage", type: "number", label: "Selected page", default: PDF_TEXT_ANNOTATION_DEFAULTS.targetPage, min: 1, max: 500, step: 1 },
+      { key: "x", type: "number", label: "Horizontal position", default: PDF_TEXT_ANNOTATION_DEFAULTS.x, min: PDF_TEXT_ANNOTATION_LIMITS.minPosition, max: PDF_TEXT_ANNOTATION_LIMITS.maxPosition, step: 0.5, suffix: "%" },
+      { key: "y", type: "number", label: "Vertical position", default: PDF_TEXT_ANNOTATION_DEFAULTS.y, min: PDF_TEXT_ANNOTATION_LIMITS.minPosition, max: PDF_TEXT_ANNOTATION_LIMITS.maxPosition, step: 0.5, suffix: "%" },
       {
         key: "fontSize",
         type: "range",
         label: "Text size",
-        default: 16,
-        min: 10,
-        max: 48,
+        default: PDF_TEXT_ANNOTATION_DEFAULTS.fontSize,
+        min: PDF_TEXT_ANNOTATION_LIMITS.minFontSize,
+        max: PDF_TEXT_ANNOTATION_LIMITS.maxFontSize,
         step: 1,
-        suffix: "px",
+        suffix: "pt",
         minLabel: "Small",
         maxLabel: "Large",
       },
