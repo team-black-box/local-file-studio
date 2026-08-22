@@ -735,6 +735,13 @@ export const tools = withPhosphorExports([
         default: "",
         required: true,
       },
+      {
+        key: "passwordConfirm",
+        type: "password",
+        label: "Confirm new password",
+        default: "",
+        required: true,
+      },
     ],
   },
   {

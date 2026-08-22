@@ -17,6 +17,7 @@ import {
   zipResults,
 } from "./file-utils.js";
 import { protectPdf, repairPdf, unlockPdf } from "./libpdf.js";
+import { assertPdfProtectionPasswordPlan } from "./pdf-protection-password.js";
 import { fillPdfFormFields } from "./pdf-form-fields.js";
 import { createRedactionPlan } from "./pdf-redactions.js";
 import {
@@ -1302,9 +1303,12 @@ export async function processPdfTool(slug, files, options = {}, report) {
     return [pdfResult(`${safeFileName(baseName(files[0].name))}-unlocked.pdf`, bytes, "Password protection removed with supplied password")];
   }
   if (slug === "protect-pdf") {
-    if (!options.password) throw new Error("Enter a password before protecting this PDF.");
-    const bytes = await protectPdf(new Uint8Array(await files[0].arrayBuffer()), options.password);
-    return [pdfResult(`${safeFileName(baseName(files[0].name))}-protected.pdf`, bytes, "AES password protection added locally")];
+    const passwordPlan = assertPdfProtectionPasswordPlan(options);
+    const bytes = await protectPdf(new Uint8Array(await files[0].arrayBuffer()), passwordPlan.password);
+    return [{
+      ...pdfResult(`${safeFileName(baseName(files[0].name))}-protected.pdf`, bytes, "AES-256 password protection added locally"),
+      protectionOutcome: { algorithm: "AES-256" },
+    }];
   }
   if (slug === "compare-pdf") return await comparePdfs(files, options, report);
   if (["ai-summarizer", "translate-pdf", "pdf-to-markdown"].includes(slug)) return await intelligenceTool(slug, files[0], options, report);

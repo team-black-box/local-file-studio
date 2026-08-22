@@ -108,6 +108,7 @@ import { createPdfFormPlan, inspectPdfForm, parsePdfFormValues } from "./lib/pdf
 import { COMPARISON_ROWS_PER_PAGE } from "./lib/pdf-comparison.js";
 import { MIN_REDACTION_REGION_PERCENT, clampRedactionRegion, createRedactionPlan, parseRedactionRegions, serializeRedactionRegions } from "./lib/pdf-redactions.js";
 import { PDF_SIGNATURE_DEFAULTS, createPdfSignaturePlan, createSigningDateIso } from "./lib/pdf-signature.js";
+import { createPdfProtectionPasswordPlan } from "./lib/pdf-protection-password.js";
 import { PDF_TEXT_ANNOTATION_DEFAULTS, PDF_TEXT_ANNOTATION_SCOPES, createPdfTextAnnotationPlan } from "./lib/pdf-text-annotation.js";
 import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
@@ -2746,6 +2747,18 @@ function SignatureResultSummary({ result }) {
   );
 }
 
+function ProtectPdfResultSummary({ result }) {
+  const outcome = result?.protectionOutcome;
+  if (!outcome) return null;
+  return (
+    <div className="protect-pdf-result-summary" role="status">
+      <span><LockIcon size={20} weight="duotone" aria-hidden="true" /></span>
+      <div><strong>{outcome.algorithm} password protection added</strong><small>Your original PDF is unchanged. The password is no longer stored in this tool.</small></div>
+      <b>LOCAL</b>
+    </div>
+  );
+}
+
 function useLocalImageUrl(file) {
   const [url, setUrl] = useState("");
 
@@ -4560,6 +4573,75 @@ function RepairPdfControls() {
         <li><span>3</span><div><strong>Review the result</strong><small>Preview the rebuilt file before replacing or sharing the original.</small></div></li>
       </ol>
       <p><WarningCircleIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>Repair cannot recreate missing bytes.</strong> Pages, images, fonts, or text that are no longer present in the source may remain unavailable.</span></p>
+    </section>
+  );
+}
+
+function ProtectPdfControls({ settings, settingsList, onChange, plan }) {
+  const [showPasswords, setShowPasswords] = useState(false);
+  const passwordSetting = settingsList.find((setting) => setting.key === "password");
+  const confirmationSetting = settingsList.find((setting) => setting.key === "passwordConfirm");
+  const passwordType = showPasswords ? "text" : "password";
+  const confirmationMismatch = Boolean(settings.password) && Boolean(settings.passwordConfirm) && !plan.matches;
+
+  useEffect(() => {
+    if (!settings.password && !settings.passwordConfirm) setShowPasswords(false);
+  }, [settings.password, settings.passwordConfirm]);
+
+  return (
+    <section className="protect-pdf-controls" aria-labelledby="protect-pdf-title">
+      <header>
+        <span><LockIcon size={20} weight="duotone" aria-hidden="true" /></span>
+        <div><strong id="protect-pdf-title">Create a password-protected copy</strong><small>AES-256 encryption is applied locally. Your original PDF stays unchanged.</small></div>
+        <button type="button" className="protect-password-visibility" aria-pressed={showPasswords} onClick={() => setShowPasswords((current) => !current)}>
+          {showPasswords ? <EyeSlashIcon size={16} aria-hidden="true" /> : <EyeIcon size={16} aria-hidden="true" />}
+          {showPasswords ? "Hide" : "Show"}
+        </button>
+      </header>
+
+      <div className="protect-password-fields">
+        <label htmlFor="protect-pdf-password">
+          <span><strong>{passwordSetting.label}</strong><small>{String(settings.password || "").length.toLocaleString()} / {Number(passwordSetting.maxLength).toLocaleString()}</small></span>
+          <input
+            id="protect-pdf-password"
+            type={passwordType}
+            autoComplete="new-password"
+            autoCapitalize="none"
+            spellCheck="false"
+            maxLength={passwordSetting.maxLength}
+            value={settings.password}
+            onChange={(event) => onChange("password", event.target.value)}
+          />
+        </label>
+        <label htmlFor="protect-pdf-password-confirm">
+          <span><strong>{confirmationSetting.label}</strong><small>Must match exactly</small></span>
+          <input
+            id="protect-pdf-password-confirm"
+            type={passwordType}
+            autoComplete="new-password"
+            autoCapitalize="none"
+            spellCheck="false"
+            maxLength={confirmationSetting.maxLength}
+            aria-invalid={confirmationMismatch}
+            aria-describedby="protect-pdf-password-status"
+            value={settings.passwordConfirm}
+            onChange={(event) => onChange("passwordConfirm", event.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className="protect-password-guide" aria-label={`Password length guide: ${plan.guide.label}`}>
+        <span><strong>Length guide</strong><small>{plan.guide.label}</small></span>
+        <div aria-hidden="true">{[1, 2, 3].map((level) => <i key={level} className={level <= plan.guide.level ? "active" : ""} />)}</div>
+        <p>{plan.guide.hint}</p>
+      </div>
+
+      <div id="protect-pdf-password-status" className={`protect-password-status ${plan.valid ? "ready" : confirmationMismatch ? "error" : "waiting"}`} role={confirmationMismatch ? "alert" : "status"} aria-live="polite">
+        {plan.valid ? <CheckCircleIcon size={18} weight="fill" aria-hidden="true" /> : <WarningCircleIcon size={18} weight={confirmationMismatch ? "fill" : "regular"} aria-hidden="true" />}
+        <span><strong>{plan.valid ? "Ready to protect" : confirmationMismatch ? "Passwords do not match" : "Password check"}</strong><small>{plan.message}</small></span>
+      </div>
+
+      <p className="protect-password-warning"><ShieldCheckIcon size={17} weight="fill" aria-hidden="true" /><span><strong>Save the password separately.</strong> Local File Studio cannot recover it, and it is cleared from this tab after each attempt.</span></p>
     </section>
   );
 }
@@ -6830,6 +6912,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const redactionPlan = useMemo(() => tool.slug === "redact-pdf" ? getRedactionPlan(settings, pageInfo, limits) : null, [limits, pageInfo, settings, tool.slug]);
   const textAnnotationPlan = useMemo(() => tool.slug === "edit-pdf" ? getTextAnnotationPlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
   const signaturePlan = useMemo(() => tool.slug === "sign-pdf" ? getSignaturePlan(settings, pageInfo, signingDate) : null, [pageInfo, settings, signingDate, tool.slug]);
+  const protectionPasswordPlan = useMemo(() => tool.slug === "protect-pdf" ? createPdfProtectionPasswordPlan(settings) : null, [settings, tool.slug]);
   const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
   const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits, tool.output[0]?.slice(1), tool.name);
   const translationSourcePreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], tool.slug === "translate-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits, "translation", tool.name);
@@ -7059,6 +7142,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const redactionReady = tool.slug !== "redact-pdf" || !hasRequiredInput || Boolean(redactionPlan?.valid);
   const textAnnotationReady = tool.slug !== "edit-pdf" || !hasRequiredInput || Boolean(textAnnotationPlan?.valid);
   const signatureReady = tool.slug !== "sign-pdf" || !hasRequiredInput || Boolean(signaturePlan?.valid);
+  const protectionPasswordReady = tool.slug !== "protect-pdf" || Boolean(protectionPasswordPlan?.valid);
   const pdfJpgReady = tool.slug !== "pdf-to-jpg" || !hasRequiredInput || Boolean(pdfJpgPlan);
   const archiveRewriteReady = tool.slug !== "pdf-to-pdfa" || !hasRequiredInput || pageInfo.state === "ready";
   const imageCompressionReady = tool.slug !== "compress-image" || !hasRequiredInput || imageCompressionPreviewMatches;
@@ -7082,7 +7166,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const translationEngineReady = tool.slug !== "translate-pdf"
     || getPdfTranslationMode(settings.translationMode) === "glossary"
     || translationEngine.state === "ready";
-  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && mergePdfReady && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && textAnnotationReady && signatureReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && translationSourceReady && translationEngineReady && status !== "processing";
+  const canRun = hasRequiredInput && pageSelectionReady && passwordGate.ready && mergePdfReady && compressionReady && imageEncoderReady && pdfFormReady && redactionReady && textAnnotationReady && signatureReady && protectionPasswordReady && pdfJpgReady && archiveRewriteReady && imageCompressionReady && imageResizeReady && imageUpscaleReady && backgroundRemovalReady && faceBlurReady && imageWatermarkReady && imageMemeReady && imageRotationReady && imageCropReady && animatedGifReady && photoEditorReady && pdfOfficeTextReady && wordPreviewReady && powerpointPreviewReady && spreadsheetPreviewReady && htmlPreviewReady && htmlImagePreviewReady && translationSourceReady && translationEngineReady && status !== "processing";
   const remainingFiles = Math.max(0, minFiles - files.length);
   const processHint = !hasRequiredInput
     ? minFiles === 0
@@ -7092,6 +7176,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? passwordGate.active?.status === "checking"
         ? "Checking PDF protection locally."
         : "Enter the PDF password above to continue."
+    : tool.slug === "protect-pdf" && !protectionPasswordPlan?.valid
+      ? protectionPasswordPlan?.message
     : tool.slug === "translate-pdf" && hasRequiredInput && translationSourcePreview.file === files[0] && translationSourcePreview.state === "loading"
       ? "Reading the selectable English text before translation."
     : tool.slug === "translate-pdf" && hasRequiredInput && translationSourcePreview.file === files[0] && translationSourcePreview.state === "error"
@@ -7283,6 +7369,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? "Create summary"
     : tool.slug === "repair-pdf" && hasRequiredInput
       ? "Rebuild PDF"
+    : tool.slug === "protect-pdf" && protectionPasswordPlan?.valid
+      ? protectionPasswordPlan.actionLabel
     : tool.slug === "excel-to-pdf" && spreadsheetPreview.state === "ready"
       ? `Create ${spreadsheetPreview.pageCount.toLocaleString()}-page PDF`
     : tool.slug === "html-to-pdf" && htmlPreview.state === "ready" && Number.isInteger(htmlPreview.pageCount)
@@ -7518,7 +7606,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
             {results.length > 0 && !inlineReaderTools.has(tool.slug) && (
               <div className="results-card">
-                <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : automaticDownloadRequested ? isPdfPreviewResult(results[0]) ? "Automatic download requested. Preview it or download it again below." : "Automatic download requested. Download it again below if needed." : "Created locally. Download the files before closing this tab."}</p></div></div>
+                <div className="result-celebration"><span><CheckCircleIcon size={24} weight="fill" /></span><div><h3 ref={resultHeadingRef} tabIndex="-1">{results[0]?.compressionOutcome === "original-kept" ? "Your original is already smaller" : results[0]?.compressionOutcome === "protected-original" ? "Protected original is ready" : results[0]?.protectionOutcome ? "Protected PDF is ready" : "Your result is ready"}</h3><p>{results[0]?.compressionOutcome === "original-kept" ? "No new file was created; the larger trial result was discarded locally." : results[0]?.compressionOutcome === "protected-original" ? "Compression was skipped, then fresh password protection was applied locally." : results[0]?.protectionOutcome ? "Automatic download requested. Keep the password separately; it is no longer stored here." : automaticDownloadRequested ? isPdfPreviewResult(results[0]) ? "Automatic download requested. Preview it or download it again below." : "Automatic download requested. Download it again below if needed." : "Created locally. Download the files before closing this tab."}</p></div></div>
                 {tool.slug === "compress-pdf" && files[0] && results[0] && (
                   <CompressionResultSummary inputSize={files[0].size} result={results[0]} />
                 )}
@@ -7545,6 +7633,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 {tool.slug === "merge-pdf" && <MergePdfResultSummary result={results[0]} />}
                 {tool.slug === "edit-pdf" && <TextAnnotationResultSummary result={results[0]} />}
                 {tool.slug === "sign-pdf" && <SignatureResultSummary result={results[0]} />}
+                {tool.slug === "protect-pdf" && <ProtectPdfResultSummary result={results[0]} />}
                 {results.filter((result) => !result.noNewFile).map((result) => (
                   <div className="result-row" key={result.id}>
                     <span className="result-icon"><DownloadSimpleIcon size={19} /></span>
@@ -7564,7 +7653,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
 
           <aside className={`settings-panel ${usesStickySettings ? "page-picker-settings-panel" : ""}`} aria-label="Tool settings">
             <div className="settings-scroll">
-            <div className="settings-heading"><span>{tool.slug === "translate-pdf" ? <TranslateIcon size={19} /> : tool.slug === "merge-pdf" ? <FilesIcon size={19} /> : tool.slug === "edit-pdf" ? <TextboxIcon size={19} /> : tool.slug === "sign-pdf" ? <SignatureIcon size={19} /> : ["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "translate-pdf" ? "Translation plan" : tool.slug === "merge-pdf" ? "Merge plan" : tool.slug === "edit-pdf" ? "Text placement" : tool.slug === "sign-pdf" ? "Signature placement" : tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "translate-pdf" ? "Choose the target, confirm the engine, and check the English source." : tool.slug === "merge-pdf" ? "Check every source and the final page order before merging." : tool.slug === "edit-pdf" ? "Write one note, choose its pages, and place it directly." : tool.slug === "sign-pdf" ? "Type, date, size, and place the mark on the real final page." : tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
+            <div className="settings-heading"><span>{tool.slug === "translate-pdf" ? <TranslateIcon size={19} /> : tool.slug === "merge-pdf" ? <FilesIcon size={19} /> : tool.slug === "edit-pdf" ? <TextboxIcon size={19} /> : tool.slug === "sign-pdf" ? <SignatureIcon size={19} /> : tool.slug === "protect-pdf" ? <LockIcon size={19} /> : ["pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image"].includes(tool.slug) ? tool.slug === "pdf-to-pdfa" ? <ArchiveIcon size={19} /> : <EyeIcon size={19} /> : <SlidersHorizontalIcon size={19} />}</span><div><h3>{tool.slug === "translate-pdf" ? "Translation plan" : tool.slug === "merge-pdf" ? "Merge plan" : tool.slug === "edit-pdf" ? "Text placement" : tool.slug === "sign-pdf" ? "Signature placement" : tool.slug === "protect-pdf" ? "Password protection" : tool.slug === "pdf-to-jpg" ? "Output preview" : tool.slug === "pdf-to-word" ? "Document preview" : tool.slug === "pdf-to-powerpoint" ? "Slide preview" : tool.slug === "pdf-to-excel" ? "Sheet preview" : tool.slug === "pdf-to-pdfa" ? "Rewrite plan" : tool.slug === "compress-image" ? "Compression preview" : tool.slug === "resize-image" ? "Resize preview" : tool.slug === "upscale-image" ? "Upscale preview" : tool.slug === "remove-image-background" ? "Cutout preview" : tool.slug === "blur-face" ? "Privacy preview" : tool.slug === "watermark-image" ? "Watermark preview" : tool.slug === "meme-generator" ? "Meme preview" : tool.slug === "rotate-image" ? "Rotation preview" : tool.slug === "crop-image" ? "Crop preview" : tool.slug === "convert-from-jpg" ? "Animation preview" : tool.slug === "photo-editor" ? "Photo preview" : tool.slug === "word-to-pdf" ? "Document preview" : tool.slug === "powerpoint-to-pdf" ? "Slide preview" : tool.slug === "excel-to-pdf" ? "Workbook preview" : tool.slug === "html-to-pdf" ? "Content preview" : tool.slug === "html-to-image" ? "Capture preview" : "Settings"}</h3><p>{tool.slug === "translate-pdf" ? "Choose the target, confirm the engine, and check the English source." : tool.slug === "merge-pdf" ? "Check every source and the final page order before merging." : tool.slug === "edit-pdf" ? "Write one note, choose its pages, and place it directly." : tool.slug === "sign-pdf" ? "Type, date, size, and place the mark on the real final page." : tool.slug === "protect-pdf" ? "Create and confirm one memory-only password." : tool.slug === "pdf-to-jpg" ? "Review pages and JPG quality before export." : tool.slug === "pdf-to-word" ? "Check selectable text and DOCX sections." : tool.slug === "pdf-to-powerpoint" ? "Check selectable text and the PPTX slide plan." : tool.slug === "pdf-to-excel" ? "Check selectable text and the XLSX sheet plan." : tool.slug === "pdf-to-pdfa" ? "Review exactly what this archival rewrite can—and cannot—do." : tool.slug === "compress-image" ? "Compare real local bytes before running the batch." : tool.slug === "resize-image" ? "See exact target dimensions before the batch." : tool.slug === "upscale-image" ? "Check the exact pixel growth before local resampling." : tool.slug === "remove-image-background" ? "Compare the sampled corner color and real local cutout." : tool.slug === "blur-face" ? "Confirm exactly where the browser will apply the blur." : tool.slug === "watermark-image" ? "See placement, direction, color, and opacity before export." : tool.slug === "meme-generator" ? "Write, fit, and review both captions before export." : tool.slug === "rotate-image" ? "Choose a direction and see the new shape before export." : tool.slug === "crop-image" ? "Position the exact pixels you want to keep." : tool.slug === "convert-from-jpg" ? "Arrange, time, and play the JPG sequence before export." : tool.slug === "photo-editor" ? "See every adjustment and caption before export." : tool.slug === "word-to-pdf" ? "Check the readable text before export." : tool.slug === "powerpoint-to-pdf" ? "Check slide order and text before export." : tool.slug === "excel-to-pdf" ? "Check sheets, values, and page layout." : tool.slug === "html-to-pdf" ? "Check sanitized text and PDF pages." : tool.slug === "html-to-image" ? "Review the exact clean local capture before export." : "Fine-tune the local output."}</p></div></div>
             {tool.slug === "translate-pdf" ? (
               <TranslationControls file={files[0]} settings={settings} settingsList={settingsList} preview={translationSourcePreview} engine={translationEngine} onChange={updateSetting} onPrepare={translationEngine.prepare} />
             ) : tool.slug === "merge-pdf" ? (
@@ -7665,6 +7754,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               <EditPdfControls settings={settings} settingsList={settingsList} onChange={updateSetting} onApply={updateSettings} info={pageInfo} plan={textAnnotationPlan} />
             ) : tool.slug === "sign-pdf" ? (
               <SignPdfControls settings={settings} settingsList={settingsList} onChange={updateSetting} onApply={updateSettings} info={pageInfo} plan={signaturePlan} />
+            ) : tool.slug === "protect-pdf" ? (
+              <ProtectPdfControls settings={settings} settingsList={settingsList} onChange={updateSetting} plan={protectionPasswordPlan} />
             ) : tool.slug === "compare-pdf" ? (
               <ComparePdfControls files={files} result={results[0]} />
             ) : tool.slug === "repair-pdf" ? (
@@ -7750,6 +7841,9 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
               )}
               {tool.slug === "sign-pdf" && signaturePlan?.valid && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{signaturePlan.readyLabel}</strong>
+              )}
+              {tool.slug === "protect-pdf" && protectionPasswordPlan?.valid && status !== "processing" && (
+                <strong className="split-ready-count" aria-live="polite">Password confirmed · AES-256</strong>
               )}
               {tool.slug === "pdf-to-jpg" && pdfJpgPlan && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{pdfJpgPlan.readyLabel}</strong>

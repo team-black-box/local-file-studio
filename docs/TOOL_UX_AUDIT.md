@@ -51,7 +51,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Add Image to PDF | Strong page canvas, placement, resize, and rotation | Keep; continue browser and touch QA |
 | PDF Forms | Dynamic field-aware editor with search, paging, exact controls, change count, editable/flattened export choice, and optional advanced JSON | Keep; continue protected-form, browser, and unusual-widget QA |
 | Unlock PDF | Clear password gate and previewable result | Keep |
-| Protect PDF | Clear memory-only password control and previewable result | Keep |
+| Protect PDF | Explicit AES-256 plan, exact password confirmation, shared show/hide control, honest length guide, unrecoverable-password warning, fail-closed action, memory-only clearing, and previewable result | Keep; continue compatible-viewer, mobile, and boundary QA |
 | Sign PDF | Real final-page canvas with direct drag/click/keyboard placement, explicit Signature only/Signature + date choices, live local date, bounded size and exact-position controls, reset, rotation-aware output, exact result feedback, automatic download, and shared PDF Preview | Keep; continue protected-input, rotated/landscape final-page, long-name, touch, mobile, and boundary QA |
 | Redact PDF | Real per-page canvas with drag-to-draw, multiple movable/resizable areas, page counts, black/white preview, exact controls, undo, page/all reset, and flattened-result preview | Keep; continue touch, protected-input, and large-document QA |
 | Compare PDF | Inline paginated text diff with original/revised order, changes/all views, exact counts, and optional scriptless HTML export | Keep; continue protected-input, mobile, and boundary QA |

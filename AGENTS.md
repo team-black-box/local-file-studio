@@ -43,6 +43,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `src/lib/pptx-writer.js`: dependency-light text reconstruction for PDF-to-PPTX output.
 - `src/lib/pdfjs-utils.js`: version-compatible PDF.js document cleanup.
 - `src/lib/pdf-passwords.js`: protected-PDF access modes, permission checks, and in-memory unlock adapter.
+- `src/lib/pdf-protection-password.js`: dedicated Protect PDF confirmation, length guide, and fail-closed password plan.
 - `src/lib/pdf-form-fields.js`: bounded AcroForm inspection, visual field descriptors, validation, and fill/flatten behavior.
 - `src/lib/pdf-redactions.js`: bounded per-page redaction geometry, serialization, and execution planning.
 - `src/lib/pdf-comparison.js`: bounded line-view construction and scriptless local HTML comparison export.
