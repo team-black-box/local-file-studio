@@ -64,7 +64,7 @@ import { rankToolSearchResults, tools } from "../src/tools.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "../src/lib/image-watermark.js";
 import { IMAGE_MEME_CASES } from "../src/lib/image-meme.js";
 import { IMAGE_ROTATIONS } from "../src/lib/image-rotation.js";
-import { FACE_BLUR_STRENGTHS } from "../src/lib/face-blur.js";
+import { FACE_BLUR_DEFAULT_REGION_SIZE, FACE_BLUR_STRENGTHS } from "../src/lib/face-blur.js";
 
 const MiB = 1024 * 1024;
 
@@ -825,6 +825,7 @@ test("Blur Face exposes reviewable strength and fallback controls with a bounded
   assert.equal(FACE_BLUR_STRENGTHS.some(({ value }) => value === settings.strength.default), true);
   assert.deepEqual({ min: settings.focusX.min, max: settings.focusX.max, default: settings.focusX.default }, { min: 10, max: 90, default: 50 });
   assert.deepEqual({ min: settings.focusY.min, max: settings.focusY.max, default: settings.focusY.default }, { min: 10, max: 90, default: 35 });
+  assert.deepEqual({ min: settings.regionSize.min, max: settings.regionSize.max, step: settings.regionSize.step, default: settings.regionSize.default }, { min: 18, max: 64, step: 2, default: FACE_BLUR_DEFAULT_REGION_SIZE });
   assert.equal(limits.maxDetectedFaces, 40);
   assert.equal(limits.maxInteractivePreviewPixels, 1_500_000);
   assert.equal(limits.maxInteractivePreviewEdge, 1600);

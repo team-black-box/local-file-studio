@@ -10458,6 +10458,17 @@ body {
   accent-color: var(--privacy);
 }
 
+.face-blur-fallback-controls .face-blur-size-control {
+  grid-column: 1 / -1;
+  border-color: #cfe2d9;
+  background: var(--privacy-soft);
+}
+
+.face-blur-size-control > span:last-child {
+  color: var(--muted);
+  font-size: 6px;
+}
+
 .face-blur-strength-choices {
   min-width: 0;
   margin: 0;

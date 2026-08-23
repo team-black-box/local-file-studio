@@ -22,7 +22,7 @@ import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, inspectBa
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "../src/lib/image-watermark.js";
 import { IMAGE_MEME_CASES, IMAGE_MEME_MAX_LINES, createImageMemeOutcome, drawImageMeme, getImageMemePlan, wrapImageMemeCaption } from "../src/lib/image-meme.js";
 import { IMAGE_ROTATIONS, createImageRotationOutcome, getImageRotation, getImageRotationPlan } from "../src/lib/image-rotation.js";
-import { FACE_BLUR_DEFAULT_FOCUS, FACE_BLUR_STRENGTHS, createFaceBlurOutcome, createFaceBlurPlan, drawFaceBlur, validateFaceBlurPlan } from "../src/lib/face-blur.js";
+import { FACE_BLUR_DEFAULT_FOCUS, FACE_BLUR_DEFAULT_REGION_SIZE, FACE_BLUR_STRENGTHS, createFaceBlurOutcome, createFaceBlurPlan, drawFaceBlur, getFaceBlurRegionSize, validateFaceBlurPlan } from "../src/lib/face-blur.js";
 import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS, createHtmlImageOutcome, createHtmlImagePlan, getHtmlImageFormat, getHtmlImageViewport, hasNonFragmentHtmlImageUrl, shouldRemoveHtmlImageAttribute } from "../src/lib/html-image.js";
 import { applyBasicTranslationGlossary, createBrowserTranslator, createTranslationSessionLease, getPdfTranslationLanguage, inspectBrowserTranslator, splitTranslationText } from "../src/lib/pdf-translation.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createPdfJpgOutputPlan, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, parseMarkdownPreview, parseRemovalPageSelection, projectPdfCompressionSize } from "../src/lib/file-utils.js";
@@ -427,9 +427,10 @@ test("image rotation contracts reject unsupported angles and inconsistent outcom
   assert.throws(() => createImageRotationOutcome(plan, "gif", 100), (error) => error instanceof FileLimitError && error.code === "invalid-image-rotation-outcome");
 });
 
-test("Blur Face plans detected regions or one movable centered fallback", () => {
+test("Blur Face plans detected regions or one movable and resizable manual fallback", () => {
   assert.deepEqual(FACE_BLUR_STRENGTHS.map(({ value }) => value), [12, 24, 40]);
   assert.deepEqual(FACE_BLUR_DEFAULT_FOCUS, { x: 50, y: 35 });
+  assert.equal(FACE_BLUR_DEFAULT_REGION_SIZE, 34);
   const detected = createFaceBlurPlan({
     width: 1000,
     height: 800,
@@ -442,16 +443,24 @@ test("Blur Face plans detected regions or one movable centered fallback", () => 
   assert.equal(detected.regions.length, 2);
   assert.deepEqual(detected.regions[0], { x: 0, y: 100, width: 200, height: 260 });
 
-  const fallback = createFaceBlurPlan({ width: 1000, height: 800, strength: 24, focusX: 70, focusY: 60, fallbackReason: "unavailable" });
+  const fallback = createFaceBlurPlan({ width: 1000, height: 800, strength: 24, focusX: 70, focusY: 60, regionSize: 50, fallbackReason: "unavailable" });
   assert.equal(fallback.mode, "centered-fallback");
   assert.equal(fallback.regions.length, 1);
   assert.equal(fallback.focusX, 70);
   assert.equal(fallback.focusY, 60);
+  assert.equal(fallback.regionSize, 50);
+  assert.equal(fallback.regions[0].x, 500);
+  assert.ok(Math.abs(fallback.regions[0].y - 256) < Number.EPSILON * 256);
+  assert.equal(fallback.regions[0].width, 400);
+  assert.equal(fallback.regions[0].height, 448);
   assert.deepEqual(validateFaceBlurPlan(fallback, 1000, 800, 24), fallback);
   assert.throws(() => validateFaceBlurPlan(fallback, 999, 800, 24), (error) => error instanceof FileLimitError && error.code === "stale-face-blur-plan");
   assert.throws(() => validateFaceBlurPlan(fallback, 1000, 800, 24, 40, 50, 60), (error) => error instanceof FileLimitError && error.code === "stale-face-blur-plan");
+  assert.throws(() => validateFaceBlurPlan(fallback, 1000, 800, 24, 40, 70, 60, 34), (error) => error instanceof FileLimitError && error.code === "stale-face-blur-plan");
   assert.throws(() => createFaceBlurPlan({ width: 100, height: 100, detectedRegions: Array.from({ length: 41 }, () => ({ x: 1, y: 1, width: 2, height: 2 })) }), (error) => error instanceof FileLimitError && error.code === "face-count-limit");
   assert.throws(() => createFaceBlurPlan({ width: 100, height: 100, strength: 49 }), (error) => error instanceof FileLimitError && error.code === "invalid-face-blur-strength");
+  assert.equal(getFaceBlurRegionSize(), 34);
+  assert.throws(() => getFaceBlurRegionSize(66), (error) => error instanceof FileLimitError && error.code === "invalid-face-blur-region-size");
 });
 
 test("Blur Face preview guides are separate from the validated export outcome", () => {
@@ -485,6 +494,7 @@ test("Blur Face preview guides are separate from the validated export outcome", 
     regionCount: 1,
     focusX: 50,
     focusY: 35,
+    regionSize: 34,
     format: "png",
     outputBytes: 12_345,
   });
