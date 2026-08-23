@@ -13,9 +13,7 @@ Local File Studio has not published a stable release yet. Until a supported-vers
 
 Please do not open an issue for a suspected vulnerability or include private documents, credentials, exploit details, or other sensitive data in an issue or pull request.
 
-The repository is currently private, and GitHub Private Vulnerability Reporting is not available in this state. If you already have repository access, use an existing private maintainer or team channel to ask for a confidential reporting path, without including exploit details in the initial request. If you do not have an established private channel, retain the details until the repository becomes public and its private reporting flow is enabled. Do not disclose sensitive or exploitable information merely to request contact.
-
-After the repository is public and maintainers have enabled GitHub Private Vulnerability Reporting, use **Report a vulnerability** on the repository's **Security** tab. Verify that the form says the report will be private before submitting details.
+Use **Report a vulnerability** on the repository's **Security** tab, or open the [private vulnerability report form](https://github.com/team-black-box/local-file-studio/security/advisories/new). Verify that GitHub says the report will be private before submitting sensitive or exploitable details.
 
 Include only the information needed to reproduce and assess the issue:
 
@@ -31,6 +29,6 @@ Do not upload a user's real documents. Local File Studio's privacy boundary is t
 
 Security reports may cover the application, its offline cache, vendored browser engines, build and release configuration, or a dependency used by the shipped static application. General bugs and feature requests should use the normal issue tracker once it is available.
 
-GitHub dependency alerts and Dependabot security updates are enabled, but they do not inspect project code or replace human review. Secret scanning and GitHub code-security features are not enabled for the private repository because the required private-repository licensing has not been authorized. Do not assume GitHub will detect a committed secret or vulnerable code.
+GitHub dependency alerts, Dependabot security updates, standard secret scanning, and push protection are enabled. Code scanning is not configured. These automated controls do not replace human review, the frozen dependency audit, provenance checks, or the repository-history audit.
 
 The maintainers cannot promise a fixed response or disclosure timeline before the first stable release. They will coordinate remediation and disclosure through an established confidential channel when possible.

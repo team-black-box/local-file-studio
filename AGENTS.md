@@ -170,7 +170,7 @@ GitHub settings, token scopes, plan entitlements, and successful workflow runs a
 - Keep merge commits disabled. Retain GitHub's web-commit sign-off setting, and require every contribution to carry the DCO sign-off described in `CONTRIBUTING.md`. A cryptographically signed commit and DCO sign-off are not substitutes for one another.
 - Treat dependency alerts and Dependabot as additional signals, not replacements for the frozen install, vulnerability audit, provenance checks, or full verification.
 - Do not enable paid or separately licensed GitHub security features, change token access, weaken repository rules, alter the Actions policy, change visibility, or modify merge/security settings without explicit owner authorization.
-- Reverify all controls after the repository becomes public. Features unavailable to a private repository, including public vulnerability reporting, are future launch steps rather than current guarantees.
+- Preserve the public-repository checkpoint recorded in `TASKS.md`: standard secret scanning, push protection, and Private Vulnerability Reporting are enabled, while code scanning is not configured. Reverify every mutable control before releases and after repository-setting changes; do not present a dated audit as a permanent guarantee.
 
 ## Documentation, version control, and deployment
 

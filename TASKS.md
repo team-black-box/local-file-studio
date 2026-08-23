@@ -9,27 +9,26 @@ This file records intentionally deferred repository work whose prerequisites are
 
 ## Public repository and security launch gate
 
-The following is a dated audit snapshot, not a promise that external settings cannot drift. Recheck GitHub live immediately before changing visibility, accepting public contributions, or connecting production hosting.
+The following is a dated audit snapshot, not a promise that external settings cannot drift. Recheck GitHub live before releases, after repository-setting changes, or before relying on a security control.
 
-### Private-repository checkpoint — 2026-08-23
+### Public-repository checkpoint — 2026-08-23
 
-- The repository is private. The configured remote remains `https://github.com/team-black-box/local-file-studio.git`; the GitHub repository homepage is `https://localfilestudio.app`.
+- The owner changed the repository visibility to public. The configured remote remains `https://github.com/team-black-box/local-file-studio.git`; the GitHub repository homepage is `https://localfilestudio.app`.
 - GitHub Actions requires full commit SHAs and uses a selected-actions allowlist. GitHub-owned actions are allowed, other verified creators are disallowed, and only `oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6` is separately allowlisted.
-- The default workflow token remains read-only and cannot approve pull requests. The protected `CI` run for exact private-`main` commit `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9` passed as [run 32652054358](https://github.com/team-black-box/local-file-studio/actions/runs/32652054358).
+- The default workflow token remains read-only and cannot approve pull requests. Public-main CI attempt 2 for exact commit `195f9c13115feb6ec736fc5cc12db8cb0ff52bc5` passed as [run 32654552303](https://github.com/team-black-box/local-file-studio/actions/runs/32654552303).
 - `main` requires the strict, up-to-date `verify` check from the `CI` workflow, one independent approval, approval after the latest reviewable push by someone other than its pusher, stale-approval dismissal, resolved conversations, and administrator enforcement. Linear history is required; force pushes and branch deletion are blocked.
 - Merge commits are disabled. DCO sign-off is enabled for GitHub web commits, and the pull-request workflow verifies every non-merge commit's `Signed-off-by` trailer.
-- Dependency alerts and Dependabot security updates are enabled. Secret scanning and Code Security remain disabled in the private repository because the applicable licensing or purchase has not been approved.
-- Private Vulnerability Reporting is unavailable while the repository remains private. Enable and verify it immediately after an approved public visibility change and before inviting public security reports; do not invent a contact address in the meantime.
+- Dependency alerts, Dependabot security updates, standard secret scanning, and push protection are enabled. Code scanning is not configured; do not claim otherwise or enable paid/separately licensed features without explicit authorization.
+- Private Vulnerability Reporting is enabled. `SECURITY.md` and the issue chooser direct reporters to GitHub's private security-advisory form without inventing an email address or response-time promise.
 - The repository topics are `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source` (GitHub may return them in sorted order).
 
-### Remaining public-source gate
+### Public-source launch result
 
-- The reviewed public-readiness work in PR #11, Convert Image/search work in PR #13, private-iteration controls in PR #15, final audit in PR #16, the subsequent 47-tool interaction enhancements through PR #54, launch-preparation PR #55, and hardening-proof PR #56 are merged. Exact private-`main` commit `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9` passed the protected clean-checkout `verify` job.
-- Re-audit Actions pins and allowlist, workflow permissions, token access, branch protection, merge/DCO settings, dependency automation, security features, repository visibility, and the configured remote immediately before launch.
+- The reviewed public-readiness work through PR #57 is merged. Exact public `main` commit `195f9c13115feb6ec736fc5cc12db8cb0ff52bc5` passed the protected clean-checkout `verify` job again after the visibility change.
+- The post-public audit reconfirmed Actions pins and allowlist, read-only workflow permissions, branch protection, merge/DCO settings, dependency automation, repository topics, public visibility, and the configured remote.
 - The independent-review rules and topic set were applied on 2026-08-23. [PR #56](https://github.com/team-black-box/local-file-studio/pull/56) proved the gate: repository member `subramanian-elavathur` approved the latest reviewable commit before merging it, and protected `main` CI passed afterward. Recheck that stale dismissal and latest-push approval remain active immediately before visibility changes.
-- Decide and document the approved secret-scanning/code-security posture. Treat an unavailable or unapproved feature as an explicit residual risk, not as enabled protection.
-- Obtain explicit owner authorization before making the repository public. After visibility changes, verify public vulnerability reporting and every intended public security control before soliciting contributions.
-- Keep the live Vercel beta operationally separate from the still-private source repository. Public visibility, later production promotions, and security-setting changes continue to require their own current approval and verification.
+- Standard secret scanning and push protection are enabled; code scanning remains an explicitly unconfigured follow-up rather than a claimed control.
+- Keep the live Vercel beta operationally separate from source visibility. Later production promotions and security-setting changes continue to require their own current approval and verification.
 
 ## Staged Vercel beta and ongoing QA checkpoint
 
@@ -61,7 +60,7 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - The owner deferred the file-driven Blur Face portrait check. Its catalog row remains unchecked, the browser-dependent detection and anonymity caveats remain visible, and the deferral is not a waiver or pass.
 - The two defects observed on 2026-08-15—dedicated Unlock PDF password retention and TIFF dimension discovery—were corrected in commit `fe7d9a4` (PR #18). Their automated coverage is part of `bun run verify`; the corresponding exact deployed manual cases remain ongoing QA rather than known unresolved source defects.
 - No current known privacy leak, document-corruption defect, security failure, crash, unbounded-resource defect, broken offline update, or failed rollback has been accepted for launch. Discovery of any such defect remains a stop condition even after a visibility change is approved.
-- Remaining public-source work is explicit owner authorization for visibility and immediate post-public verification of vulnerability reporting and approved security controls.
+- Public-source launch work is complete. The exhaustive production QA matrix, optional code-scanning evaluation, Vercel Git-author access, and deferred capabilities remain ongoing work rather than hidden launch claims.
 
 ### Vercel production-beta checkpoint — updated 2026-08-23
 

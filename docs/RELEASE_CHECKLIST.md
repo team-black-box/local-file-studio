@@ -5,15 +5,15 @@ SPDX-License-Identifier: Apache-2.0
 
 # Release checklist
 
-Use this checklist for private-repository maintenance, the public-source transition, and production releases. Checkboxes are evidence prompts, not standing authorization for an external action.
+Use this checklist for public-repository maintenance and production releases. Checkboxes are evidence prompts, not standing authorization for an external action.
 
-## Current private-repository hardening
+## Current public-repository hardening
 
 Last verified live 2026-08-23. These items describe completed GitHub settings, not public-release or production-QA approval.
 
 Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254), successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487), and the live-settings audit plus successful [`CI` run 32652054358](https://github.com/team-black-box/local-file-studio/actions/runs/32652054358) for exact private-`main` commit `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`.
 
-- [x] Repository visibility remains private.
+- [x] Repository visibility is public by owner action on 2026-08-23.
 - [x] GitHub Actions requires full-length commit SHA references and allows selected actions only: GitHub-owned actions are allowed, other verified creators are not, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
 - [x] The default workflow token is read-only and GitHub Actions cannot approve pull requests.
 - [x] `main` requires the strict `verify` status check, an up-to-date branch, one independent approval, stale-review dismissal, latest-push approval by someone other than the pusher, resolved conversations, and linear history. The rule applies to administrators.
@@ -22,7 +22,7 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] GitHub web commits require a DCO sign-off. The pull-request workflow also verifies every non-merge commit's `Signed-off-by` trailer, covering command-line contributions before merge.
 - [x] Dependency alerts and Dependabot security updates are enabled.
 - [x] CI was rerun successfully after the Actions and branch-rule hardening; the latest inspected `main` run also passed on `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`.
-- [x] Current limitations are recorded: Private Vulnerability Reporting is unavailable while the repository is private, and GitHub secret scanning/code-security features remain disabled because private-repository licensing has not been authorized.
+- [x] Private Vulnerability Reporting, standard secret scanning, and push protection are enabled. Code scanning is not configured and is not claimed as an active control.
 
 ## Historical public-source candidate audit — 2026-08-13
 
@@ -44,7 +44,7 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] Merge the 2026-08-23 launch-preparation documentation change and confirm protected `verify` on the resulting exact `main` revision before using it as the public-visibility candidate. PR #55 merged as `e5c248cc4668854ac19ca85b6c5de4571dc1bce3`; protected run 32651454945 passed.
 - [x] Restore one independent approval, stale-review dismissal, and latest-push approval by someone other than its pusher; apply the reviewed discovery topics without changing visibility.
 - [x] Prove the review gate. Repository member `subramanian-elavathur` approved the latest reviewable commit in [PR #56](https://github.com/team-black-box/local-file-studio/pull/56) before merging it; protected post-merge run 32652054358 passed.
-- [ ] Obtain explicit owner approval for the visibility change. Immediately afterward, enable and test Private Vulnerability Reporting and re-audit every mutable repository control before inviting contributions.
+- [x] The owner changed visibility to public. Private Vulnerability Reporting was enabled, public security controls were re-audited, and exact public `main` commit `195f9c13115feb6ec736fc5cc12db8cb0ff52bc5` passed CI attempt 2 in run 32654552303.
 
 ## Current Vercel production-beta checkpoint
 
@@ -95,13 +95,13 @@ Last verified 2026-08-23. These boxes record owner-authorized external actions a
 - [x] Apply accurate discovery topics without changing visibility: `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source`.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
 
-## Immediately after an approved public visibility change
+## Post-public verification
 
-- [ ] Confirm the Actions policy, branch protection, dependency alerts, Dependabot security updates, merge settings, and administrator enforcement survived the visibility change.
-- [ ] Enable GitHub Private Vulnerability Reporting and verify that `SECURITY.md` and the issue-template security route point reporters to the working private channel.
-- [ ] Re-evaluate secret-scanning and code-security availability/licensing for the public repository. Obtain owner authorization and enable the approved controls, or document the approved alternative; do not claim these controls are enabled before verification.
+- [x] Confirm the Actions policy, branch protection, dependency alerts, Dependabot security updates, merge settings, and administrator enforcement survived the visibility change.
+- [x] Enable GitHub Private Vulnerability Reporting and update `SECURITY.md` plus the issue-template security route to the working private channel.
+- [x] Confirm standard secret scanning and push protection are enabled. Code scanning remains unconfigured; do not claim it as active or enable paid/separately licensed features without authorization.
 - [ ] Re-run the DCO check on a public pull request and confirm web sign-off remains enabled before inviting external contributions.
-- [ ] Rerun CI on the public repository and record the successful run and settings review.
+- [x] Rerun CI on the public repository: attempt 2 of run 32654552303 passed on exact `main` commit `195f9c13115feb6ec736fc5cc12db8cb0ff52bc5`.
 
 ## Before an initial Vercel preview
 
