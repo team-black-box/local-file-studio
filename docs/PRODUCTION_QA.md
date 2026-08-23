@@ -17,6 +17,8 @@ The GitHub repository remains private. Its hardened Actions/branch settings and 
 
 The owner authorized a Vercel preview, production-beta promotion, Git integration, and custom-domain launch on 2026-08-13. Deployment, header, SEO, offline-artifact, rollback-target, Git-link, and live custom-domain evidence is recorded below. The initial promotion does not convert the remaining unchecked browser rows into passes or waivers; they continue against the deployed beta.
 
+As of 2026-08-23, exact merged private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26` is deployed as READY production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi`. The clean build and public apex expose byte-identical service-worker and precache-manifest artifacts. The owner deferred the file-driven Blur Face portrait check; row 47 remains unchecked, and the deferral is neither a pass nor a launch waiver.
+
 ## Initial Vercel beta smoke gate
 
 Run this focused suite on the exact candidate before a normal beta promotion. The owner explicitly authorized the initial production beta with the still-open checks carried forward as ongoing deployed-candidate QA. Record browser, deployment, service-worker revision, fixtures, and evidence below. A failure in privacy, document integrity, security, bounded resource use, offline update safety, or rollback safety blocks any later promotion regardless of whether the affected catalog row is listed here.
@@ -41,7 +43,7 @@ Run this focused suite on the exact candidate before a normal beta promotion. Th
 - [ ] The candidate deployment and immediately previous known-good rollback target are recorded, and the rollback plus subsequent online/offline reload procedure is exercised or otherwise explicitly verified before promotion.
 - [ ] Every remaining unchecked tool row and known limitation is recorded for ongoing beta QA without being relabeled as passed or waived.
 
-## Test record
+## Initial beta test record — 2026-08-13
 
 - Candidate Git commit: merged private `main` commit `477e6dd1a90a31913de86388a3b97db817485ba4`; this evidence update is a documentation and deployment-boundary change based on that commit
 - Environment (`local production preview`, authorized Vercel preview, or production): authorized Vercel preview and production beta, supported by the earlier local production-browser smoke
@@ -86,6 +88,14 @@ Run this focused suite on the exact candidate before a normal beta promotion. Th
 - The exact preview artifact was promoted to READY production deployment `dpl_EY92wx11fjabk3gpkacNVrAoCiMe`. The apex homepage and `/tools/convert-image` return `200`; the tool page exposes its matching title and canonical URL; `www` returns a permanent `308` to the apex; and the live service-worker revision matches the preview build. The current source catalog and deployed production catalog are therefore aligned for this revision.
 - Git-triggered deployments authored by `abs192` remain blocked because that Git author lacks Vercel project access. The authenticated, Git-metadata-free CLI deployment intentionally bypassed only that attribution gate; it did not alter repository history, project settings, or application behavior. Resolve the membership limitation before depending on `abs192` Git-triggered releases.
 - READY deployments `dpl_7wCrLUHAhixQpbRDEDtXsskeh7PJ` and `dpl_qt1lzjprg` remain visible as prior artifacts. No rollback, offline network simulation, Cache Storage inspection, production offline reload, or two-build open-tab update was performed in the current deployment pass, so those boxes remain unchecked.
+
+### Current production and launch-preparation evidence — 2026-08-23
+
+- Exact merged private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26` passed protected [CI run 32634352301](https://github.com/team-black-box/local-file-studio/actions/runs/32634352301). A clean `git archive` export of that commit was deployed as production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi`, which Vercel reports as `READY` and aliases to `https://localfilestudio.app`.
+- The apex `/tools/blur-face` response returned `200` with the committed CSP, Permissions Policy, referrer, framing, MIME, and HSTS headers. The deployed `sw.js` and `precache-manifest.json` are byte-identical to the clean build: SHA-256 `479074f8689d745045b85b8f88d808a754cad3fdcfd4ec0e19e0bd0e35742a76` and `25ece43f54fc9e9c6c9cd6ffdba44dfbf079ec4a629d6ae9359b12e792dac225`. The manifest contains 80 entries and the service-worker revision is `b8c58adfee8c0147`.
+- Chrome opened the current Blur Face empty workbench on a fresh production origin with the expected manual-privacy-area copy and no captured runtime log. The same browser does not expose the native `FaceDetector` API, so this confirms the correct fallback entry state, not the file-driven resize/placement result. The owner explicitly deferred that portrait test; row 47 remains unchecked.
+- An already-open apex tab retained its matching previous offline shell while the new revision waited, as designed. A fresh production origin received the current application. The complete old-client-to-new-client activation sequence, final-hostname offline processing, Cache Storage privacy inspection, physical mobile coverage, and exercised rollback remain open wherever their matrix boxes are unchecked.
+- The 47-tool interaction audit is complete, but completion of `docs/TOOL_UX_AUDIT.md` is not substituted for any online, offline, privacy/network, or independent-result box below. Any newly observed privacy, integrity, security, crash, unbounded-resource, offline-update, or rollback defect remains a release blocker.
 
 ## Shared protocol for every row
 
