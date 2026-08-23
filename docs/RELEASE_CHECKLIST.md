@@ -100,7 +100,7 @@ Last verified 2026-08-23. These boxes record owner-authorized external actions a
 - [x] Confirm the Actions policy, branch protection, dependency alerts, Dependabot security updates, merge settings, and administrator enforcement survived the visibility change.
 - [x] Enable GitHub Private Vulnerability Reporting and update `SECURITY.md` plus the issue-template security route to the working private channel.
 - [x] Confirm standard secret scanning and push protection are enabled. Code scanning remains unconfigured; do not claim it as active or enable paid/separately licensed features without authorization.
-- [ ] Re-run the DCO check on a public pull request and confirm web sign-off remains enabled before inviting external contributions.
+- [x] Public [PR #58](https://github.com/team-black-box/local-file-studio/pull/58) executed the DCO workflow check and verified its signed-off commit; the GitHub web-commit sign-off setting also remains enabled.
 - [x] Rerun CI on the public repository: attempt 2 of run 32654552303 passed on exact `main` commit `195f9c13115feb6ec736fc5cc12db8cb0ff52bc5`.
 
 ## Before an initial Vercel preview
