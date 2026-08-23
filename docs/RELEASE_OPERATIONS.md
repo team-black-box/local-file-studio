@@ -29,13 +29,13 @@ Last verified live 2026-08-23:
 - Repository visibility is private.
 - Actions must use full-length commit SHA references. The repository allows selected actions only: GitHub-owned actions are allowed, actions from other verified creators are disallowed, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
 - The default workflow token has read-only permissions and workflows cannot approve pull requests.
-- `main` requires resolution of review conversations, linear history, and the strict required `verify` status check. Branches must be up to date before merge. Required approvals, stale-review dismissal, and last-push approval are temporarily disabled during private iteration and must be restored before public visibility.
+- `main` requires resolution of review conversations, linear history, the strict up-to-date `verify` status check, one independent approval, stale-review dismissal, and approval after the latest reviewable push by someone other than its pusher.
 - The `main` rule applies to administrators. Force pushes and branch deletion are disabled.
 - Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically, and updating pull-request branches is enabled.
 - GitHub web commits require a DCO sign-off. The pull-request workflow verifies the `Signed-off-by` trailer on every non-merge commit, including commits created outside the web interface.
-- Dependency alerts and Dependabot security updates are enabled. Automated security updates must pass the same strict CI rules as other changes and, after public visibility, the restored review rules.
-- CI was rerun successfully after these settings were applied. The latest inspected protected run, [32634352301](https://github.com/team-black-box/local-file-studio/actions/runs/32634352301), passed on exact private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26`.
-- The repository currently has no discovery topics. The reviewed public launch set is `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source`; applying it is a separate repository-setting action.
+- Dependency alerts and Dependabot security updates are enabled. Automated security updates must pass the same strict CI and independent-review rules as other changes.
+- CI was rerun successfully after these settings were applied. The latest inspected protected run, [32651454945](https://github.com/team-black-box/local-file-studio/actions/runs/32651454945), passed on exact private-`main` commit `e5c248cc4668854ac19ca85b6c5de4571dc1bce3`.
+- The repository topics are `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source` (GitHub may return them in sorted order).
 
 Private Vulnerability Reporting is not available in the current private state. GitHub secret scanning and code-security features are also disabled because private-repository licensing has not been authorized. Do not describe any of those controls as active. Enabling paid or licensed private-repository security features requires explicit owner authorization.
 
@@ -50,7 +50,7 @@ Before inviting public issues or pull requests:
 3. Enable Private Vulnerability Reporting as soon as it becomes available and verify the private reporting path from `SECURITY.md` and the issue forms.
 4. Re-evaluate secret-scanning and code-security availability/licensing in the public state. Enable only owner-approved controls and record what was actually verified.
 5. Reverify DCO enforcement for both contribution paths: the GitHub setting supplies sign-off for web commits, and the checked-in pull-request workflow validates every non-merge commit created outside the web interface.
-6. Before changing visibility, restore and verify one independent approval, stale-review dismissal, and last-push approval by someone other than its pusher. Preserve strict `verify`, administrator enforcement, linear history, and the force-push/deletion blocks.
+6. Before changing visibility, reverify one independent approval, stale-review dismissal, and latest-push approval by someone other than its pusher. Preserve strict `verify`, administrator enforcement, linear history, and the force-push/deletion blocks.
 
 Use squash or rebase merges only if the resulting history retains the required DCO evidence. Merge commits are disabled. Do not make cryptographic commit signing and DCO sign-off interchangeable; they attest to different things.
 
@@ -59,7 +59,7 @@ Use squash or rebase merges only if the resulting history retains the required D
 The current private-repository source flow is:
 
 ```text
-issue -> topic branch -> pull request -> strict CI
+issue -> topic branch -> pull request -> strict CI -> independent approval
       -> squash/rebase merge to main
 ```
 
@@ -70,18 +70,11 @@ issue -> topic branch -> pull request -> CI -> Vercel preview -> affected QA
       -> merge to main -> production build -> smoke checks
 ```
 
-Before public visibility, restore the contribution review step:
-
-```text
-issue -> topic branch -> pull request -> strict CI -> independent approval
-      -> squash/rebase merge to main
-```
-
 1. Triage the issue for privacy, data-integrity, resource-limit, compatibility, provenance, and licensing impact.
 2. Create a focused branch from current `main`; use `fix/…`, `feat/…`, `docs/…`, or another descriptive prefix.
 3. Develop with synthetic fixtures. Run `bun install --frozen-lockfile`, focused tests, and `bun run verify`.
 4. Open a pull request with signed-off commits. CI builds from checked-out repository files only and the strict `verify` check must pass on an up-to-date branch.
-5. Resolve every conversation. During private iteration, independent approval is optional; after the repository becomes public, obtain the restored required approval after the latest reviewable push. Merge by squash or rebase only.
+5. Resolve every conversation and obtain the required independent approval after the latest reviewable push. A new reviewable push dismisses stale approval and must be approved by someone other than its pusher. Merge by squash or rebase only.
 6. Let the Git integration create a preview for the pull request. Treat preview URLs as public enough that no secrets, customer documents, or confidential fixture data may be embedded in them.
 7. Complete affected rows in [PRODUCTION_QA.md](PRODUCTION_QA.md), including a no-upload network inspection and offline test against the production build. For the first beta promotion, also complete the document's focused launch-critical smoke gate; the rest of the 47-tool matrix remains an ongoing deployed-candidate ledger.
 8. Merge only after CI, DCO, applicable review requirements, preview QA, and legal/provenance gates pass.
