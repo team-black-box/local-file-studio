@@ -25,9 +25,9 @@ The `main` branch is protected, including for administrators. Do not push direct
 4. Run the frozen install and full verification commands below.
 5. Exercise affected tools in a production preview. Use the shared checks in [docs/PRODUCTION_QA.md](docs/PRODUCTION_QA.md) and record the relevant rows in the pull request.
 6. Open a pull request with the template completed and every commit signed off for the DCO.
-7. Keep the branch up to date with `main`. The strict required `verify` check must pass on the current revision and all review conversations must be resolved.
+7. Keep the branch up to date with `main`. The strict required `verify` check must pass on the current revision, all review conversations must be resolved, and a reviewer other than the latest pusher must approve after the latest reviewable push.
 
-Pull requests should be small enough to review, explain why the behavior is safe, and include tests or documentation for user-visible changes. A passing build is necessary but does not replace manual checks for visual output, browser compatibility, offline operation, malformed input, or resource cleanup. While the repository is private, the owner has temporarily removed the independent-approval requirement to reduce iteration friction. Before public contributions are invited, maintainers must restore independent approval, stale-review dismissal, and last-push approval by someone other than the pusher.
+Pull requests should be small enough to review, explain why the behavior is safe, and include tests or documentation for user-visible changes. A passing build is necessary but does not replace manual checks for visual output, browser compatibility, offline operation, malformed input, or resource cleanup. One independent approval is required; new reviewable pushes dismiss stale approvals, and the latest such push must be approved by someone other than its pusher.
 
 ## Local setup
 

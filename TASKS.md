@@ -15,19 +15,18 @@ The following is a dated audit snapshot, not a promise that external settings ca
 
 - The repository is private. The configured remote remains `https://github.com/team-black-box/local-file-studio.git`; the GitHub repository homepage is `https://localfilestudio.app`.
 - GitHub Actions requires full commit SHAs and uses a selected-actions allowlist. GitHub-owned actions are allowed, other verified creators are disallowed, and only `oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6` is separately allowlisted.
-- The default workflow token remains read-only and cannot approve pull requests. The protected `CI` run for exact private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26` passed as [run 32634352301](https://github.com/team-black-box/local-file-studio/actions/runs/32634352301).
-- `main` requires the strict, up-to-date `verify` check from the `CI` workflow, resolved conversations, and administrator enforcement. Linear history is required; force pushes and branch deletion are blocked. Required approvals, stale-review dismissal, and last-push approval remain temporarily disabled for private iteration.
+- The default workflow token remains read-only and cannot approve pull requests. The protected `CI` run for exact private-`main` commit `e5c248cc4668854ac19ca85b6c5de4571dc1bce3` passed as [run 32651454945](https://github.com/team-black-box/local-file-studio/actions/runs/32651454945).
+- `main` requires the strict, up-to-date `verify` check from the `CI` workflow, one independent approval, approval after the latest reviewable push by someone other than its pusher, stale-approval dismissal, resolved conversations, and administrator enforcement. Linear history is required; force pushes and branch deletion are blocked.
 - Merge commits are disabled. DCO sign-off is enabled for GitHub web commits, and the pull-request workflow verifies every non-merge commit's `Signed-off-by` trailer.
 - Dependency alerts and Dependabot security updates are enabled. Secret scanning and Code Security remain disabled in the private repository because the applicable licensing or purchase has not been approved.
 - Private Vulnerability Reporting is unavailable while the repository remains private. Enable and verify it immediately after an approved public visibility change and before inviting public security reports; do not invent a contact address in the meantime.
-- The repository currently has no discovery topics. The reviewed launch set is `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source`; applying it is a separate repository-setting action and must not change visibility as a side effect.
+- The repository topics are `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source` (GitHub may return them in sorted order).
 
 ### Remaining public-source gate
 
-- The reviewed public-readiness work in PR #11, Convert Image/search work in PR #13, private-iteration controls in PR #15, final audit in PR #16, and the subsequent 47-tool interaction enhancements through PR #54 are merged. Exact private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26` passed the protected clean-checkout `verify` job.
+- The reviewed public-readiness work in PR #11, Convert Image/search work in PR #13, private-iteration controls in PR #15, final audit in PR #16, the subsequent 47-tool interaction enhancements through PR #54, and launch-preparation PR #55 are merged. Exact private-`main` commit `e5c248cc4668854ac19ca85b6c5de4571dc1bce3` passed the protected clean-checkout `verify` job.
 - Re-audit Actions pins and allowlist, workflow permissions, token access, branch protection, merge/DCO settings, dependency automation, security features, repository visibility, and the configured remote immediately before launch.
-- Before public visibility, restore one independent approval, stale-review dismissal, and approval of the latest reviewable push by someone other than its pusher; verify the restored rule with a test pull request.
-- Apply the reviewed discovery topic set before visibility changes; do not change visibility as a side effect.
+- The independent-review rules and topic set were applied on 2026-08-23. Merge the proof pull request only after a reviewer other than the latest pusher approves it; recheck that stale dismissal and latest-push approval remain active immediately before visibility changes.
 - Decide and document the approved secret-scanning/code-security posture. Treat an unavailable or unapproved feature as an explicit residual risk, not as enabled protection.
 - Obtain explicit owner authorization before making the repository public. After visibility changes, verify public vulnerability reporting and every intended public security control before soliciting contributions.
 - Keep the live Vercel beta operationally separate from the still-private source repository. Public visibility, later production promotions, and security-setting changes continue to require their own current approval and verification.
@@ -62,7 +61,7 @@ The following is a dated audit snapshot, not a promise that external settings ca
 - The owner deferred the file-driven Blur Face portrait check. Its catalog row remains unchecked, the browser-dependent detection and anonymity caveats remain visible, and the deferral is not a waiver or pass.
 - The two defects observed on 2026-08-15—dedicated Unlock PDF password retention and TIFF dimension discovery—were corrected in commit `fe7d9a4` (PR #18). Their automated coverage is part of `bun run verify`; the corresponding exact deployed manual cases remain ongoing QA rather than known unresolved source defects.
 - No current known privacy leak, document-corruption defect, security failure, crash, unbounded-resource defect, broken offline update, or failed rollback has been accepted for launch. Discovery of any such defect remains a stop condition even after a visibility change is approved.
-- Remaining public-source work is the final documentation/clean-source verification PR, restored independent-review rules, the reviewed topic set, explicit owner authorization for visibility, and immediate post-public verification of vulnerability reporting and approved security controls.
+- Remaining public-source work is independent approval and merge of the hardening proof PR, explicit owner authorization for visibility, and immediate post-public verification of vulnerability reporting and approved security controls.
 
 ### Vercel production-beta checkpoint — updated 2026-08-23
 
