@@ -10,6 +10,7 @@ export const FACE_BLUR_STRENGTHS = Object.freeze([
 ]);
 
 export const FACE_BLUR_DEFAULT_FOCUS = Object.freeze({ x: 50, y: 35 });
+export const FACE_BLUR_DEFAULT_REGION_SIZE = 34;
 
 const VALID_FALLBACK_REASONS = new Set(["unavailable", "not-found", "detection-error"]);
 
@@ -38,6 +39,14 @@ export function getFaceBlurFocus(focusX = FACE_BLUR_DEFAULT_FOCUS.x, focusY = FA
   return { x, y };
 }
 
+export function getFaceBlurRegionSize(value = FACE_BLUR_DEFAULT_REGION_SIZE) {
+  const size = finiteNumber(value, "Privacy-area size");
+  if (size < 18 || size > 64) {
+    throw new FileLimitError("invalid-face-blur-region-size", "Privacy-area size must stay between 18% and 64% of the image's shorter edge.");
+  }
+  return size;
+}
+
 function normalizeRegion(region, width, height) {
   const x = Number(region?.x);
   const y = Number(region?.y);
@@ -53,9 +62,10 @@ function normalizeRegion(region, width, height) {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
-export function createFaceBlurFallbackRegion(width, height, focusX, focusY) {
+export function createFaceBlurFallbackRegion(width, height, focusX, focusY, regionSize = FACE_BLUR_DEFAULT_REGION_SIZE) {
   const focus = getFaceBlurFocus(focusX, focusY);
-  const size = Math.min(width, height) * 0.34;
+  const normalizedSize = getFaceBlurRegionSize(regionSize);
+  const size = Math.min(width, height) * (normalizedSize / 100);
   return normalizeRegion({
     x: width * (focus.x / 100) - size / 2,
     y: height * (focus.y / 100) - (size * 1.12) / 2,
@@ -70,6 +80,7 @@ export function createFaceBlurPlan({
   strength = 24,
   focusX = FACE_BLUR_DEFAULT_FOCUS.x,
   focusY = FACE_BLUR_DEFAULT_FOCUS.y,
+  regionSize = FACE_BLUR_DEFAULT_REGION_SIZE,
   detectedRegions = [],
   fallbackReason = "not-found",
   maxDetectedFaces = 40,
@@ -91,6 +102,7 @@ export function createFaceBlurPlan({
 
   const normalizedStrength = getFaceBlurStrength(strength);
   const focus = getFaceBlurFocus(focusX, focusY);
+  const normalizedRegionSize = getFaceBlurRegionSize(regionSize);
   const regions = detectedRegions.map((region) => normalizeRegion(region, sourceWidth, sourceHeight)).filter(Boolean);
   if (regions.length) {
     return {
@@ -101,6 +113,7 @@ export function createFaceBlurPlan({
       fallbackReason: "",
       focusX: focus.x,
       focusY: focus.y,
+      regionSize: normalizedRegionSize,
       regions,
     };
   }
@@ -115,11 +128,12 @@ export function createFaceBlurPlan({
     fallbackReason,
     focusX: focus.x,
     focusY: focus.y,
-    regions: [createFaceBlurFallbackRegion(sourceWidth, sourceHeight, focus.x, focus.y)],
+    regionSize: normalizedRegionSize,
+    regions: [createFaceBlurFallbackRegion(sourceWidth, sourceHeight, focus.x, focus.y, normalizedRegionSize)],
   };
 }
 
-export function validateFaceBlurPlan(plan, width, height, strength, maxDetectedFaces = 40, focusX = plan?.focusX, focusY = plan?.focusY) {
+export function validateFaceBlurPlan(plan, width, height, strength, maxDetectedFaces = 40, focusX = plan?.focusX, focusY = plan?.focusY, regionSize = plan?.regionSize) {
   if (!plan || !["detected", "centered-fallback"].includes(plan.mode)) {
     throw new FileLimitError("invalid-face-blur-plan", "The reviewed Blur Face plan is no longer valid. Wait for a fresh preview and retry.");
   }
@@ -129,11 +143,12 @@ export function validateFaceBlurPlan(plan, width, height, strength, maxDetectedF
     strength,
     focusX,
     focusY,
+    regionSize,
     detectedRegions: plan.mode === "detected" ? plan.regions : [],
     fallbackReason: plan.mode === "centered-fallback" ? plan.fallbackReason : "not-found",
     maxDetectedFaces,
   });
-  if (recreated.mode !== plan.mode || recreated.width !== plan.width || recreated.height !== plan.height || recreated.focusX !== plan.focusX || recreated.focusY !== plan.focusY) {
+  if (recreated.mode !== plan.mode || recreated.width !== plan.width || recreated.height !== plan.height || recreated.focusX !== plan.focusX || recreated.focusY !== plan.focusY || recreated.regionSize !== plan.regionSize) {
     throw new FileLimitError("stale-face-blur-plan", "The image changed after its Blur Face preview. Wait for the new preview and retry.");
   }
   return recreated;
@@ -201,6 +216,7 @@ export function createFaceBlurOutcome(plan, format, outputBytes) {
     regionCount: plan.regions.length,
     focusX: plan.focusX,
     focusY: plan.focusY,
+    regionSize: plan.regionSize,
     format: normalizedFormat,
     outputBytes,
   };

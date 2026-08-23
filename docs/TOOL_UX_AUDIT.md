@@ -70,7 +70,7 @@ Native text or number entry remains available when precision matters. Numeric li
 | Meme Generator | Real bounded image preview, counted top/bottom captions, caption swap, Meme caps/Keep typing choices, deterministic four-line auto-fit, honest fit/privacy disclosure, and matching result summary | Keep; continue long/non-ASCII caption, contrast, mobile, and browser-canvas QA |
 | Rotate Image | Real bounded first-image preview, direct Turn right/Turn around/Turn left choices with direction icons, exact original → rotated dimensions, batch rule, privacy/metadata disclosure, and matching result summary | Keep; continue mixed-orientation batch, transparency, mobile, and browser-canvas QA |
 | HTML to Image | Complete: direct JPG/SVG choices, familiar device-width presets plus exact fine-tuning, same-rule sanitized live capture, exact layout/output dimensions, removal feedback, and matching result summary | Keep; continue long-capture, embedded-data-image, browser-rendering, mobile, and offline QA |
-| Blur Face | Complete: bounded first-image privacy preview, auto-detected region guides or an explicitly movable centered fallback, direct Light/Balanced/Strong choices, exact fine-tuning, and single/batch outcomes | Re-test native detection across supported browsers as the Shape Detection API changes |
+| Blur Face | Complete: bounded first-image privacy preview, auto-detected region guides or an explicitly movable and 18–64% resizable manual fallback, direct Light/Balanced/Strong choices, exact fine-tuning, and single/batch outcomes | Keep; re-test native detection across supported browsers as the Shape Detection API changes |
 
 ## Delivery waves
 

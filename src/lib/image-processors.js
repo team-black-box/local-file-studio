@@ -223,8 +223,9 @@ async function detectFaceBlurPlan(source, width, height, options, limits) {
   const strength = getFaceBlurStrength(options.strength ?? options.blur ?? 24);
   const focusX = options.focusX ?? 50;
   const focusY = options.focusY ?? 35;
+  const regionSize = options.regionSize ?? 34;
   if (!("FaceDetector" in window)) {
-    return createFaceBlurPlan({ width, height, strength, focusX, focusY, fallbackReason: "unavailable", maxDetectedFaces: limits.maxDetectedFaces });
+    return createFaceBlurPlan({ width, height, strength, focusX, focusY, regionSize, fallbackReason: "unavailable", maxDetectedFaces: limits.maxDetectedFaces });
   }
 
   try {
@@ -242,6 +243,7 @@ async function detectFaceBlurPlan(source, width, height, options, limits) {
       strength,
       focusX,
       focusY,
+      regionSize,
       detectedRegions: faces.map(({ boundingBox }) => ({
         x: boundingBox?.x,
         y: boundingBox?.y,
@@ -253,7 +255,7 @@ async function detectFaceBlurPlan(source, width, height, options, limits) {
     });
   } catch (error) {
     if (error instanceof FileLimitError) throw error;
-    return createFaceBlurPlan({ width, height, strength, focusX, focusY, fallbackReason: "detection-error", maxDetectedFaces: limits.maxDetectedFaces });
+    return createFaceBlurPlan({ width, height, strength, focusX, focusY, regionSize, fallbackReason: "detection-error", maxDetectedFaces: limits.maxDetectedFaces });
   }
 }
 
@@ -341,7 +343,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       const context = canvas.getContext("2d");
       const reviewedPlan = options.faceBlurPreview?.file === file ? options.faceBlurPreview?.result?.faceBlurPlan : null;
       faceBlurPlan = reviewedPlan
-        ? validateFaceBlurPlan(reviewedPlan, bitmap.width, bitmap.height, options.strength ?? options.blur ?? 24, limits.maxDetectedFaces, options.focusX ?? 50, options.focusY ?? 35)
+        ? validateFaceBlurPlan(reviewedPlan, bitmap.width, bitmap.height, options.strength ?? options.blur ?? 24, limits.maxDetectedFaces, options.focusX ?? 50, options.focusY ?? 35, options.regionSize ?? 34)
         : await detectFaceBlurPlan(bitmap.source, bitmap.width, bitmap.height, options, limits);
       drawFaceBlur(context, bitmap.source, faceBlurPlan);
     } else {
@@ -435,7 +437,7 @@ async function renderOne(slug, file, options, report, pixelBudget) {
       : slug === "blur-face"
         ? {
           ...result,
-          details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${faceBlurPlan.mode === "detected" ? `${faceBlurPlan.regions.length.toLocaleString()} detected ${faceBlurPlan.regions.length === 1 ? "face" : "faces"}` : "reviewed privacy area"} · ${faceBlurPlan.strength.toLocaleString()} px blur`,
+          details: `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} · ${faceBlurPlan.mode === "detected" ? `${faceBlurPlan.regions.length.toLocaleString()} detected ${faceBlurPlan.regions.length === 1 ? "face" : "faces"}` : `reviewed ${faceBlurPlan.regionSize.toLocaleString()}% privacy area`} · ${faceBlurPlan.strength.toLocaleString()} px blur`,
           faceBlurOutcome: createFaceBlurOutcome(faceBlurPlan, config.ext, blob.size),
         }
       : slug === "photo-editor"
@@ -518,6 +520,7 @@ export async function createFaceBlurPreview(file, options = {}) {
       strength: plan.strength,
       focusX: plan.focusX,
       focusY: plan.focusY,
+      regionSize: plan.regionSize,
     };
   } finally {
     bitmap.close?.();
@@ -850,6 +853,7 @@ export async function processImageTool(slug, files, options = {}, report) {
       faceBlurBatchOutcome: {
         fileCount: results.length,
         strength: outcomes[0].strength,
+        regionSize: outcomes[0].regionSize,
         detectedFiles: outcomes.filter((outcome) => outcome.mode === "detected").length,
         fallbackFiles: outcomes.filter((outcome) => outcome.mode === "centered-fallback").length,
         regionCount: outcomes.reduce((sum, outcome) => sum + outcome.regionCount, 0),

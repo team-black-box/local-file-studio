@@ -100,7 +100,7 @@ import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES, getBackgro
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, getImageWatermarkAngle, getImageWatermarkColor, getImageWatermarkPosition } from "./lib/image-watermark.js";
 import { IMAGE_MEME_CASES, getImageMemeCase } from "./lib/image-meme.js";
 import { IMAGE_ROTATIONS, getImageRotation } from "./lib/image-rotation.js";
-import { FACE_BLUR_STRENGTHS, getFaceBlurStrength } from "./lib/face-blur.js";
+import { FACE_BLUR_STRENGTHS, getFaceBlurRegionSize, getFaceBlurStrength } from "./lib/face-blur.js";
 import { HTML_IMAGE_FORMATS, HTML_IMAGE_VIEWPORTS, createHtmlImageCapture, createHtmlImagePlan, getHtmlImageFormat, sanitizeHtmlImageSource } from "./lib/html-image.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./lib/file-preflight.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./lib/pdfjs-utils.js";
@@ -3933,7 +3933,7 @@ function FaceBlurResultSummary({ result }) {
     return (
       <div className="face-blur-result-summary" role="status" aria-live="polite">
         <span><EyeSlashIcon size={23} weight="duotone" aria-hidden="true" /></span>
-        <div><strong>{batch.regionCount.toLocaleString()} privacy {batch.regionCount === 1 ? "area" : "areas"} blurred</strong><small>{batch.fileCount.toLocaleString()} images · {detection} · {batch.strength.toLocaleString()} px strength</small></div>
+        <div><strong>{batch.regionCount.toLocaleString()} privacy {batch.regionCount === 1 ? "area" : "areas"} blurred</strong><small>{batch.fileCount.toLocaleString()} images · {detection}{batch.fallbackFiles ? ` · ${batch.regionSize.toLocaleString()}% manual area` : ""} · {batch.strength.toLocaleString()} px strength</small></div>
         <b>{formatBytes(result.size)} ZIP</b>
       </div>
     );
@@ -3942,7 +3942,7 @@ function FaceBlurResultSummary({ result }) {
   return (
     <div className="face-blur-result-summary" role="status" aria-live="polite">
       <span><EyeSlashIcon size={23} weight="duotone" aria-hidden="true" /></span>
-      <div><strong>{outcome.mode === "detected" ? `${outcome.regionCount.toLocaleString()} detected ${outcome.regionCount === 1 ? "face" : "faces"} blurred` : "Reviewed privacy area blurred"}</strong><small>{outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px · {outcome.strength.toLocaleString()} px strength · {outcome.format.toUpperCase()}</small></div>
+      <div><strong>{outcome.mode === "detected" ? `${outcome.regionCount.toLocaleString()} detected ${outcome.regionCount === 1 ? "face" : "faces"} blurred` : "Reviewed privacy area blurred"}</strong><small>{outcome.width.toLocaleString()} × {outcome.height.toLocaleString()} px{outcome.mode === "centered-fallback" ? ` · ${outcome.regionSize.toLocaleString()}% manual area` : ""} · {outcome.strength.toLocaleString()} px strength · {outcome.format.toUpperCase()}</small></div>
       <b>{formatBytes(outcome.outputBytes)}</b>
     </div>
   );
@@ -5900,33 +5900,34 @@ function useFaceBlurPreview(file, settings, enabled, tool) {
   const strength = Number(settings.strength ?? 24);
   const focusX = Number(settings.focusX ?? 50);
   const focusY = Number(settings.focusY ?? 35);
-  const [preview, setPreview] = useState({ state: "idle", file: null, strength, focusX, focusY, outputUrl: "", result: null, message: "" });
+  const regionSize = Number(settings.regionSize ?? 34);
+  const [preview, setPreview] = useState({ state: "idle", file: null, strength, focusX, focusY, regionSize, outputUrl: "", result: null, message: "" });
 
   useEffect(() => {
     if (!file || !enabled) {
-      setPreview({ state: "idle", file: null, strength, focusX, focusY, outputUrl: "", result: null, message: "" });
+      setPreview({ state: "idle", file: null, strength, focusX, focusY, regionSize, outputUrl: "", result: null, message: "" });
       return undefined;
     }
 
     let cancelled = false;
     let outputUrl = "";
-    setPreview({ state: "loading", file, strength, focusX, focusY, outputUrl: "", result: null, message: "" });
+    setPreview({ state: "loading", file, strength, focusX, focusY, regionSize, outputUrl: "", result: null, message: "" });
     const timer = window.setTimeout(() => {
       (async () => {
-        await preflightToolFiles(tool, [file], { strength, focusX, focusY });
+        await preflightToolFiles(tool, [file], { strength, focusX, focusY, regionSize });
         const { createFaceBlurPreview } = await import("./lib/image-processors.js");
-        const result = await createFaceBlurPreview(file, { strength, focusX, focusY });
+        const result = await createFaceBlurPreview(file, { strength, focusX, focusY, regionSize });
         outputUrl = URL.createObjectURL(result.blob);
         if (cancelled) {
           URL.revokeObjectURL(outputUrl);
           outputUrl = "";
           return;
         }
-        setPreview({ state: "ready", file, strength, focusX, focusY, outputUrl, result, message: "" });
+        setPreview({ state: "ready", file, strength, focusX, focusY, regionSize, outputUrl, result, message: "" });
       })().catch((error) => {
         if (outputUrl) URL.revokeObjectURL(outputUrl);
         outputUrl = "";
-        if (!cancelled) setPreview({ state: "error", file, strength, focusX, focusY, outputUrl: "", result: null, message: toFriendlyResourceError(error, "Blur Face")?.message || "This privacy preview could not be created safely." });
+        if (!cancelled) setPreview({ state: "error", file, strength, focusX, focusY, regionSize, outputUrl: "", result: null, message: toFriendlyResourceError(error, "Blur Face")?.message || "This privacy preview could not be created safely." });
       });
     }, 160);
 
@@ -5935,7 +5936,7 @@ function useFaceBlurPreview(file, settings, enabled, tool) {
       window.clearTimeout(timer);
       if (outputUrl) URL.revokeObjectURL(outputUrl);
     };
-  }, [enabled, file, focusX, focusY, strength, tool]);
+  }, [enabled, file, focusX, focusY, regionSize, strength, tool]);
 
   return preview;
 }
@@ -5946,7 +5947,7 @@ const faceBlurPresetIcons = Object.freeze({
   40: EyeSlashIcon,
 });
 
-function FaceBlurControls({ files, settings, setting, onChange, onMove, preview }) {
+function FaceBlurControls({ files, settings, setting, sizeSetting, onChange, onMove, preview }) {
   const file = files[0];
   const batch = files.length > 1;
   const outcome = preview.state === "ready" ? preview.result : null;
@@ -5981,7 +5982,7 @@ function FaceBlurControls({ files, settings, setting, onChange, onMove, preview 
               type="button"
               className="face-blur-preview-positioner"
               style={{ "--face-preview-ratio": outcome.previewWidth / outcome.previewHeight }}
-              aria-label="Move the centered privacy area. Drag, click, or use the arrow keys."
+              aria-label="Move the manual privacy area. Drag, click, or use the arrow keys."
               onPointerDown={(event) => { dragRef.current = true; event.currentTarget.setPointerCapture?.(event.pointerId); moveFallback(event); }}
               onPointerMove={(event) => { if (dragRef.current) moveFallback(event); }}
               onPointerUp={(event) => { dragRef.current = false; event.currentTarget.releasePointerCapture?.(event.pointerId); }}
@@ -5994,12 +5995,12 @@ function FaceBlurControls({ files, settings, setting, onChange, onMove, preview 
                 onMove(Math.max(10, Math.min(90, Number(settings.focusX) + delta[0])), Math.max(10, Math.min(90, Number(settings.focusY) + delta[1])));
               }}
             >
-              <img src={preview.outputUrl} alt={`Preview of ${file.name} with a movable centered privacy area`} draggable="false" />
+              <img src={preview.outputUrl} alt={`Preview of ${file.name} with a movable manual privacy area`} draggable="false" />
             </button>
           ) : (
             <div style={{ "--face-preview-ratio": outcome.previewWidth / outcome.previewHeight }}><img src={preview.outputUrl} alt={`Preview of ${file.name} with ${outcome.regionCount.toLocaleString()} detected face ${outcome.regionCount === 1 ? "area" : "areas"} blurred`} /></div>
           )}
-          <figcaption><span><strong>{fallback ? "Centered privacy area" : `${outcome.regionCount.toLocaleString()} ${outcome.regionCount === 1 ? "face" : "faces"} found`}</strong><small>{fallback ? "Drag the orange guide onto the face before export." : "Orange guides show every area that will be blurred."}</small></span><b>{outcome.previewScale < 1 ? `${outcome.previewWidth.toLocaleString()} × ${outcome.previewHeight.toLocaleString()}` : "FULL-SIZE"}</b></figcaption>
+          <figcaption><span><strong>{fallback ? "Manual privacy area" : `${outcome.regionCount.toLocaleString()} ${outcome.regionCount === 1 ? "face" : "faces"} found`}</strong><small>{fallback ? "Move and resize the orange guide so it fully covers the face." : "Orange guides show every area that will be blurred."}</small></span><b>{outcome.previewScale < 1 ? `${outcome.previewWidth.toLocaleString()} × ${outcome.previewHeight.toLocaleString()}` : "FULL-SIZE"}</b></figcaption>
         </figure>
       ) : preview.state === "loading" ? (
         <div className="face-blur-preview-state" role="status"><SpinnerGapIcon size={20} className="spin" aria-hidden="true" /><span><strong>Checking the first image locally…</strong><small>Face detection and the bounded preview stay in this tab.</small></span></div>
@@ -6011,10 +6012,11 @@ function FaceBlurControls({ files, settings, setting, onChange, onMove, preview 
 
       {fallback && (
         <div className="face-blur-fallback-controls">
-          <p><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Position review required.</strong> {fallbackReason} Move the guide so it fully covers the face.</span></p>
+          <p><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Manual review required.</strong> {fallbackReason} Move and resize the guide so it fully covers the face.</span></p>
           <div>
             <label htmlFor="face-blur-focus-x"><span><strong>Left / right</strong><output>{Number(settings.focusX).toLocaleString()}%</output></span><input id="face-blur-focus-x" type="range" min="10" max="90" step="1" value={settings.focusX} onChange={(event) => onChange("focusX", Number(event.target.value))} /></label>
             <label htmlFor="face-blur-focus-y"><span><strong>Up / down</strong><output>{Number(settings.focusY).toLocaleString()}%</output></span><input id="face-blur-focus-y" type="range" min="10" max="90" step="1" value={settings.focusY} onChange={(event) => onChange("focusY", Number(event.target.value))} /></label>
+            <label className="face-blur-size-control" htmlFor="face-blur-region-size"><span><strong>Privacy area size</strong><output>{getFaceBlurRegionSize(settings.regionSize).toLocaleString()}%</output></span><input id="face-blur-region-size" type="range" min={sizeSetting.min} max={sizeSetting.max} step={sizeSetting.step} value={settings.regionSize} onChange={(event) => onChange("regionSize", Number(event.target.value))} /><span aria-hidden="true"><small>{sizeSetting.minLabel}</small><small>{sizeSetting.maxLabel}</small></span></label>
           </div>
         </div>
       )}
@@ -6034,7 +6036,7 @@ function FaceBlurControls({ files, settings, setting, onChange, onMove, preview 
         <span aria-hidden="true"><small>{setting.minLabel}</small><small>{setting.maxLabel}</small></span>
       </label>
 
-      {batch && preview.state === "ready" && <p className="face-blur-batch-note"><StackIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>Reviewing the first image only.</strong> Face detection runs separately on every image. Any image without a detected face uses this same relative fallback position.</span></p>}
+      {batch && preview.state === "ready" && <p className="face-blur-batch-note"><StackIcon size={16} weight="duotone" aria-hidden="true" /><span><strong>Reviewing the first image only.</strong> Face detection runs separately on every image. Any image without a detected face uses this same relative manual position and size.</span></p>}
       <p className="face-blur-private-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Review before sharing.</strong> Detection is browser-dependent and cannot guarantee anonymity. Orange guides are preview-only; the saved image contains only the blur and is processed entirely in this tab.</span></p>
     </section>
   );
@@ -6950,7 +6952,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     && faceBlurPreview.file === files[0]
     && faceBlurPreview.strength === Number(settings.strength)
     && faceBlurPreview.focusX === Number(settings.focusX)
-    && faceBlurPreview.focusY === Number(settings.focusY);
+    && faceBlurPreview.focusY === Number(settings.focusY)
+    && faceBlurPreview.regionSize === Number(settings.regionSize);
   const imageWatermarkPreviewMatches = imageWatermarkPreview.state === "ready"
     && imageWatermarkPreview.file === files[0]
     && imageWatermarkPreview.text === String(settings.text ?? "")
@@ -7689,7 +7692,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             ) : tool.slug === "remove-image-background" ? (
               <BackgroundRemovalControls files={files} settings={settings} onChange={updateSetting} preview={backgroundRemovalPreview} />
             ) : tool.slug === "blur-face" ? (
-              <FaceBlurControls files={files} settings={settings} setting={settingsList.find((setting) => setting.key === "strength")} onChange={updateSetting} onMove={(focusX, focusY) => updateSettings({ focusX, focusY })} preview={faceBlurPreview} />
+              <FaceBlurControls files={files} settings={settings} setting={settingsList.find((setting) => setting.key === "strength")} sizeSetting={settingsList.find((setting) => setting.key === "regionSize")} onChange={updateSetting} onMove={(focusX, focusY) => updateSettings({ focusX, focusY })} preview={faceBlurPreview} />
             ) : tool.slug === "watermark-image" ? (
               <WatermarkImageControls files={files} settings={settings} onChange={updateSetting} preview={imageWatermarkPreview} />
             ) : tool.slug === "meme-generator" ? (
@@ -7873,7 +7876,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 <strong className="split-ready-count" aria-live="polite">{files.length.toLocaleString()} {files.length === 1 ? "image" : "images"} · {getBackgroundRemovalProfile(settings.cleanup).label} · {getBackgroundRemovalBackground(settings.background).label}</strong>
               )}
               {tool.slug === "blur-face" && faceBlurPreviewMatches && status !== "processing" && (
-                <strong className="split-ready-count" aria-live="polite">{faceBlurPreview.result.mode === "detected" ? `${faceBlurPreview.result.regionCount.toLocaleString()} ${faceBlurPreview.result.regionCount === 1 ? "face" : "faces"} found` : "1 reviewed privacy area"} · {Number(settings.strength).toLocaleString()} px</strong>
+                <strong className="split-ready-count" aria-live="polite">{faceBlurPreview.result.mode === "detected" ? `${faceBlurPreview.result.regionCount.toLocaleString()} ${faceBlurPreview.result.regionCount === 1 ? "face" : "faces"} found` : `1 reviewed privacy area · ${Number(settings.regionSize).toLocaleString()}%`} · {Number(settings.strength).toLocaleString()} px</strong>
               )}
               {tool.slug === "watermark-image" && imageWatermarkPreviewMatches && status !== "processing" && (
                 <strong className="split-ready-count" aria-live="polite">{files.length.toLocaleString()} {files.length === 1 ? "image" : "images"} · {getImageWatermarkPosition(settings.position).label} · {settings.opacity}%</strong>
