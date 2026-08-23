@@ -11,7 +11,7 @@ Use this checklist for private-repository maintenance, the public-source transit
 
 Last verified live 2026-08-23. These items describe completed GitHub settings, not public-release or production-QA approval.
 
-Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254), successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487), and the live-settings audit plus successful [`CI` run 32651454945](https://github.com/team-black-box/local-file-studio/actions/runs/32651454945) for exact private-`main` commit `e5c248cc4668854ac19ca85b6c5de4571dc1bce3`.
+Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254), successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487), and the live-settings audit plus successful [`CI` run 32652054358](https://github.com/team-black-box/local-file-studio/actions/runs/32652054358) for exact private-`main` commit `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`.
 
 - [x] Repository visibility remains private.
 - [x] GitHub Actions requires full-length commit SHA references and allows selected actions only: GitHub-owned actions are allowed, other verified creators are not, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
@@ -21,7 +21,7 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically and pull-request branches can be updated.
 - [x] GitHub web commits require a DCO sign-off. The pull-request workflow also verifies every non-merge commit's `Signed-off-by` trailer, covering command-line contributions before merge.
 - [x] Dependency alerts and Dependabot security updates are enabled.
-- [x] CI was rerun successfully after the Actions and branch-rule hardening; the latest inspected `main` run also passed on `e5c248cc4668854ac19ca85b6c5de4571dc1bce3`.
+- [x] CI was rerun successfully after the Actions and branch-rule hardening; the latest inspected `main` run also passed on `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`.
 - [x] Current limitations are recorded: Private Vulnerability Reporting is unavailable while the repository is private, and GitHub secret scanning/code-security features remain disabled because private-repository licensing has not been authorized.
 
 ## Historical public-source candidate audit — 2026-08-13
@@ -38,12 +38,12 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 ## Current public-source launch gate — 2026-08-23
 
 - [x] Re-audit the live private repository: visibility, Actions pins/allowlist, read-only workflow token, branch protection, merge/DCO settings, dependency alerts, Dependabot security updates, topics, and security-feature status.
-- [x] Confirm protected CI passed on the current reviewed source candidate, exact private-`main` commit `e5c248cc4668854ac19ca85b6c5de4571dc1bce3`.
+- [x] Confirm protected CI passed on the current reviewed source candidate, exact private-`main` commit `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`.
 - [x] Confirm the production beta maps to that baseline through READY deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi`, with byte-identical offline artifacts and the static no-backend architecture intact.
 - [x] Keep the deferred Blur Face portrait check and every other unexecuted matrix box visibly unchecked; no deferred case is recorded as a pass or waiver.
 - [x] Merge the 2026-08-23 launch-preparation documentation change and confirm protected `verify` on the resulting exact `main` revision before using it as the public-visibility candidate. PR #55 merged as `e5c248cc4668854ac19ca85b6c5de4571dc1bce3`; protected run 32651454945 passed.
 - [x] Restore one independent approval, stale-review dismissal, and latest-push approval by someone other than its pusher; apply the reviewed discovery topics without changing visibility.
-- [ ] Prove the review gate by merging this documentation update only after a reviewer other than the latest pusher approves it and all checks pass.
+- [x] Prove the review gate. Repository member `subramanian-elavathur` approved the latest reviewable commit in [PR #56](https://github.com/team-black-box/local-file-studio/pull/56) before merging it; protected post-merge run 32652054358 passed.
 - [ ] Obtain explicit owner approval for the visibility change. Immediately afterward, enable and test Private Vulnerability Reporting and re-audit every mutable repository control before inviting contributions.
 
 ## Current Vercel production-beta checkpoint
@@ -91,7 +91,7 @@ Last verified 2026-08-23. These boxes record owner-authorized external actions a
 - [x] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
 - [x] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
 - [x] With owner approval, update the GitHub repository homepage to `https://localfilestudio.app/` without changing visibility.
-- [x] Resolve or explicitly accept the production/source version gap before announcing the public repository as the exact source of the live build. Production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi` was built from exact merged application baseline `e11e52d42cd70273f3568b53289f9e31b33fee26`; current candidate `e5c248cc4668854ac19ca85b6c5de4571dc1bce3` changes only launch documentation and verification tooling, and its protected build passed.
+- [x] Resolve or explicitly accept the production/source version gap before announcing the public repository as the exact source of the live build. Production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi` was built from exact merged application baseline `e11e52d42cd70273f3568b53289f9e31b33fee26`; current candidate `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9` changes only launch documentation and verification tooling, and its protected build passed.
 - [x] Apply accurate discovery topics without changing visibility: `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source`.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
 
