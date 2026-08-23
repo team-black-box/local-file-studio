@@ -67,6 +67,7 @@ The application is a static React/Vite SPA. Vite writes `dist/client`; Vercel se
 - `scripts/prepare-production-build.mjs`: deterministic offline precache manifest and service-worker revision injection.
 - `scripts/audit-git-history.mjs`: reachable-history path, size, and high-confidence secret checks before public distribution.
 - `scripts/audit-repository.mjs`: intended-file, secret-pattern, removed-runtime, and hosting-configuration checks.
+- `scripts/verify-docs.mjs`: tracked Markdown local-link and local-filesystem-path checks.
 - `scripts/verify-ocr-assets.mjs`: vendored OCR integrity checks.
 - `scripts/verify-third-party-assets.mjs`: package, native-code, license, and visual-asset provenance checks.
 - `scripts/verify-seo-build.mjs`: exact catalog coverage and generated SEO/AIO artifact checks.
@@ -165,7 +166,7 @@ bun run preview
 GitHub settings, token scopes, plan entitlements, and successful workflow runs are mutable external state. Verify them live before a release or visibility change, record dated readiness snapshots in `TASKS.md`, and do not present them as application behavior or permanent guarantees.
 
 - Keep workflow permissions least-privilege and read-only unless a narrowly scoped write is explicitly approved. Pin every action reference, including GitHub-owned actions, to a full commit SHA, and keep the repository's selected-actions allowlist consistent with every referenced action.
-- Preserve the protected-`main` private-iteration baseline: required `verify` status check in the `CI` workflow, resolved conversations, administrator enforcement, linear history, and no force pushes or branch deletion. The owner temporarily disabled required approvals on 2026-08-14 while the repository remains private. Before public visibility, restore one independent approval, last-push approval by someone other than the pusher, and stale-approval dismissal, then verify those rules live.
+- Preserve the protected-`main` private-iteration baseline: required `verify` status check in the `CI` workflow, resolved conversations, administrator enforcement, linear history, and no force pushes or branch deletion. The owner temporarily disabled required approvals while the repository remains private. Before public visibility, restore one independent approval, last-push approval by someone other than the pusher, and stale-approval dismissal, then verify those rules live.
 - Keep merge commits disabled. Retain GitHub's web-commit sign-off setting, and require every contribution to carry the DCO sign-off described in `CONTRIBUTING.md`. A cryptographically signed commit and DCO sign-off are not substitutes for one another.
 - Treat dependency alerts and Dependabot as additional signals, not replacements for the frozen install, vulnerability audit, provenance checks, or full verification.
 - Do not enable paid or separately licensed GitHub security features, change token access, weaken repository rules, alter the Actions policy, change visibility, or modify merge/security settings without explicit owner authorization.

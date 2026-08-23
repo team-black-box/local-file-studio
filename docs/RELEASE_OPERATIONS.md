@@ -24,7 +24,7 @@ Apache-2.0 and Vercel address different layers. Apache-2.0 permits use, modifica
 
 ## Current GitHub posture: private repository
 
-Last verified live 2026-08-14:
+Last verified live 2026-08-23:
 
 - Repository visibility is private.
 - Actions must use full-length commit SHA references. The repository allows selected actions only: GitHub-owned actions are allowed, actions from other verified creators are disallowed, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
@@ -34,7 +34,8 @@ Last verified live 2026-08-14:
 - Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically, and updating pull-request branches is enabled.
 - GitHub web commits require a DCO sign-off. The pull-request workflow verifies the `Signed-off-by` trailer on every non-merge commit, including commits created outside the web interface.
 - Dependency alerts and Dependabot security updates are enabled. Automated security updates must pass the same strict CI rules as other changes and, after public visibility, the restored review rules.
-- CI was rerun successfully after these settings were applied.
+- CI was rerun successfully after these settings were applied. The latest inspected protected run, [32634352301](https://github.com/team-black-box/local-file-studio/actions/runs/32634352301), passed on exact private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26`.
+- The repository currently has no discovery topics. The reviewed public launch set is `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source`; applying it is a separate repository-setting action.
 
 Private Vulnerability Reporting is not available in the current private state. GitHub secret scanning and code-security features are also disabled because private-repository licensing has not been authorized. Do not describe any of those controls as active. Enabling paid or licensed private-repository security features requires explicit owner authorization.
 
@@ -48,7 +49,7 @@ Before inviting public issues or pull requests:
 2. Re-audit the Actions policy, workflow permissions, `main` rules, merge settings, dependency alerts, and Dependabot security updates after the visibility change.
 3. Enable Private Vulnerability Reporting as soon as it becomes available and verify the private reporting path from `SECURITY.md` and the issue forms.
 4. Re-evaluate secret-scanning and code-security availability/licensing in the public state. Enable only owner-approved controls and record what was actually verified.
-5. Add or verify DCO enforcement for command-line contributions; the current GitHub setting supplies sign-off for web commits only.
+5. Reverify DCO enforcement for both contribution paths: the GitHub setting supplies sign-off for web commits, and the checked-in pull-request workflow validates every non-merge commit created outside the web interface.
 6. Before changing visibility, restore and verify one independent approval, stale-review dismissal, and last-push approval by someone other than its pusher. Preserve strict `verify`, administrator enforcement, linear history, and the force-push/deletion blocks.
 
 Use squash or rebase merges only if the resulting history retains the required DCO evidence. Merge commits are disabled. Do not make cryptographic commit signing and DCO sign-off interchangeable; they attest to different things.
@@ -97,6 +98,7 @@ Current owner-authorized project configuration:
 - Do not add a server function, upload route, rewrite to a backend, or document-processing secret.
 - Pull-request previews are intended for non-production branches. A preview is test infrastructure, not a release. The production Git trigger was proven by an authorized cofounder commit: deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact `main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2`.
 - On 2026-08-14, exact merged `main` commit `65dff79f82b0dc6d9e1755d8125ebc7aff4184d0` was exported with `git archive`, excluding Git metadata and ignored local state, then deployed by an authenticated team identity. Preview `dpl_3cgubPBbTCHFjnJGhEsB4wvrrCzK` reached `READY` and was promoted to READY production deployment `dpl_EY92wx11fjabk3gpkacNVrAoCiMe`. The live service-worker revision `0d18c08aa9b66df0` and `/tools/convert-image` metadata match that reviewed source revision.
+- On 2026-08-23, exact merged `main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26` was exported with `git archive` and deployed as READY production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi`. The apex aliases that deployment. Its service worker and 80-entry precache manifest are byte-identical to the clean local production build at revision `b8c58adfee8c0147`; the static deployment still defines no Vercel Functions or document-upload path.
 - Git-triggered deployments for commits authored by `abs192` remain `BLOCKED` because that Git author lacks Vercel project access. A manual clean-archive deployment is acceptable only from a clean, reviewed `main`, using an authenticated maintainer, with the source commit, preview deployment, production deployment, and live revision recorded. It does not fix the Git-trigger limitation; resolve Vercel membership before depending on that path.
 - Keep production deployment restricted to `main` or explicit promotion by an authorized maintainer.
 - Apply deployment access controls to private-repository previews if available, without making runtime document processing depend on authentication.

@@ -39,9 +39,10 @@
     "verify:qa": "node .github/scripts/verify-production-qa.mjs",
     "verify:history": "node scripts/audit-git-history.mjs",
     "verify:repo": "node scripts/audit-repository.mjs",
+    "verify:docs": "node scripts/verify-docs.mjs",
     "verify:ocr": "node scripts/verify-ocr-assets.mjs",
     "verify:third-party": "node scripts/verify-third-party-assets.mjs",
-    "verify": "bun run verify:history && bun run verify:repo && bun run verify:qa && bun run verify:ocr && bun run verify:third-party && bun run test:limits && bun run test:editor && bun run test:annotations && bun run test:signatures && bun run test:passwords && bun run test:forms && bun run test:redactions && bun run test:comparisons && bun run test:docx && bun run test:pptx && bun run test:spreadsheet && bun run test:html && bun run build && bun run test:seo && node scripts/verify-third-party-assets.mjs --production && bun run test:offline"
+    "verify": "bun run verify:history && bun run verify:repo && bun run verify:docs && bun run verify:qa && bun run verify:ocr && bun run verify:third-party && bun run test:limits && bun run test:editor && bun run test:annotations && bun run test:signatures && bun run test:passwords && bun run test:forms && bun run test:redactions && bun run test:comparisons && bun run test:docx && bun run test:pptx && bun run test:spreadsheet && bun run test:html && bun run build && bun run test:seo && node scripts/verify-third-party-assets.mjs --production && bun run test:offline"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",

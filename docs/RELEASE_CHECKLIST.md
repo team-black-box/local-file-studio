@@ -9,9 +9,9 @@ Use this checklist for private-repository maintenance, the public-source transit
 
 ## Current private-repository hardening
 
-Last verified live 2026-08-14. These items describe completed GitHub settings, not public-release or production-QA approval.
+Last verified live 2026-08-23. These items describe completed GitHub settings, not public-release or production-QA approval.
 
-Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254) and successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487).
+Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254), successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487), and the live-settings audit plus successful [`CI` run 32634352301](https://github.com/team-black-box/local-file-studio/actions/runs/32634352301) for exact private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26`.
 
 - [x] Repository visibility remains private.
 - [x] GitHub Actions requires full-length commit SHA references and allows selected actions only: GitHub-owned actions are allowed, other verified creators are not, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
@@ -21,10 +21,10 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically and pull-request branches can be updated.
 - [x] GitHub web commits require a DCO sign-off. The pull-request workflow also verifies every non-merge commit's `Signed-off-by` trailer, covering command-line contributions before merge.
 - [x] Dependency alerts and Dependabot security updates are enabled.
-- [x] CI was rerun successfully after the Actions and branch-rule hardening.
+- [x] CI was rerun successfully after the Actions and branch-rule hardening; the latest inspected `main` run also passed on `e11e52d42cd70273f3568b53289f9e31b33fee26`.
 - [x] Current limitations are recorded: Private Vulnerability Reporting is unavailable while the repository is private, and GitHub secret scanning/code-security features remain disabled because private-repository licensing has not been authorized.
 
-## Public-source candidate audit — 2026-08-13
+## Historical public-source candidate audit — 2026-08-13
 
 - [x] Frozen Bun 1.2.20 install, `bun audit --json`, and `bun run verify` passed on the readiness branch. The repository audit covered 111 intended files totaling 48.71 MiB; the largest file was 4.48 MiB, below GitHub's warning and hard limits. A separate reachable-history audit found no forbidden private/generated paths, oversized blobs, private keys, or high-confidence credential patterns.
 - [x] Provenance verification covered 28 fixed hashes, 13 exact license copies, 92 installed runtime packages, the vendored OCR runtime/model, SheetJS anchors, and byte-identical production notice copies. The canonical root `LICENSE` is unchanged.
@@ -34,11 +34,20 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] The production beta is live on the canonical apex, the `www` redirect is correct, all 48 sitemap URLs return the matching canonical and security headers, and exact Git-to-production mapping is recorded. This evidence does not mark remaining browser/offline QA rows as passed.
 - [x] Merge the reviewed public-readiness work. PR #11, the Convert Image/search work in PR #13, and the private-iteration documentation in PR #15 are present on private `main`.
 - [x] Merge the final-audit dependency/documentation change and rerun protected `verify` on the exact resulting `main` commit proposed for public visibility. PR #16 merged at `65dff79f82b0dc6d9e1755d8125ebc7aff4184d0` after the required protected `verify` job passed.
+
+## Current public-source launch gate — 2026-08-23
+
+- [x] Re-audit the live private repository: visibility, Actions pins/allowlist, read-only workflow token, branch protection, merge/DCO settings, dependency alerts, Dependabot security updates, topics, and security-feature status.
+- [x] Confirm protected CI passed on the current reviewed application baseline, exact private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26`.
+- [x] Confirm the production beta maps to that baseline through READY deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi`, with byte-identical offline artifacts and the static no-backend architecture intact.
+- [x] Keep the deferred Blur Face portrait check and every other unexecuted matrix box visibly unchecked; no deferred case is recorded as a pass or waiver.
+- [ ] Merge the 2026-08-23 launch-preparation documentation change and confirm protected `verify` on the resulting exact `main` revision before using it as the public-visibility candidate.
+- [ ] Restore and prove the independent-review requirements, then apply the reviewed discovery topics without changing visibility.
 - [ ] Obtain explicit owner approval for the visibility change. Immediately afterward, enable and test Private Vulnerability Reporting and re-audit every mutable repository control before inviting contributions.
 
 ## Current Vercel production-beta checkpoint
 
-Last verified 2026-08-14. These boxes record owner-authorized external actions and observed deployment state; they do not mark the remaining production QA matrix complete.
+Last verified 2026-08-23. These boxes record owner-authorized external actions and observed deployment state; they do not mark the remaining production QA matrix complete.
 
 - [x] The existing Team Black Box Vercel project is linked locally without committing `.vercel/`, credentials, or environment state.
 - [x] Preview `dpl_J3ThWYmv3zcajRqsrfpSqgBdT6jZ` built the clean private-`main` source at `477e6dd1a90a31913de86388a3b97db817485ba4` and reached `READY`.
@@ -50,6 +59,7 @@ Last verified 2026-08-14. These boxes record owner-authorized external actions a
 - [x] An authorized cofounder commit proved the Git integration: deployment `dpl_2RpBaYuDSJWvCBbQYqEAAb3JeYSa` reached `READY` from exact private-`main` commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2`.
 - [x] Read-only inspection on 2026-08-14 mapped the apex to READY production deployment `dpl_7wCrLUHAhixQpbRDEDtXsskeh7PJ` from commit `050b09a56871172ad333667b30e2fba51a3fd355`, with no Vercel Functions. The 48 sitemap URLs, matching canonicals, CSP/HSTS, `www` redirect, 77-entry precache, and service-worker revision `0eeaa74b99c2ac74` passed HTTP verification.
 - [x] Deploy an approved current source commit before claiming production parity. Exact merged `main` commit `65dff79f82b0dc6d9e1755d8125ebc7aff4184d0` was exported without Git metadata or ignored local state, built as READY preview `dpl_3cgubPBbTCHFjnJGhEsB4wvrrCzK`, and promoted to READY production `dpl_EY92wx11fjabk3gpkacNVrAoCiMe`. The live `/tools/convert-image` metadata and service-worker revision `0d18c08aa9b66df0` match the reviewed build. Git-triggered releases authored by `abs192` remain blocked pending Vercel project access.
+- [x] Current production parity was re-established from a clean archive of exact merged `main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26`. READY production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi` serves the apex; the deployed service worker and 80-entry precache manifest are byte-identical to the clean build at revision `b8c58adfee8c0147`.
 - [ ] Exercise the current custom-domain offline reload, two-build service-worker update, and rollback procedure. READY deployment `dpl_qt1lzjprg` from commit `4f22fc0e468b72c30ed521d45d96ab598f8d00b2` is a confirmed previous artifact, but availability alone is not an exercised rollback.
 - [ ] Continue every unchecked launch-critical and catalog QA row against deployed candidates; do not present an untested row as passed.
 
@@ -80,8 +90,8 @@ Last verified 2026-08-14. These boxes record owner-authorized external actions a
 - [x] Review README maturity, privacy, format, offline, limit, and third-party caveats against observed behavior.
 - [x] Confirm deferred capabilities in `TASKS.md` are not advertised as supported and their current user-visible limitations agree across the catalog, README, and production QA matrix.
 - [x] With owner approval, update the GitHub repository homepage to `https://localfilestudio.app/` without changing visibility.
-- [x] Resolve or explicitly accept the production/source version gap before announcing the public repository as the exact source of the live build. Production deployment `dpl_EY92wx11fjabk3gpkacNVrAoCiMe` is the promoted artifact built from the clean export of exact merged `main` commit `65dff79f82b0dc6d9e1755d8125ebc7aff4184d0`.
-- [ ] Choose accurate discovery topics without changing visibility.
+- [x] Resolve or explicitly accept the production/source version gap before announcing the public repository as the exact source of the live build. Production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi` was built from the clean export of exact merged `main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26`; this documentation-only launch-preparation change must pass protected `verify` after merge before that resulting `main` becomes the final visibility candidate.
+- [x] Choose accurate discovery topics without changing visibility: `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source`. Applying them remains an explicit repository-setting action.
 - [ ] Obtain explicit owner approval before changing GitHub visibility.
 
 ## Immediately after an approved public visibility change
