@@ -34,7 +34,7 @@ Last verified live 2026-08-23:
 - Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically, and updating pull-request branches is enabled.
 - GitHub web commits require a DCO sign-off. The pull-request workflow verifies the `Signed-off-by` trailer on every non-merge commit, including commits created outside the web interface.
 - Dependency alerts and Dependabot security updates are enabled. Automated security updates must pass the same strict CI and independent-review rules as other changes.
-- CI was rerun successfully after these settings were applied. The latest inspected protected run, [32651454945](https://github.com/team-black-box/local-file-studio/actions/runs/32651454945), passed on exact private-`main` commit `e5c248cc4668854ac19ca85b6c5de4571dc1bce3`.
+- CI was rerun successfully after these settings were applied. The latest inspected protected run, [32652054358](https://github.com/team-black-box/local-file-studio/actions/runs/32652054358), passed on exact private-`main` commit `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`. [PR #56](https://github.com/team-black-box/local-file-studio/pull/56) proved the independent-review gate on its latest reviewable commit before merge.
 - The repository topics are `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source` (GitHub may return them in sorted order).
 
 Private Vulnerability Reporting is not available in the current private state. GitHub secret scanning and code-security features are also disabled because private-repository licensing has not been authorized. Do not describe any of those controls as active. Enabling paid or licensed private-repository security features requires explicit owner authorization.
