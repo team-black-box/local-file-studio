@@ -13,7 +13,7 @@ Do not test with customer, production, personal, confidential, regulated, or irr
 
 ## Current status
 
-The GitHub repository remains private. Its hardened Actions/branch settings and latest successful CI rerun are recorded in [RELEASE_OPERATIONS.md](RELEASE_OPERATIONS.md), but automated CI does not complete any manual row below and is not public-launch evidence. Leave the row checkboxes open until the named candidate is exercised in the recorded browser, connection, privacy/network, and independent-result checks.
+The GitHub repository is public. Its hardened Actions/branch settings, security-reporting controls, and latest successful public-main CI rerun are recorded in [RELEASE_OPERATIONS.md](RELEASE_OPERATIONS.md), but automated CI does not complete any manual row below. Leave the row checkboxes open until the named candidate is exercised in the recorded browser, connection, privacy/network, and independent-result checks.
 
 The owner authorized a Vercel preview, production-beta promotion, Git integration, and custom-domain launch on 2026-08-13. Deployment, header, SEO, offline-artifact, rollback-target, Git-link, and live custom-domain evidence is recorded below. The initial promotion does not convert the remaining unchecked browser rows into passes or waivers; they continue against the deployed beta.
 

@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 Private PDF and image tools that run on your device. The production build is a static Vite SPA suitable for Vercel and includes an offline app shell
 
-**Status:** Public beta at [localfilestudio.app](https://localfilestudio.app/). Interfaces, supported formats, and safety limits may change. The GitHub repository remains private while the public-source candidate completes its final launch checks; a later visibility change requires explicit owner approval and does not alter the live app's local-only architecture.
+**Status:** Public beta at [localfilestudio.app](https://localfilestudio.app/), with [public source on GitHub](https://github.com/team-black-box/local-file-studio). Interfaces, supported formats, and safety limits may change. Repository visibility does not alter the live app's local-only architecture.
 
 ## Catalog coverage
 
@@ -149,7 +149,7 @@ bun run verify
 
 `bun run verify` checks repository hygiene and production-QA catalog coverage, validates vendored runtime assets, runs resource-limit, protected-PDF, and processor tests, creates the static production build, verifies all homepage/tool SEO and AI-discovery artifacts, and verifies offline/PWA output. Responsive interaction, conversion, crawler-source, and offline-processing checks are also exercised manually where applicable.
 
-The hardened private-repository controls were re-audited on 2026-08-23. GitHub permissions, branch rules, security features, and workflow policy can change independently of this source tree, so that result is evidence for the audited revision rather than a product guarantee. The dated control snapshot and remaining public-source gates are in [TASKS.md](TASKS.md).
+The hardened public-repository controls were re-audited on 2026-08-23. GitHub permissions, branch rules, security features, and workflow policy can change independently of this source tree, so that result is evidence for the audited revision rather than a product guarantee. The dated control snapshot and remaining operational work are in [TASKS.md](TASKS.md).
 
 Release and deployment evidence is tracked in:
 
@@ -166,4 +166,4 @@ Copyright 2026 TeamBlackBox Private Limited and contributors. Local File Studio 
 
 Package, font, OCR/WASM, native-code, SheetJS, and generated-asset provenance and required notices are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The static build ships the corresponding license and notice bundle; every component remains under its upstream terms.
 
-When the repository opens for public contributions, changes will be accepted under Apache-2.0 using the Developer Certificate of Origin process described in [CONTRIBUTING.md](CONTRIBUTING.md).
+Changes are accepted under Apache-2.0 using the Developer Certificate of Origin process described in [CONTRIBUTING.md](CONTRIBUTING.md).

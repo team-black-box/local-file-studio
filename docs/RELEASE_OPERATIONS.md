@@ -22,11 +22,11 @@ The open-source build also generates the crawlable homepage, all canonical `/too
 
 Apache-2.0 and Vercel address different layers. Apache-2.0 permits use, modification, and redistribution of covered source and built first-party code subject to its terms; Vercel serves a compiled copy of the application. Hosting the app does not change the source license, grant trademark rights, or replace the separate licenses and notices for third-party components. Keep `LICENSE`, `NOTICE`, `TRADEMARKS.md`, `THIRD_PARTY_NOTICES.md`, and component-local notices with every applicable source or binary distribution.
 
-## Current GitHub posture: private repository
+## Current GitHub posture: public repository
 
 Last verified live 2026-08-23:
 
-- Repository visibility is private.
+- Repository visibility is public.
 - Actions must use full-length commit SHA references. The repository allows selected actions only: GitHub-owned actions are allowed, actions from other verified creators are disallowed, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
 - The default workflow token has read-only permissions and workflows cannot approve pull requests.
 - `main` requires resolution of review conversations, linear history, the strict up-to-date `verify` status check, one independent approval, stale-review dismissal, and approval after the latest reviewable push by someone other than its pusher.
@@ -34,29 +34,28 @@ Last verified live 2026-08-23:
 - Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically, and updating pull-request branches is enabled.
 - GitHub web commits require a DCO sign-off. The pull-request workflow verifies the `Signed-off-by` trailer on every non-merge commit, including commits created outside the web interface.
 - Dependency alerts and Dependabot security updates are enabled. Automated security updates must pass the same strict CI and independent-review rules as other changes.
-- CI was rerun successfully after these settings were applied. The latest inspected protected run, [32652054358](https://github.com/team-black-box/local-file-studio/actions/runs/32652054358), passed on exact private-`main` commit `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`. [PR #56](https://github.com/team-black-box/local-file-studio/pull/56) proved the independent-review gate on its latest reviewable commit before merge.
+- Public-main CI attempt 2, [run 32654552303](https://github.com/team-black-box/local-file-studio/actions/runs/32654552303), passed on exact commit `195f9c13115feb6ec736fc5cc12db8cb0ff52bc5`. [PR #56](https://github.com/team-black-box/local-file-studio/pull/56) proved the independent-review gate on its latest reviewable commit before merge.
 - The repository topics are `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source` (GitHub may return them in sorted order).
 
-Private Vulnerability Reporting is not available in the current private state. GitHub secret scanning and code-security features are also disabled because private-repository licensing has not been authorized. Do not describe any of those controls as active. Enabling paid or licensed private-repository security features requires explicit owner authorization.
+Private Vulnerability Reporting, standard secret scanning, and push protection are enabled. Code scanning is not configured. Do not describe unconfigured or unverified controls as active; enabling paid or separately licensed features still requires explicit owner authorization.
 
 These repository controls reduce source-change risk; they are not evidence that the source is ready to become public or that the application has passed either the focused launch gate or the ongoing production QA matrix.
 
-## Additional gates before public contributions
+## Public-contribution safeguards
 
-Before inviting public issues or pull requests:
+Maintain these safeguards for public issues and pull requests:
 
-1. Complete the public-release section of [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) and obtain explicit approval for the visibility change.
-2. Re-audit the Actions policy, workflow permissions, `main` rules, merge settings, dependency alerts, and Dependabot security updates after the visibility change.
-3. Enable Private Vulnerability Reporting as soon as it becomes available and verify the private reporting path from `SECURITY.md` and the issue forms.
-4. Re-evaluate secret-scanning and code-security availability/licensing in the public state. Enable only owner-approved controls and record what was actually verified.
-5. Reverify DCO enforcement for both contribution paths: the GitHub setting supplies sign-off for web commits, and the checked-in pull-request workflow validates every non-merge commit created outside the web interface.
-6. Before changing visibility, reverify one independent approval, stale-review dismissal, and latest-push approval by someone other than its pusher. Preserve strict `verify`, administrator enforcement, linear history, and the force-push/deletion blocks.
+1. Re-audit the Actions policy, workflow permissions, `main` rules, merge settings, dependency alerts, Dependabot security updates, and security-reporting path after repository-setting changes.
+2. Keep Private Vulnerability Reporting, standard secret scanning, and push protection enabled; periodically verify the private reporting path from `SECURITY.md` and the issue forms.
+3. Treat code scanning as unconfigured unless a later approved setup is verified. Enable only owner-approved controls and record what was actually checked.
+4. Reverify DCO enforcement for both contribution paths: the GitHub setting supplies sign-off for web commits, and the checked-in pull-request workflow validates every non-merge commit created outside the web interface.
+5. Preserve strict `verify`, independent latest-push approval, stale-review dismissal, administrator enforcement, linear history, and the force-push/deletion blocks.
 
 Use squash or rebase merges only if the resulting history retains the required DCO evidence. Merge commits are disabled. Do not make cryptographic commit signing and DCO sign-off interchangeable; they attest to different things.
 
 ## Change flow
 
-The current private-repository source flow is:
+The public-repository source flow is:
 
 ```text
 issue -> topic branch -> pull request -> strict CI -> independent approval
@@ -94,7 +93,7 @@ Current owner-authorized project configuration:
 - On 2026-08-23, exact merged `main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26` was exported with `git archive` and deployed as READY production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi`. The apex aliases that deployment. Its service worker and 80-entry precache manifest are byte-identical to the clean local production build at revision `b8c58adfee8c0147`; the static deployment still defines no Vercel Functions or document-upload path.
 - Git-triggered deployments for commits authored by `abs192` remain `BLOCKED` because that Git author lacks Vercel project access. A manual clean-archive deployment is acceptable only from a clean, reviewed `main`, using an authenticated maintainer, with the source commit, preview deployment, production deployment, and live revision recorded. It does not fix the Git-trigger limitation; resolve Vercel membership before depending on that path.
 - Keep production deployment restricted to `main` or explicit promotion by an authorized maintainer.
-- Apply deployment access controls to private-repository previews if available, without making runtime document processing depend on authentication.
+- Apply deployment access controls to previews if available, without making runtime document processing depend on authentication.
 
 ## Staged beta QA model
 
