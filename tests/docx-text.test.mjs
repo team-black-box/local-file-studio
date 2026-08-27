@@ -22,6 +22,18 @@ const OFFICE_DOCUMENT_RELATIONSHIP_TYPES = [
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
   "http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument",
 ];
+const OFFICE_DOCUMENT_RELATIONSHIP_CASES = [
+  {
+    relationshipType: OFFICE_DOCUMENT_RELATIONSHIP_TYPES[0],
+    packageRelationshipsNamespace: PACKAGE_RELATIONSHIPS_NAMESPACES[0],
+    documentPath: "custom/main-document.xml",
+  },
+  {
+    relationshipType: OFFICE_DOCUMENT_RELATIONSHIP_TYPES[1],
+    packageRelationshipsNamespace: PACKAGE_RELATIONSHIPS_NAMESPACES[1],
+    documentPath: "strict/main-document.xml",
+  },
+];
 
 function wordDocument(body, prefix = "w", namespace = WORD_NAMESPACE) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -139,10 +151,7 @@ test("DOCX extraction accepts namespace-prefix variation and strict Wordprocessi
 });
 
 test("DOCX extraction follows one safe internal main-document relationship", async () => {
-  for (const [index, relationshipType] of OFFICE_DOCUMENT_RELATIONSHIP_TYPES.entries()) {
-    const documentPath = relationshipType.includes("purl.oclc.org")
-      ? "strict/main-document.xml"
-      : "custom/main-document.xml";
+  for (const { relationshipType, packageRelationshipsNamespace, documentPath } of OFFICE_DOCUMENT_RELATIONSHIP_CASES) {
     const file = await createDocxFile({
       name: "relocated.docx",
       documentPath,
@@ -151,7 +160,7 @@ test("DOCX extraction follows one safe internal main-document relationship", asy
         id: "rId1",
         type: relationshipType,
         target: documentPath,
-      }], PACKAGE_RELATIONSHIPS_NAMESPACES[index]),
+      }], packageRelationshipsNamespace),
     });
     assert.equal(await extractDocxText(file), documentPath);
   }
