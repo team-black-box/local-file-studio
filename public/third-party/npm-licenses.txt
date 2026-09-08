@@ -485,7 +485,7 @@ Installed path: node_modules/@types/trusted-types
     SOFTWARE
 
 ==============================================================================
-@xmldom/xmldom@0.8.13
+@xmldom/xmldom@0.8.15
 Declared license: MIT
 Repository: git://github.com/xmldom/xmldom.git
 Installed path: node_modules/@xmldom/xmldom

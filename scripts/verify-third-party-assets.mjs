@@ -244,7 +244,7 @@ if (projectPackage.dependencies?.xlsx !== "https://cdn.sheetjs.com/xlsx-0.20.3/x
 const expectedPackageMetadata = [
   ["@fontsource-variable/manrope", "5.3.0", "OFL-1.1"],
   ["@tesseract.js-data/eng", "1.0.0", "MIT"],
-  ["@xmldom/xmldom", "0.8.13", "MIT"],
+  ["@xmldom/xmldom", "0.8.15", "MIT"],
   ["tesseract.js", "7.0.0", "Apache-2.0"],
   ["tesseract.js-core", "7.0.0", "Apache-2.0"],
   ["xlsx", "0.20.3", "Apache-2.0"],
@@ -262,7 +262,7 @@ for (const [name, version, license] of expectedPackageMetadata) {
 const bunLock = await readFile(path.join(root, "bun.lock"), "utf8");
 for (const marker of [
   "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-  '"@xmldom/xmldom": ["@xmldom/xmldom@0.8.13"',
+  '"@xmldom/xmldom": ["@xmldom/xmldom@0.8.15"',
   '"tesseract.js": ["tesseract.js@7.0.0"',
   '"tesseract.js-core": ["tesseract.js-core@7.0.0"',
 ]) {

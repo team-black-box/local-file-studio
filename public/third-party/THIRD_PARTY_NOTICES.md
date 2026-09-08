@@ -44,7 +44,7 @@ introduce irrelevant or platform-specific packages into the browser notice.
 
 ## Office XML parser
 
-- Package: `@xmldom/xmldom` 0.8.13
+- Package: `@xmldom/xmldom` 0.8.15
 - Upstream: <https://github.com/xmldom/xmldom>
 - Declared and packaged license: MIT
 
