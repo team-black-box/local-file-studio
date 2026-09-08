@@ -16,6 +16,7 @@ import {
   safeFileName,
   zipResults,
 } from "./file-utils.js";
+import { createPdfImageDrawOperation } from "./pdf-image-placement.js";
 import { protectPdf, repairPdf, unlockPdf } from "./libpdf.js";
 import { assertPdfProtectionPasswordPlan } from "./pdf-protection-password.js";
 import { fillPdfFormFields } from "./pdf-form-fields.js";
@@ -622,28 +623,15 @@ async function addImagesToPdf(file, options, report) {
     const placement = placements[index];
     report?.({ phase: `Placing image ${index + 1} of ${placements.length}`, progress: 0.25 + ((index + 1) / placements.length) * 0.65 });
     const page = pages[placement.pageIndex];
-    const { width: pageWidth, height: pageHeight } = page.getSize();
     const entry = embedded.get(placement.assetId);
-    const drawWidth = pageWidth * placement.width;
-    const drawHeight = drawWidth * (entry.image.height / entry.image.width);
-    const top = pageHeight * placement.y;
-    const left = pageWidth * placement.x;
-    const bottom = pageHeight - top - drawHeight;
-    if (drawHeight > pageHeight || bottom < -0.001) {
-      throw new FileLimitError("overlay-outside-page", `${entry.name} extends below page ${placement.pageIndex + 1}. Resize it or move it upward before exporting.`);
-    }
-    const radians = (-placement.rotation * Math.PI) / 180;
-    const centerX = left + drawWidth / 2;
-    const centerY = bottom + drawHeight / 2;
-    const rotatedCenterX = (drawWidth / 2) * Math.cos(radians) - (drawHeight / 2) * Math.sin(radians);
-    const rotatedCenterY = (drawWidth / 2) * Math.sin(radians) + (drawHeight / 2) * Math.cos(radians);
+    const operation = createPdfImageDrawOperation(page, placement, entry.image, entry.name);
     page.drawImage(entry.image, {
-      x: centerX - rotatedCenterX,
-      y: centerY - rotatedCenterY,
-      width: drawWidth,
-      height: drawHeight,
-      rotate: degrees(-placement.rotation),
-      opacity: placement.opacity,
+      x: operation.x,
+      y: operation.y,
+      width: operation.width,
+      height: operation.height,
+      rotate: degrees(operation.rotation),
+      opacity: operation.opacity,
     });
   }
 
