@@ -1183,3 +1183,85 @@ test("PDF export embeds one reusable image at multiple bounded placements", asyn
   assert.equal(output.getPageCount(), 2);
   assert.ok(result.size > pdfFile.size);
 });
+
+test("exported image corners match the PDF.js preview on rotated and cropped pages", async () => {
+  const { degrees, PDFName, PDFNumber } = await import("pdf-lib");
+  const { getDocument, OPS, Util } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const source = await PDFDocument.create();
+  const cases = [];
+  for (const rotation of [0, 90, 180, 270, -90, 450]) {
+    for (const crop of [null, [45, 70, 240, 310], [-50, 50, 320, 600], [900, 900, 10, 10]]) {
+      const page = source.addPage([360, 480]);
+      page.setMediaBox(-20, 30, 360, 480);
+      if (crop) page.setCropBox(...crop);
+      page.setRotation(degrees(rotation));
+      page.node.set(PDFName.of("UserUnit"), PDFNumber.of(2));
+      cases.push({ rotation, crop });
+    }
+  }
+  const imageFile = namedBlob(onePixelPng, "mark.png", "image/png");
+  const placements = cases.flatMap((_, pageIndex) => [0, 37, -90, 180].map((rotation, index) => ({
+    id: `${pageIndex}-${index}`, assetId: "mark", pageIndex,
+    x: 0.12 + index * 0.1, y: 0.17 + index * 0.08, width: 0.19, rotation, opacity: 0.8,
+  })));
+  const [result] = await processPdfTool("add-image-to-pdf", [namedBlob(await source.save(), "geometry.pdf", "application/pdf")], {
+    overlayAssets: [{ id: "mark", sourceFile: imageFile }], placements,
+  });
+  const loadingTask = getDocument({ data: new Uint8Array(await result.blob.arrayBuffer()) });
+  const output = await loadingTask.promise;
+  try {
+    for (let pageIndex = 0; pageIndex < cases.length; pageIndex += 1) {
+      const page = await output.getPage(pageIndex + 1);
+      try {
+        const viewport = page.getViewport({ scale: 1 });
+        const ops = await page.getOperatorList();
+        let matrix = [1, 0, 0, 1, 0, 0];
+        const stack = [];
+        let imageIndex = 0;
+        for (let i = 0; i < ops.fnArray.length; i += 1) {
+          const op = ops.fnArray[i];
+          if (op === OPS.save) stack.push(matrix.slice());
+          else if (op === OPS.restore) matrix = stack.pop();
+          else if (op === OPS.transform) matrix = Util.transform(matrix, ops.argsArray[i]);
+          else if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject) {
+            const placement = placements[pageIndex * 4 + imageIndex++];
+            const size = viewport.width * placement.width;
+            const cx = viewport.width * placement.x + size / 2;
+            const cy = viewport.height * placement.y + size / 2;
+            const angle = placement.rotation * Math.PI / 180;
+            for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 1]]) {
+              const pdfPoint = [u, v];
+              Util.applyTransform(pdfPoint, matrix);
+              const actual = viewport.convertToViewportPoint(...pdfPoint);
+              const dx = (u - 0.5) * size;
+              const dy = (0.5 - v) * size;
+              const expected = [cx + dx * Math.cos(angle) - dy * Math.sin(angle), cy + dx * Math.sin(angle) + dy * Math.cos(angle)];
+              actual.forEach((value, axis) => assert.ok(Math.abs(value - expected[axis]) < 0.00001,
+                `page ${pageIndex + 1}, image ${imageIndex}, axis ${axis}: ${value} vs ${expected[axis]}`));
+            }
+          }
+        }
+        assert.equal(imageIndex, 4);
+      } finally {
+        page.cleanup();
+      }
+    }
+  } finally {
+    await loadingTask.destroy();
+  }
+});
+
+test("image placement validates the visible rotated page height and preserves image aspect ratio", async () => {
+  const { degrees } = await import("pdf-lib");
+  const { createPdfImageDrawOperation } = await import("../src/lib/pdf-image-placement.js");
+  const source = await PDFDocument.create();
+  const page = source.addPage([300, 600]);
+  page.setCropBox(20, 40, 200, 400);
+  page.setRotation(degrees(90));
+  const placement = { pageIndex: 0, x: 0.1, y: 0.8, width: 0.2, rotation: 0, opacity: 1 };
+  const operation = createPdfImageDrawOperation(page, placement, { width: 2, height: 1 }, "mark");
+  assert.equal(operation.width, 80);
+  assert.equal(operation.height, 40);
+  assert.throws(() => createPdfImageDrawOperation(page, { ...placement, y: 0.81 }, { width: 2, height: 1 }, "mark"),
+    (error) => error instanceof FileLimitError && error.code === "overlay-outside-page");
+});
