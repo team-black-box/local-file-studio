@@ -24,7 +24,7 @@ Apache-2.0 and Vercel address different layers. Apache-2.0 permits use, modifica
 
 ## Current GitHub posture: public repository
 
-Last verified live 2026-08-23:
+Last verified live 2026-09-11:
 
 - Repository visibility is public.
 - Actions must use full-length commit SHA references. The repository allows selected actions only: GitHub-owned actions are allowed, actions from other verified creators are disallowed, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
@@ -34,10 +34,10 @@ Last verified live 2026-08-23:
 - Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically, and updating pull-request branches is enabled.
 - GitHub web commits require a DCO sign-off. The pull-request workflow verifies the `Signed-off-by` trailer on every non-merge commit, including commits created outside the web interface.
 - Dependency alerts and Dependabot security updates are enabled. Automated security updates must pass the same strict CI and independent-review rules as other changes.
-- Public-main CI attempt 2, [run 32654552303](https://github.com/team-black-box/local-file-studio/actions/runs/32654552303), passed on exact commit `195f9c13115feb6ec736fc5cc12db8cb0ff52bc5`. [PR #56](https://github.com/team-black-box/local-file-studio/pull/56) proved the independent-review gate on its latest reviewable commit before merge.
+- Public-main [CI run 34195854847](https://github.com/team-black-box/local-file-studio/actions/runs/34195854847) and [CodeQL run 34535537621](https://github.com/team-black-box/local-file-studio/actions/runs/34535537621) passed on exact commit `7995286a49bdbc578266c1b7e3719b6d7990ee01`. [PR #56](https://github.com/team-black-box/local-file-studio/pull/56) proved the independent-review gate on its latest reviewable commit before merge.
 - The repository topics are `pdf`, `image-tools`, `offline-first`, `privacy`, `pwa`, `vite`, `react`, and `open-source` (GitHub may return them in sorted order).
 
-Private Vulnerability Reporting, standard secret scanning, and push protection are enabled. Code scanning is not configured. Do not describe unconfigured or unverified controls as active; enabling paid or separately licensed features still requires explicit owner authorization.
+Private Vulnerability Reporting, standard secret scanning, push protection, and GitHub-managed default CodeQL scanning are enabled. The 2026-09-11 live review found no open CodeQL, Dependabot, or secret-scanning alerts. Treat this as dated evidence, reverify it before releases, and require explicit owner authorization before enabling paid or separately licensed features.
 
 These repository controls reduce source-change risk; they are not evidence that the source is ready to become public or that the application has passed either the focused launch gate or the ongoing production QA matrix.
 
@@ -47,7 +47,7 @@ Maintain these safeguards for public issues and pull requests:
 
 1. Re-audit the Actions policy, workflow permissions, `main` rules, merge settings, dependency alerts, Dependabot security updates, and security-reporting path after repository-setting changes.
 2. Keep Private Vulnerability Reporting, standard secret scanning, and push protection enabled; periodically verify the private reporting path from `SECURITY.md` and the issue forms.
-3. Treat code scanning as unconfigured unless a later approved setup is verified. Enable only owner-approved controls and record what was actually checked.
+3. Preserve the owner-approved GitHub-managed default CodeQL setup, review new alerts without globally suppressing useful rules, and record exact dispositions. Reverify the configuration and open-alert state before releases.
 4. Reverify DCO enforcement for both contribution paths: the GitHub setting supplies sign-off for web commits, and the checked-in pull-request workflow validates every non-merge commit created outside the web interface.
 5. Preserve strict `verify`, independent latest-push approval, stale-review dismissal, administrator enforcement, linear history, and the force-push/deletion blocks.
 
@@ -133,6 +133,8 @@ Record what failed, the affected commit/deployment, the rollback action, and the
 
 ## Release records
 
+A GitHub source release and a Vercel production deployment are independent. Tag only an exact reviewed `main` commit after protected CI and CodeQL pass. Publishing a GitHub Release does not authorize npm publication, binary attachment, Vercel promotion, environment changes, or DNS changes; each remains a separate owner-approved action. The root web package stays `private: true` unless npm publication is explicitly intended.
+
 For each production release, retain:
 
 - source commit and pull request;
@@ -142,3 +144,5 @@ For each production release, retain:
 - dependency and third-party asset changes, hashes, notices, and legal review status;
 - known limitations and rollback target; and
 - the maintainer who approved external publication or promotion.
+
+For each GitHub source release, also retain the version/tag, exact tag target, release URL, reviewed changelog entry, and confirmation that no unintended package or deployment publication occurred.

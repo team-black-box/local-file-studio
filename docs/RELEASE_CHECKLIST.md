@@ -9,9 +9,9 @@ Use this checklist for public-repository maintenance and production releases. Ch
 
 ## Current public-repository hardening
 
-Last verified live 2026-08-23. These items describe completed GitHub settings, not public-release or production-QA approval.
+Last verified live 2026-09-11. These items describe completed GitHub settings, not public-release or production-QA approval.
 
-Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254), successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487), and the live-settings audit plus successful [`CI` run 32652054358](https://github.com/team-black-box/local-file-studio/actions/runs/32652054358) for exact private-`main` commit `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`.
+Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](https://github.com/team-black-box/local-file-studio/commit/a0c8c067d26a9dc4179b8d35a3c5f33bf2591254), successful hardened-policy [`CI` rerun](https://github.com/team-black-box/local-file-studio/actions/runs/31434123487), and the 2026-09-11 live-settings audit plus successful [`CI` run 34195854847](https://github.com/team-black-box/local-file-studio/actions/runs/34195854847) and [`CodeQL` run 34535537621](https://github.com/team-black-box/local-file-studio/actions/runs/34535537621) for exact public-`main` commit `7995286a49bdbc578266c1b7e3719b6d7990ee01`.
 
 - [x] Repository visibility is public by owner action on 2026-08-23.
 - [x] GitHub Actions requires full-length commit SHA references and allows selected actions only: GitHub-owned actions are allowed, other verified creators are not, and the exact approved `oven-sh/setup-bun` SHA is allowlisted.
@@ -21,8 +21,8 @@ Evidence: initial private commit [`a0c8c067d26a9dc4179b8d35a3c5f33bf2591254`](ht
 - [x] Merge commits are disabled; squash and rebase merges are enabled. Merged branches are deleted automatically and pull-request branches can be updated.
 - [x] GitHub web commits require a DCO sign-off. The pull-request workflow also verifies every non-merge commit's `Signed-off-by` trailer, covering command-line contributions before merge.
 - [x] Dependency alerts and Dependabot security updates are enabled.
-- [x] CI was rerun successfully after the Actions and branch-rule hardening; the latest inspected `main` run also passed on `eb71dd8ce1d2b279f9ead1e55f81a63286b6b8e9`.
-- [x] Private Vulnerability Reporting, standard secret scanning, and push protection are enabled. Code scanning is not configured and is not claimed as an active control.
+- [x] CI was rerun successfully after the Actions and branch-rule hardening; the latest inspected `main` CI run also passed on `7995286a49bdbc578266c1b7e3719b6d7990ee01`.
+- [x] Private Vulnerability Reporting, standard secret scanning, push protection, and GitHub-managed default CodeQL scanning are enabled. The default query suite covers GitHub Actions and JavaScript/TypeScript on relevant branch/pull-request events plus a weekly schedule. The 2026-09-11 live review found no open CodeQL, Dependabot, or secret-scanning alerts.
 
 ## Historical public-source candidate audit — 2026-08-13
 
@@ -99,9 +99,22 @@ Last verified 2026-08-23. These boxes record owner-authorized external actions a
 
 - [x] Confirm the Actions policy, branch protection, dependency alerts, Dependabot security updates, merge settings, and administrator enforcement survived the visibility change.
 - [x] Enable GitHub Private Vulnerability Reporting and update `SECURITY.md` plus the issue-template security route to the working private channel.
-- [x] Confirm standard secret scanning and push protection are enabled. Code scanning remains unconfigured; do not claim it as active or enable paid/separately licensed features without authorization.
+- [x] Confirm standard secret scanning and push protection are enabled. The owner later authorized GitHub-managed default CodeQL setup; PR #59 recorded the initial alert triage, and the latest inspected public-`main` CodeQL run passed with no open alerts.
 - [x] Public [PR #58](https://github.com/team-black-box/local-file-studio/pull/58) executed the DCO workflow check and verified its signed-off commit; the GitHub web-commit sign-off setting also remains enabled.
 - [x] Rerun CI on the public repository: attempt 2 of run 32654552303 passed on exact `main` commit `195f9c13115feb6ec736fc5cc12db8cb0ff52bc5`.
+
+## `v0.1.0` public-beta source release
+
+Preparation started 2026-08-30 and was refreshed onto public `main` on 2026-09-11. A source release does not publish the package to npm, promote a Vercel deployment, change DNS, or imply that every production QA row has passed.
+
+- [x] Set the root package version to `0.1.0` while preserving `private: true`; the root web package is not intended for npm publication.
+- [x] Add a public changelog entry with shipped capabilities, privacy/offline architecture, security posture, and known beta limitations.
+- [x] Reverify public visibility, homepage, merge settings, DCO, selected-actions/SHA-pinning policy, read-only workflow posture, strict protected-`main` review/check rules, dependency automation, secret scanning, push protection, Private Vulnerability Reporting, default CodeQL setup, and live open security-alert counts.
+- [x] Run a frozen Bun 1.2.20 install, registry dependency audit, `bun run verify`, and release-candidate file/secret/license/provenance review. The refreshed 2026-09-11 pass left `bun.lock` unchanged, returned `{}` from `bun audit --json`, audited 141 intended files totaling 49.64 MiB with a 4.48 MiB largest file, verified 28 provenance hashes, 13 exact license copies, 92 runtime packages, all 47 catalog entries, 48 canonical pages, and 80 offline assets.
+- [ ] Merge the reviewed release-preparation pull request and confirm protected `main` CI and CodeQL pass on the exact resulting commit.
+- [ ] With explicit owner approval, create tag `v0.1.0` from that exact merged `main` commit and verify the remote tag target before publishing release notes.
+- [ ] Publish a GitHub source release using the reviewed changelog entry. Do not attach ad hoc binaries, publish to npm, or trigger/promote Vercel as part of the source-release action.
+- [ ] Record the tag, commit, GitHub Release URL, CI/CodeQL runs, open-alert counts, and any separately approved production deployment in the dated release evidence.
 
 ## Before an initial Vercel preview
 

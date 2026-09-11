@@ -1,6 +1,6 @@
 {
   "name": "local-file-studio",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Offline-first browser tools for processing PDF and image files locally.",
   "author": "TeamBlackBox Private Limited",
   "private": true,
