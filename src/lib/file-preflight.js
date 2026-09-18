@@ -7,6 +7,7 @@ import {
   assertImageDimensions,
   assertMarkupLength,
   assertRasterDimensions,
+  assertPdfRasterWork,
   formatLimitBytes,
   getImageCropPlan,
   getImageUpscalePlan,
@@ -17,12 +18,12 @@ import {
   validatePdfOverlayImageSelection,
 } from "./file-limits.js";
 import { destroyPdfJsDocument, getPdfJsEngine } from "./pdfjs-utils.js";
+import { getPdfCompressionPreset } from "./file-utils.js";
 import { getTiffDimensions } from "./tiff-utils.js";
 
 function rasterScaleFor(tool, options) {
   if (tool.slug === "compress-pdf") {
-    if (typeof options.quality === "string") return { gentle: 1.45, balanced: 1.2, strong: 0.95 }[options.quality] || 1.2;
-    return Number(options.scale || 1.2);
+    return getPdfCompressionPreset(options.quality, options).scale;
   }
   if (tool.slug === "ocr-pdf") return 1.55;
   if (tool.slug === "redact-pdf") return 1.6;
@@ -87,15 +88,9 @@ async function inspectPdf(file, tool, options, limits, report, fileIndex, fileCo
         const page = await document.getPage(pageIndex + 1);
         try {
           const viewport = page.getViewport({ scale });
-          assertRasterDimensions(viewport.width, viewport.height, limits, `${file.name}, page ${pageIndex + 1}`);
-          renderedPixels += viewport.width * viewport.height;
-          if (limits.maxRasterPixelsTotal && renderedPixels > limits.maxRasterPixelsTotal) {
-            throw new FileLimitError(
-              "pdf-render-work-too-large",
-              `${file.name} would render ${(renderedPixels / 1_000_000).toFixed(1)} MP across its pages; ${tool.name} safely handles ${limits.maxRasterPixelsTotal / 1_000_000} MP per job. Split the PDF into smaller parts.`,
-              { fileName: file.name, page: pageIndex + 1 },
-            );
-          }
+          assertRasterDimensions(Math.ceil(viewport.width), Math.ceil(viewport.height), limits, `${file.name}, page ${pageIndex + 1}`);
+          renderedPixels += Math.ceil(viewport.width) * Math.ceil(viewport.height);
+          assertPdfRasterWork(renderedPixels, limits, file.name);
         } finally {
           page.cleanup();
         }

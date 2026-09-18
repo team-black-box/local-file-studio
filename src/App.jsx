@@ -98,7 +98,7 @@ import { OutputNameControl } from "./OutputNameControl.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
 import { createPdfMergePlan } from "./lib/pdf-merge.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createMergePdfPlan, createOrganizePagePlan, createPdfJpgOutputPlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
-import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, IMAGE_UPSCALE_SCALES, MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS, assertRasterDimensions, describeToolLimits, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getPhotoEditorPlan, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
+import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, IMAGE_UPSCALE_SCALES, MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, PDF_COMPRESSION_SETTINGS, FileLimitError, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS, assertPdfRasterWork, assertRasterDimensions, describeToolLimits, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getPhotoEditorPlan, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./lib/background-removal.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_POSITIONS, getImageWatermarkAngle, getImageWatermarkColor, getImageWatermarkPosition } from "./lib/image-watermark.js";
 import { IMAGE_MEME_CASES, getImageMemeCase } from "./lib/image-meme.js";
@@ -3369,7 +3369,7 @@ const compressionModeIcons = {
   strong: ArrowsInIcon,
 };
 
-function usePdfCompressionEstimate(file, mode, password, enabled, limits) {
+function usePdfCompressionEstimate(file, mode, dpi, jpegQuality, password, enabled, limits) {
   const [estimate, setEstimate] = useState({ state: "idle" });
 
   useEffect(() => {
@@ -3381,60 +3381,83 @@ function usePdfCompressionEstimate(file, mode, password, enabled, limits) {
     let loadingTask;
     let loadedDocument;
     let activeRenderTask;
-    setEstimate({ state: "loading", file, mode });
-    (async () => {
-      const pdfjs = await getPdfJsEngine();
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      if (cancelled) return;
-      loadingTask = pdfjs.getDocument({ data: bytes, password: password || undefined });
-      loadedDocument = await loadingTask.promise;
-      const pageCount = loadedDocument.numPages;
-      if (!Number.isInteger(pageCount) || pageCount < 1 || pageCount > limits.maxPdfPagesPerFile) throw new Error("This PDF cannot be sampled safely.");
-      const sampleIndexes = [...new Set([0, Math.floor((pageCount - 1) / 2), pageCount - 1])];
-      const preset = getPdfCompressionPreset(mode);
-      const sampleSizes = [];
-      for (const index of sampleIndexes) {
+    let sampleUrl;
+    setEstimate({ state: "loading", file, mode, dpi, jpegQuality });
+    const startTimer = setTimeout(() => {
+      (async () => {
+        const pdfjs = await getPdfJsEngine();
+        const bytes = new Uint8Array(await file.arrayBuffer());
         if (cancelled) return;
-        const page = await loadedDocument.getPage(index + 1);
-        let canvas;
-        try {
-          const viewport = page.getViewport({ scale: preset.scale });
-          assertRasterDimensions(viewport.width, viewport.height, limits, `Compression estimate page ${index + 1}`);
-          canvas = document.createElement("canvas");
-          canvas.width = Math.ceil(viewport.width);
-          canvas.height = Math.ceil(viewport.height);
-          const context = canvas.getContext("2d", { alpha: false });
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, canvas.width, canvas.height);
-          activeRenderTask = page.render({ canvasContext: context, viewport });
-          await activeRenderTask.promise;
-          activeRenderTask = null;
-          const blob = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("This page could not be sampled.")), "image/jpeg", preset.quality / 100));
-          sampleSizes.push(blob.size);
-        } finally {
-          page.cleanup();
-          if (canvas) {
-            canvas.width = 1;
-            canvas.height = 1;
+        loadingTask = pdfjs.getDocument({ data: bytes, password: password || undefined });
+        loadedDocument = await loadingTask.promise;
+        const pageCount = loadedDocument.numPages;
+        if (!Number.isInteger(pageCount) || pageCount < 1 || pageCount > limits.maxPdfPagesPerFile) throw new FileLimitError("invalid-compression-page-count", `Choose a PDF with 1–${limits.maxPdfPagesPerFile} pages. Split larger PDFs first.`);
+        const sampleIndexes = [...new Set([0, Math.floor((pageCount - 1) / 2), pageCount - 1])];
+        const preset = getPdfCompressionPreset(mode, { dpi, jpegQuality });
+        let totalPixels = 0;
+        for (let index = 0; index < pageCount; index += 1) {
+          if (cancelled) return;
+          const page = await loadedDocument.getPage(index + 1);
+          try {
+            const viewport = page.getViewport({ scale: preset.scale });
+            const width = Math.ceil(viewport.width);
+            const height = Math.ceil(viewport.height);
+            assertRasterDimensions(width, height, limits, `Page ${index + 1}`);
+            totalPixels += width * height;
+            assertPdfRasterWork(totalPixels, limits, file.name);
+          } finally {
+            page.cleanup();
           }
         }
-      }
-      const projection = projectPdfCompressionSize(file.size, pageCount, sampleSizes);
-      if (!cancelled && projection) setEstimate({ state: "ready", file, mode, ...projection });
-    })().catch((error) => {
-      if (cancelled || error?.name === "RenderingCancelledException") return;
-      setEstimate({ state: "error", file, mode, message: "Estimate unavailable. The exact result will still be checked before a download is offered." });
-    }).finally(() => {
-      void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
-      loadedDocument = null;
-      loadingTask = null;
-    });
+        const sampleSizes = [];
+        for (const index of sampleIndexes) {
+          if (cancelled) return;
+          const page = await loadedDocument.getPage(index + 1);
+          let canvas;
+          try {
+            const viewport = page.getViewport({ scale: preset.scale });
+            assertRasterDimensions(Math.ceil(viewport.width), Math.ceil(viewport.height), limits, `Compression estimate page ${index + 1}`);
+            canvas = document.createElement("canvas");
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+            const context = canvas.getContext("2d", { alpha: false });
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            activeRenderTask = page.render({ canvasContext: context, viewport });
+            await activeRenderTask.promise;
+            activeRenderTask = null;
+            const blob = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("This page could not be sampled.")), "image/jpeg", preset.quality / 100));
+            if (cancelled) return;
+            if (index === 0) sampleUrl = URL.createObjectURL(blob);
+            sampleSizes.push(blob.size);
+          } finally {
+            page.cleanup();
+            if (canvas) {
+              canvas.width = 1;
+              canvas.height = 1;
+            }
+          }
+        }
+        const projection = projectPdfCompressionSize(file.size, pageCount, sampleSizes);
+        if (!cancelled && projection) setEstimate({ state: "ready", file, mode, dpi, jpegQuality, sampleUrl, ...projection });
+      })().catch((error) => {
+        if (cancelled || error?.name === "RenderingCancelledException") return;
+        if (sampleUrl) { URL.revokeObjectURL(sampleUrl); sampleUrl = null; }
+        setEstimate({ state: "error", file, mode, dpi, jpegQuality, blocked: Boolean(error?.code), message: error?.code ? error.message : "Estimate unavailable. The exact result will still be checked before a download is offered." });
+      }).finally(() => {
+        void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
+        loadedDocument = null;
+        loadingTask = null;
+      });
+    }, 200);
     return () => {
+      clearTimeout(startTimer);
       cancelled = true;
+      if (sampleUrl) URL.revokeObjectURL(sampleUrl);
       try { activeRenderTask?.cancel(); } catch { /* Rendering already finished. */ }
       void destroyPdfJsDocument(loadedDocument || loadingTask).catch(() => {});
     };
-  }, [enabled, file, limits, mode, password]);
+  }, [enabled, file, limits, mode, dpi, jpegQuality, password]);
 
   return estimate;
 }
@@ -3445,7 +3468,7 @@ function CompressionEstimate({ estimate }) {
     return <div className="compression-estimate loading" role="status"><SpinnerGapIcon size={16} className="spin" aria-hidden="true" /><span><strong>Estimating output locally…</strong><small>Sampling up to three pages; nothing is uploaded.</small></span></div>;
   }
   if (estimate.state === "error") {
-    return <div className="compression-estimate error" role="status"><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Estimate unavailable</strong><small>{estimate.message}</small></span></div>;
+    return <div className="compression-estimate error" role="status"><WarningCircleIcon size={16} weight="fill" aria-hidden="true" /><span><strong>{estimate.blocked ? "Cannot use these settings" : "Estimate unavailable"}</strong><small>{estimate.message}</small></span></div>;
   }
   const magnitude = Math.abs(estimate.percent);
   const percentage = magnitude > 0 && magnitude < 1 ? "<1%" : `${Math.round(magnitude)}%`;
@@ -3459,12 +3482,12 @@ function CompressionEstimate({ estimate }) {
   );
 }
 
-function CompressionControls({ setting, value, onChange, inputSize, estimate }) {
+function CompressionControls({ setting, value, settings, onSettingChange, onChange, inputSize, estimate }) {
   return (
     <section className="compression-controls" aria-labelledby="compression-strength-title">
       <fieldset>
         <legend id="compression-strength-title">Choose compression strength</legend>
-        <p>More compression makes a smaller target, but fine text and images can look softer.</p>
+        <p>Start with Gentle for scanned text. Higher resolution keeps more detail; the final file size depends on the document.</p>
         <div className="compression-mode-grid">
           {setting.options.map((option) => {
             const ModeIcon = compressionModeIcons[option.value] || FileArrowDownIcon;
@@ -3484,12 +3507,30 @@ function CompressionControls({ setting, value, onChange, inputSize, estimate }) 
           })}
         </div>
       </fieldset>
+      {value === "custom" && <div className="compression-custom-settings">
+        {[["dpi", "Page resolution", " DPI"], ["jpegQuality", "JPEG quality", "%"]].map(([key, label, suffix]) => (
+          <label className="setting-field range-field" key={key}>
+            <span><strong>{label}</strong><output>{settings[key]}{suffix}</output></span>
+            <input type="range" aria-label={label} min={PDF_COMPRESSION_SETTINGS[key].min} max={PDF_COMPRESSION_SETTINGS[key].max} step="1" value={settings[key]} onChange={(event) => onSettingChange(key, Number(event.target.value))} />
+          </label>
+        ))}
+        <p>JPEG quality is not a file-size reduction percentage. Even 100% uses lossy JPEG. Higher DPI cannot restore missing source detail.</p>
+      </div>}
       <div className="compression-size-preview" aria-live="polite">
         <span className="compression-file source"><FilePdfIcon size={24} weight="duotone" aria-hidden="true" /><small>{inputSize ? formatBytes(inputSize) : "Original"}</small></span>
         <span className="compression-flow"><span /><ArrowRightIcon size={15} aria-hidden="true" /></span>
         <span className={`compression-file output mode-${value}`}><FileArrowDownIcon size={24} weight="duotone" aria-hidden="true" /><small>{setting.options.find((option) => option.value === value)?.hint}</small></span>
       </div>
       <CompressionEstimate estimate={estimate} />
+      {estimate.state === "ready" && estimate.sampleUrl && (
+        <details className="compression-sample">
+          <summary>Inspect compressed page 1 at full size</summary>
+          <p>One image pixel per screen pixel. Scroll to check fine text; other pages may differ.</p>
+          <div className="compression-sample-scroll" tabIndex="0" role="region" aria-label="Full-size compressed first page">
+            <img src={estimate.sampleUrl} alt="First page after compression at the selected resolution and JPEG quality" />
+          </div>
+        </details>
+      )}
       <div className="compression-method-note">
         <WarningCircleIcon size={17} weight="fill" aria-hidden="true" />
         <span><strong>Pages become compressed images.</strong> Searchable text, links, forms, and annotations are flattened.</span>
@@ -6953,7 +6994,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const textAnnotationPlan = useMemo(() => tool.slug === "edit-pdf" ? getTextAnnotationPlan(settings, pageInfo) : null, [pageInfo, settings, tool.slug]);
   const signaturePlan = useMemo(() => tool.slug === "sign-pdf" ? getSignaturePlan(settings, pageInfo, signingDate) : null, [pageInfo, settings, signingDate, tool.slug]);
   const protectionPasswordPlan = useMemo(() => tool.slug === "protect-pdf" ? createPdfProtectionPasswordPlan(settings) : null, [settings, tool.slug]);
-  const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
+  const compressionEstimate = usePdfCompressionEstimate(files[0], settings.quality, settings.dpi, settings.jpegQuality, passwordGate.inputPasswords?.[0], tool.slug === "compress-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits);
   const pdfOfficeTextPreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], usesPdfOfficeTextPreview && passwordGate.ready && status !== "processing" && !results.length, limits, tool.output[0]?.slice(1), tool.name);
   const translationSourcePreview = usePdfOfficeTextPreview(files[0], passwordGate.inputPasswords?.[0], tool.slug === "translate-pdf" && passwordGate.ready && status !== "processing" && !results.length, limits, "translation", tool.name);
   const imageCompressionPreview = useImageCompressionPreview(files[0], settings.quality, tool.slug === "compress-image", tool);
@@ -6972,7 +7013,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const animatedGifPlan = createAnimatedGifUiPlan(animatedGifInspection, settings.delay, settings.loop, limits);
   const photoEditorInspection = useImageSourceInspection(files, tool.slug === "photo-editor", tool, "photo");
   const photoEditorPlan = createPhotoEditorUiPlan(photoEditorInspection, settings, limits);
-  const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality)
+  const activeCompressionEstimate = tool.slug === "compress-pdf" && files[0] && (compressionEstimate.file !== files[0] || compressionEstimate.mode !== settings.quality || compressionEstimate.dpi !== settings.dpi || compressionEstimate.jpegQuality !== settings.jpegQuality)
     ? { state: "loading", file: files[0], mode: settings.quality }
     : compressionEstimate;
   const mergePdfPreviewMatches = mergePdfPreview.state === "ready"
@@ -7731,7 +7772,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                 onMarginChange={(value) => updateSetting("margin", value)}
               />
             ) : tool.slug === "compress-pdf" ? (
-              <CompressionControls setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
+              <CompressionControls settings={settings} onSettingChange={updateSetting} setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} inputSize={files[0]?.size || 0} estimate={activeCompressionEstimate} />
             ) : tool.slug === "compress-image" ? (
               <ImageCompressionControls files={files} setting={settingsList.find((setting) => setting.key === "quality")} value={settings.quality} onChange={(value) => updateSetting("quality", value)} preview={imageCompressionPreview} />
             ) : tool.slug === "resize-image" ? (

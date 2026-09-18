@@ -28,6 +28,22 @@ export const PHOTO_EDITOR_ADJUSTMENTS = Object.freeze({
   warmth: Object.freeze({ min: 0, max: 60, default: 0 }),
 });
 export const PHOTO_EDITOR_TEXT_COLORS = Object.freeze(["#ffffff", "#14201d"]);
+export const PDF_COMPRESSION_SETTINGS = Object.freeze({
+  dpi: Object.freeze({ min: 72, max: 600, default: 300 }),
+  jpegQuality: Object.freeze({ min: 50, max: 100, default: 94 }),
+});
+export const PDF_COMPRESSION_PRESETS = Object.freeze({
+  gentle: Object.freeze({ quality: 94, scale: 300 / 72 }),
+  balanced: Object.freeze({ quality: 85, scale: 200 / 72 }),
+  strong: Object.freeze({ quality: 75, scale: 150 / 72 }),
+});
+
+export function assertPdfRasterWork(totalPixels, limits, label = "This PDF") {
+  if (limits.maxRasterPixelsTotal && totalPixels > limits.maxRasterPixelsTotal) {
+    throw new FileLimitError("pdf-render-work-too-large", `${label} would render ${(totalPixels / MEGAPIXEL).toFixed(1)} MP across its pages; the limit is ${limits.maxRasterPixelsTotal / MEGAPIXEL} MP per job. Split the PDF into smaller parts to keep this resolution.`);
+  }
+}
+
 export const PDF_PREVIEW_LIMITS = Object.freeze({
   maxOutputBytes: GLOBAL_OUTPUT_LIMIT_BYTES,
   maxPages: 500,

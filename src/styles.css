@@ -18771,3 +18771,10 @@ body {
     margin-inline: 10px;
   }
 }
+
+.compression-custom-settings { display: grid; gap: 16px; margin-top: 20px; }
+.compression-custom-settings p, .compression-sample p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.compression-sample { margin-top: 16px; min-width: 0; }
+.compression-sample summary { cursor: pointer; font-weight: 700; }
+.compression-sample-scroll { width: 100%; max-height: 420px; overflow: auto; border: 1px solid #ccd4cf; border-radius: 10px; }
+.compression-sample-scroll img { display: block; max-width: none; }

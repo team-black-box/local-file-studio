@@ -18,6 +18,8 @@ import {
   MAX_GENERATED_RESULTS,
   MAX_PDF_PASSWORD_CHARACTERS,
   PDF_PREVIEW_LIMITS,
+  PDF_COMPRESSION_SETTINGS,
+  assertPdfRasterWork,
   PHOTO_EDITOR_ADJUSTMENTS,
   PHOTO_EDITOR_TEXT_COLORS,
   assertComparisonLineCounts,
@@ -54,7 +56,7 @@ import {
 } from "../src/lib/file-limits.js";
 import { runBoundedLineDiff } from "../src/lib/diff-worker-client.js";
 import { protectPdf, unlockPdf } from "../src/lib/libpdf.js";
-import { createExtractPagePlan, createMergePdfPlan, createOrganizePagePlan, createResultBudget, createSplitPdfGroups, formatPageSelection, getAutomaticDownloadResult, isToolSearchShortcut, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
+import { createExtractPagePlan, createMergePdfPlan, createOrganizePagePlan, createResultBudget, getPdfCompressionPreset, compressionEstimateAllowsProcessing, createSplitPdfGroups, formatPageSelection, getAutomaticDownloadResult, isToolSearchShortcut, parsePageSelection, parseSplitPageSelection, retainResult, safeFileName, zipResults } from "../src/lib/file-utils.js";
 import { runTool } from "../src/lib/processors.js";
 import { matchesImageSignature } from "../src/lib/image-processors.js";
 import { preflightToolFiles } from "../src/lib/file-preflight.js";
@@ -1196,4 +1198,44 @@ test("ZIP guards reject excessive item count, individual size, and aggregate siz
     { name: "two.bin", blob: { size: 44 * MiB, type: "application/octet-stream" } },
     { name: "three.bin", blob: { size: 44 * MiB, type: "application/octet-stream" } },
   ]), /generated files total 132 MB.*128 MB in-memory ZIP limit/s);
+});
+
+
+test("PDF compression defaults preserve scan detail and custom controls share exact bounds", () => {
+  assert.deepEqual(getPdfCompressionPreset(), { quality: 94, scale: 300 / 72 });
+  assert.deepEqual(getPdfCompressionPreset("balanced"), { quality: 85, scale: 200 / 72 });
+  const compression = tools.find(({ slug }) => slug === "compress-pdf");
+  assert.equal(compression.settings.find(({ key }) => key === "quality").default, "gentle");
+  for (const key of ["dpi", "jpegQuality"]) {
+    const setting = compression.settings.find((entry) => entry.key === key);
+    assert.equal(setting.min, PDF_COMPRESSION_SETTINGS[key].min);
+    assert.equal(setting.max, PDF_COMPRESSION_SETTINGS[key].max);
+    for (const value of [setting.min, setting.max]) assert.doesNotThrow(() => getPdfCompressionPreset("custom", { [key]: value }));
+    for (const value of [setting.min - 1, setting.max + 1, NaN, Infinity, "bad", ""]) {
+      assert.throws(() => getPdfCompressionPreset("custom", { [key]: value }), { code: "invalid-compression-setting" });
+    }
+  }
+  assert.deepEqual(getPdfCompressionPreset("custom", { dpi: 288, jpegQuality: 100 }), { scale: 4, quality: 100 });
+  assert.deepEqual(getPdfCompressionPreset(100, { scale: 4 }), { scale: 4, quality: 100 });
+  const limits = getToolLimits("compress-pdf");
+  assert.doesNotThrow(() => assertPdfRasterWork(limits.maxRasterPixelsTotal, limits));
+  assert.throws(() => assertPdfRasterWork(limits.maxRasterPixelsTotal + 1, limits), { code: "pdf-render-work-too-large" });
+  // A4 at 300 DPI is about 8.7 MP: accepted unchanged; 600 DPI exceeds the page guard.
+  assert.doesNotThrow(() => assertRasterDimensions(2481, 3508, limits));
+  assert.throws(() => assertRasterDimensions(4961, 7016, limits), { code: "pdf-page-too-large" });
+  assert.equal(compressionEstimateAllowsProcessing({ state: "error", blocked: true }), false);
+});
+
+test("invalid custom PDF compression settings fail before reading document bytes", async () => {
+  let reads = 0;
+  const input = { name: "scan.pdf", size: 1000, arrayBuffer() { reads += 1; throw new Error("must not read"); } };
+  for (const options of [
+    { quality: "custom", dpi: 601 },
+    { quality: "custom", jpegQuality: 101 },
+    { quality: "custom", dpi: "bad" },
+    { quality: "unknown" },
+  ]) {
+    await assert.rejects(runTool(tool("compress-pdf"), [input], options), { code: "invalid-compression-setting" });
+  }
+  assert.equal(reads, 0);
 });

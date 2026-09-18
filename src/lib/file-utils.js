@@ -7,6 +7,8 @@ import {
   ARCHIVE_INPUT_LIMIT_BYTES,
   ARCHIVE_ITEM_LIMIT_BYTES,
   MAX_GENERATED_RESULTS,
+  PDF_COMPRESSION_PRESETS,
+  PDF_COMPRESSION_SETTINGS,
   MAX_PAGE_SELECTION_CHARACTERS,
   MAX_PAGE_SELECTION_ENTRIES,
   assertOrganizedPageCount,
@@ -102,14 +104,21 @@ export function getCompressionSizeChange(inputBytes, outputBytes) {
   };
 }
 
-const PDF_COMPRESSION_PRESETS = Object.freeze({
-  gentle: Object.freeze({ quality: 82, scale: 1.45 }),
-  balanced: Object.freeze({ quality: 68, scale: 1.2 }),
-  strong: Object.freeze({ quality: 48, scale: 0.95 }),
-});
-
-export function getPdfCompressionPreset(mode) {
-  return PDF_COMPRESSION_PRESETS[mode] || PDF_COMPRESSION_PRESETS.balanced;
+export function getPdfCompressionPreset(mode = "gentle", options = {}) {
+  if (mode !== "custom" && typeof mode !== "number") {
+    const preset = PDF_COMPRESSION_PRESETS[mode];
+    if (!preset) throw new FileLimitError("invalid-compression-setting", "Choose Gentle, Balanced, Strong, or Custom compression.");
+    return preset;
+  }
+  const dpi = typeof mode === "number" ? Number(options.scale ?? PDF_COMPRESSION_PRESETS.gentle.scale) * 72 : Number(options.dpi ?? PDF_COMPRESSION_SETTINGS.dpi.default);
+  const quality = typeof mode === "number" ? mode : Number(options.jpegQuality ?? PDF_COMPRESSION_SETTINGS.jpegQuality.default);
+  for (const [key, value] of [["dpi", dpi], ["jpegQuality", quality]]) {
+    const { min, max } = PDF_COMPRESSION_SETTINGS[key];
+    if (!Number.isFinite(value) || value < min || value > max) {
+      throw new FileLimitError("invalid-compression-setting", `${key === "dpi" ? "Resolution" : "JPEG quality"} must be between ${min} and ${max}${key === "dpi" ? " DPI" : "%"}.`);
+    }
+  }
+  return { quality, scale: dpi / 72 };
 }
 
 export function projectPdfCompressionSize(inputBytes, pageCount, sampleSizes) {
@@ -134,7 +143,7 @@ export function projectPdfCompressionSize(inputBytes, pageCount, sampleSizes) {
 }
 
 export function compressionEstimateAllowsProcessing(estimate) {
-  if (estimate?.state === "error") return true;
+  if (estimate?.state === "error") return !estimate.blocked;
   return estimate?.state === "ready" && estimate.status === "reduced";
 }
 
