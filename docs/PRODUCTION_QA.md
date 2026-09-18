@@ -19,6 +19,18 @@ The owner authorized a Vercel preview, production-beta promotion, Git integratio
 
 As of 2026-08-23, exact merged private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26` is deployed as READY production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi`. The clean build and public apex expose byte-identical service-worker and precache-manifest artifacts. The owner deferred the file-driven Blur Face portrait check; row 47 remains unchecked, and the deferral is neither a pass nor a launch waiver.
 
+## Local PDF workflow verification — 2026-09-18
+
+This local production-build check covers the PDF workflow update; it does not mark deployed-candidate rows complete. Bun 1.2.20 frozen install and the full `bun run verify` passed. Browser checks used Chromium 148.0.7778.96 at 1440 × 1000 and 390 × 844, plus a mobile context with touch input. Only synthetic fixtures were used.
+
+- Merge: wheel scrolling through 16 files, drag insertion, edge scrolling, touch dragging, and Escape cancelling a drag without closing the tool passed. Forward/reversed front/back exports and source swapping are independently checked by page dimensions in automated tests; the browser downloaded and reopened the reversed-back case, then repeated it with a changed custom name. Unequal scans and malformed input remained blocked. Closing an active job produced no download.
+- Split: Every page produced one PDF per source page in the downloaded ZIP. Independent parsing confirmed exact page order, page count, and custom page filenames. Automated tests cover the 100-output boundary, overflow, and cancellation.
+- Compress: a 55 MiB synthetic PDF containing an inert unreferenced stream passed selection, compression, and download; the result reopened with the expected page count. This checks the former byte-limit blocker and is not a benchmark for equally large scanned-image workloads. Automated policy tests cover the exact 100 MiB boundary and rejection before reading over-limit input, while retaining page/pixel/output caps.
+- Naming: custom PDF and ZIP extensions, contained page names, repeated exports, clearing the name on Start another, and the visual PDF image editor were exercised. Editing the image editor's name cleared its stale result. Automated tests additionally check unsafe names, Unicode lengths, long page labels, and archive collisions without overwritten contents.
+- Offline/mobile: the production service worker reloaded the Merge route with the browser offline and completed a downloaded merge. Merge/Split controls and output naming remained reachable without horizontal page overflow on mobile. The representative browser run recorded no page errors or external requests.
+
+Safari/Firefox and physical mobile-device checks remain open; the desktop scrolling problem from the screenshot did not reproduce in Chromium before the change. The layout now explicitly constrains its scroll row and shows a stable scrollbar gutter, and file dragging is newly supported.
+
 ## Initial Vercel beta smoke gate
 
 Run this focused suite on the exact candidate before a normal beta promotion. The owner explicitly authorized the initial production beta with the still-open checks carried forward as ongoing deployed-candidate QA. Record browser, deployment, service-worker revision, fixtures, and evidence below. A failure in privacy, document integrity, security, bounded resource use, offline update safety, or rollback safety blocks any later promotion regardless of whether the affected catalog row is listed here.

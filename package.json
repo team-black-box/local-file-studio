@@ -22,7 +22,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/generate-seo-assets.mjs && node scripts/prepare-production-build.mjs",
     "preview": "vite preview",
-    "test:limits": "node --test tests/file-limits.test.mjs",
+    "test:limits": "node --test tests/file-limits.test.mjs tests/output-names.test.mjs tests/pdf-merge-split.test.mjs",
     "test:editor": "node --test tests/pdf-image-editor.test.mjs",
     "test:annotations": "node --test tests/pdf-text-annotation.test.mjs",
     "test:signatures": "node --test tests/pdf-signature.test.mjs",

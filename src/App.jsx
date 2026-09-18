@@ -93,7 +93,10 @@ import {
 } from "@phosphor-icons/react";
 import { categories, categoryById, rankToolSearchResults, tools } from "./tools.js";
 import { PdfImageWorkbench } from "./PdfImageWorkbench.jsx";
+import { FileReorderHandle } from "./FileReorderHandle.jsx";
+import { OutputNameControl } from "./OutputNameControl.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
+import { createPdfMergePlan } from "./lib/pdf-merge.js";
 import { PDF_TO_JPG_RENDER_SCALE, assertPdfPreviewResult, buildOcrCopyText, compressionEstimateAllowsProcessing, createExtractPagePlan, createMergePdfPlan, createOrganizePagePlan, createPdfJpgOutputPlan, createSplitPdfGroups, downloadResult, formatBytes, formatPageSelection, getAutomaticDownloadResult, getCompressionSizeChange, getPdfCompressionPreset, isPdfPreviewResult, isToolSearchShortcut, parseMarkdownPreview, parseSplitPageSelection, projectPdfCompressionSize } from "./lib/file-utils.js";
 import { IMAGE_CROP_SCALE_MAX_PERCENT, IMAGE_CROP_SCALE_MIN_PERCENT, IMAGE_UPSCALE_SCALES, MAX_PDF_PASSWORD_CHARACTERS, PDF_PREVIEW_LIMITS, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS, assertRasterDimensions, describeToolLimits, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getPhotoEditorPlan, getProportionalResizeDimensions, getTextSettingLimit, getToolLimits, summarizeRejections, validateFileSelection } from "./lib/file-limits.js";
 import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./lib/background-removal.js";
@@ -689,7 +692,7 @@ function usePdfPageInfo(file, enabled, limits, toolName) {
   return info;
 }
 
-function useMergePdfPreview(files, enabled, tool, limits) {
+function useMergePdfPreview(files, enabled, tool, limits, settings) {
   const [preview, setPreview] = useState({ state: "idle", files: null, plan: null, message: "" });
   const pageCountCacheRef = useRef(new WeakMap());
 
@@ -745,7 +748,14 @@ function useMergePdfPreview(files, enabled, tool, limits) {
     return () => { cancelled = true; };
   }, [enabled, files, limits, tool]);
 
-  return preview;
+  return useMemo(() => {
+    if (preview.state !== "ready" || !preview.plan) return preview;
+    try {
+      return { ...preview, plan: createPdfMergePlan(preview.plan.entries.map((entry) => entry.pageCount), files.map((file) => file.name), limits, { mode: settings.mode, reverseBacks: settings.reverseBacks }) };
+    } catch (error) {
+      return { ...preview, state: "error", plan: null, message: error.message };
+    }
+  }, [preview, files, limits, settings.mode, settings.reverseBacks]);
 }
 
 function usePdfOfficeTextPreview(file, password, enabled, limits, format, toolName = "PDF to Word") {
@@ -2650,6 +2660,26 @@ function PdfSettingPreview({ tool, settings, info }) {
   );
 }
 
+function MergePdfMethodControls({ settings, onChange }) {
+  const interleave = settings.mode === "interleave";
+  return (
+    <div className="merge-method-controls">
+      <fieldset className="scan-size-picker">
+        <legend>Choose a merge method</legend>
+        <div>
+          {[{ value: "sequential", label: "PDFs in order", hint: "Append complete PDFs." }, { value: "interleave", label: "Front/back scans", hint: "Alternate fronts and backs." }].map((option) => (
+            <button key={option.value} type="button" className={settings.mode === option.value ? "selected" : ""} aria-pressed={settings.mode === option.value} onClick={() => onChange("mode", option.value)}><span><strong>{option.label}</strong><small>{option.hint}</small></span></button>
+          ))}
+        </div>
+      </fieldset>
+      {interleave && <>
+        <p className="field-description">Add exactly two PDFs with equal page counts, including blank backs. Put the front scan first and the back scan second; use the file arrows to swap them.</p>
+        <label className="setting-toggle"><input type="checkbox" checked={settings.reverseBacks === true} onChange={(event) => onChange("reverseBacks", event.target.checked)} /><span><strong>Reverse back scan order</strong><small>Use this if the back scan starts with the last sheet.</small></span></label>
+      </>}
+    </div>
+  );
+}
+
 function MergePdfControls({ files, preview }) {
   const plan = preview.files === files ? preview.plan : null;
   const state = preview.files === files ? preview.state : files.length ? "loading" : "idle";
@@ -2694,8 +2724,14 @@ function MergePdfControls({ files, preview }) {
         <div><strong id="merge-plan-title">{plan.fileCount.toLocaleString()} {plan.fileCount === 1 ? "PDF checked" : "PDFs in final order"}</strong><small>{plan.valid ? `They will become one ${plan.totalPages.toLocaleString()}-page PDF.` : "Add one more PDF to create the merged file."}</small></div>
         <b>{plan.totalPages.toLocaleString()}<small>{plan.totalPages === 1 ? "page" : "pages"}</small></b>
       </div>
-      <ol className="merge-plan-list" aria-label="Final merged page ranges">
-        {plan.entries.map((entry) => (
+      <ol className="merge-plan-list" aria-label={plan.mode === "interleave" ? "Final interleaved page order" : "Final merged page ranges"}>
+        {plan.mode === "interleave" ? plan.pageOrder.map((entry) => (
+          <li key={entry.outputPage}>
+            <span className="merge-plan-number" aria-hidden="true">{entry.outputPage}</span>
+            <span className="merge-plan-file"><strong title={plan.entries[entry.fileIndex].name}>{entry.fileIndex === 0 ? "Front" : "Back"} · {plan.entries[entry.fileIndex].name}</strong><small>Source page {entry.pageIndex + 1}</small></span>
+            <span className="merge-plan-range"><small>Page</small><strong>{entry.outputPage}</strong></span>
+          </li>
+        )) : plan.entries.map((entry) => (
           <li key={`${entry.index}-${entry.name}`}>
             <span className="merge-plan-number" aria-hidden="true">{entry.index + 1}</span>
             <span className="merge-plan-file"><strong title={entry.name}>{entry.name}</strong><small>{entry.pageCount.toLocaleString()} {entry.pageCount === 1 ? "page" : "pages"}</small></span>
@@ -2703,7 +2739,7 @@ function MergePdfControls({ files, preview }) {
           </li>
         ))}
       </ol>
-      <p className="merge-plan-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Order is visible before merging.</strong> Move files with the arrows on the left; page ranges update locally and the originals stay untouched.</span></p>
+      <p className="merge-plan-note"><ShieldCheckIcon size={16} weight="fill" aria-hidden="true" /><span><strong>Order is visible before merging.</strong> {plan.mode === "interleave" ? "Fronts and backs alternate in the exact order above. Source files stay untouched." : "Move files with the arrows on the left; page ranges update locally and the originals stay untouched."}</span></p>
     </section>
   );
 }
@@ -2714,7 +2750,7 @@ function MergePdfResultSummary({ result }) {
   return (
     <div className="merge-result-summary" role="status">
       <span><FilesIcon size={20} weight="duotone" aria-hidden="true" /></span>
-      <div><strong>{outcome.fileCount.toLocaleString()} PDFs merged in order</strong><small>{outcome.totalPages.toLocaleString()} {outcome.totalPages === 1 ? "page" : "pages"} in the finished PDF · source files unchanged</small></div>
+      <div><strong>{outcome.mode === "interleave" ? "Front and back scans interleaved" : `${outcome.fileCount.toLocaleString()} PDFs merged in order`}</strong><small>{outcome.totalPages.toLocaleString()} {outcome.totalPages === 1 ? "page" : "pages"} in the finished PDF · source files unchanged</small></div>
       <b>LOCAL</b>
     </div>
   );
@@ -2909,6 +2945,7 @@ function ImagePdfPageControls({ files, pageSizeSetting, pageSizeValue, onPageSiz
 
 const splitMethodOptions = [
   { value: "half", label: "Split in half", Icon: ColumnsIcon },
+  { value: "every-page", label: "Every page", Icon: FilePdfIcon },
   { value: "every2", label: "Every 2 pages", Icon: SelectionBackgroundIcon },
   { value: "odd", label: "Odd pages", Icon: ListNumbersIcon },
   { value: "even", label: "Even pages", Icon: ListIcon },
@@ -6848,6 +6885,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const titleRef = useRef(null);
   const openerRef = useRef(null);
   const dismissedRef = useRef(false);
+  const processingControllerRef = useRef(null);
   const fileInputRef = useRef(null);
   const dropzoneRef = useRef(null);
   const fileIdsRef = useRef(new WeakMap());
@@ -6879,7 +6917,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const [fileIssue, setFileIssue] = useState(null);
   const [queueAnnouncement, setQueueAnnouncement] = useState(null);
   const passwordGate = useProtectedPdfGate(tool, files, setFiles);
-  const mergePdfPreview = useMergePdfPreview(files, tool.slug === "merge-pdf" && passwordGate.ready, tool, limits);
+  const mergePdfPreview = useMergePdfPreview(files, tool.slug === "merge-pdf" && passwordGate.ready, tool, limits, settings);
   const usesPagePicker = ["split-pdf", "remove-pdf-pages", "extract-pdf-pages", "organize-pdf"].includes(tool.slug);
   const usesPdfOfficeTextPreview = ["pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel"].includes(tool.slug);
   const usesStickySettings = usesPagePicker || ["merge-pdf", "scan-to-pdf", "jpg-to-pdf", "pdf-to-jpg", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-pdfa", "compress-image", "resize-image", "upscale-image", "remove-image-background", "blur-face", "watermark-image", "meme-generator", "rotate-image", "crop-image", "convert-from-jpg", "photo-editor", "word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf", "html-to-pdf", "html-to-image", "pdf-forms", "redact-pdf", "edit-pdf", "sign-pdf", "compare-pdf", "translate-pdf"].includes(tool.slug);
@@ -7019,6 +7057,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const closeWorkbench = () => {
     if (dismissedRef.current) return;
     dismissedRef.current = true;
+    processingControllerRef.current?.abort();
     if (dialogRef.current?.open) dialogRef.current.close();
     onClose();
     window.requestAnimationFrame(() => {
@@ -7038,6 +7077,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     }
     return () => {
       dismissedRef.current = true;
+      processingControllerRef.current?.abort();
       if (dialog?.open) dialog.close();
     };
   }, []);
@@ -7091,7 +7131,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     const movedFile = files[index];
     const movedFileId = getFileId(movedFile);
     const next = [...files];
-    [next[index], next[target]] = [next[target], next[index]];
+    next.splice(index, 1);
+    next.splice(target, 0, movedFile);
     passwordGate.resetForFileChange();
     setFiles(next);
     clearResults();
@@ -7187,7 +7228,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       ? translationSourcePreview.message
     : tool.slug === "translate-pdf" && getPdfTranslationMode(settings.translationMode) === "full" && translationEngine.state !== "ready"
       ? `Prepare full ${getPdfTranslationLanguage(settings.targetLanguage).label} translation above, or choose Basic glossary.`
-    : tool.slug === "merge-pdf" && hasRequiredInput && (!mergePdfPreviewMatches || mergePdfPreview.state === "loading")
+    : tool.slug === "merge-pdf" && hasRequiredInput && (mergePdfPreview.state !== "error" && (!mergePdfPreviewMatches || mergePdfPreview.state === "loading"))
       ? "Reading every PDF page count before merging."
     : tool.slug === "merge-pdf" && mergePdfPreview.state === "error"
       ? mergePdfPreview.message
@@ -7296,6 +7337,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
   const process = async () => {
     if (!canRun) return;
     let activeTranslationSession = null;
+    const processingController = new AbortController();
+    processingControllerRef.current = processingController;
     setStatus("processing");
     setProcessError("");
     setFileIssue(null);
@@ -7305,6 +7348,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     try {
       const processOptions = {
         ...settings,
+        signal: processingController.signal,
         inputPasswords: passwordGate.inputPasswords,
         outputPassword: passwordGate.outputPassword,
       };
@@ -7352,6 +7396,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
       setStatus("error");
       setProcessError(error?.message || "The local processor could not finish this file.");
     } finally {
+      if (processingControllerRef.current === processingController) processingControllerRef.current = null;
       releasePreparedTranslator(activeTranslationSession);
       if (!dismissedRef.current) passwordGate.clearCredentials({ resetPreference: true });
     }
@@ -7482,6 +7527,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
     translationEngine.release();
     clearResults();
     setFiles([]);
+    setSettings((current) => ({ ...current, outputName: "" }));
     setStatus("idle");
     setProcessError("");
     setFileIssue(null);
@@ -7562,12 +7608,15 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
                         ? mergePdfPreview.plan?.entries[index]
                         : null;
                       const fileStatus = mergeEntry
-                        ? `${mergeEntry.pageCount.toLocaleString()} ${mergeEntry.pageCount === 1 ? "page" : "pages"} · final ${mergeEntry.startPage === mergeEntry.endPage ? "page" : "pages"} ${mergeEntry.rangeLabel}`
+                        ? mergePdfPreview.plan.mode === "interleave"
+                          ? `${mergeEntry.role} · ${mergeEntry.pageCount.toLocaleString()} pages · ${mergeEntry.rangeLabel}`
+                          : `${mergeEntry.pageCount.toLocaleString()} ${mergeEntry.pageCount === 1 ? "page" : "pages"} · final ${mergeEntry.startPage === mergeEntry.endPage ? "page" : "pages"} ${mergeEntry.rangeLabel}`
                         : tool.slug === "merge-pdf"
                           ? mergePdfPreview.files === files && mergePdfPreview.state === "error" ? "page check needs attention" : "checking pages locally…"
                           : "ready locally";
                       return (
-                      <div className={`file-row ${mergeEntry ? "merge-file-row" : ""}`} role="listitem" key={getFileId(file)}>
+                      <div className={`file-row ${mergeEntry ? "merge-file-row" : ""}`} role="listitem" data-file-index={index} key={getFileId(file)}>
+                        {tool.slug === "merge-pdf" && files.length > 1 && <FileReorderHandle index={index} name={file.name} onReorder={moveFile} disabled={status === "processing"} />}
                         <span className={`file-type ${tool.kind}`}><ToolIcon tool={tool} size={19} /></span>
                         <span className="file-info"><strong title={file.name}>{file.name}</strong><small>{formatBytes(file.size)} · {fileStatus}</small></span>
                         {files.length > 1 && <span className="reorder-controls"><button ref={(node) => { const key = `${getFileId(file)}:up`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }} onClick={() => moveFile(index, -1)} disabled={index === 0} aria-label={`Move ${file.name} up from position ${index + 1} of ${files.length}`}><ArrowUpIcon size={15} aria-hidden="true" /></button><button ref={(node) => { const key = `${getFileId(file)}:down`; if (node) reorderButtonsRef.current.set(key, node); else reorderButtonsRef.current.delete(key); }} onClick={() => moveFile(index, 1)} disabled={index === files.length - 1} aria-label={`Move ${file.name} down from position ${index + 1} of ${files.length}`}><ArrowDownIcon size={15} aria-hidden="true" /></button></span>}
@@ -7660,7 +7709,7 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             {tool.slug === "translate-pdf" ? (
               <TranslationControls file={files[0]} settings={settings} settingsList={settingsList} preview={translationSourcePreview} engine={translationEngine} onChange={updateSetting} onPrepare={translationEngine.prepare} />
             ) : tool.slug === "merge-pdf" ? (
-              <MergePdfControls files={files} preview={mergePdfPreview} />
+              <><MergePdfMethodControls settings={settings} onChange={updateSetting} /><MergePdfControls files={files} preview={mergePdfPreview} /></>
             ) : tool.slug === "split-pdf" ? (
               <SplitPdfControls settings={settings} onChange={updateSetting} info={splitInfo} plan={splitPlan} limits={limits} />
             ) : tool.slug === "remove-pdf-pages" ? (
@@ -7805,6 +7854,8 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             {tool.maturity === "beta" && tool.slug !== "translate-pdf" && (
               <div className="beta-note"><SparkleIcon size={18} /><span><strong>Local beta</strong>Complex layouts, rare formats, and very large files may vary by browser.</span></div>
             )}
+
+            {tool.slug !== "ocr-pdf" && <OutputNameControl tool={tool} files={files} options={settings} value={settings.outputName || ""} onChange={(value) => updateSetting("outputName", value)} disabled={status === "processing"} />}
 
             <div className="output-summary">
               <span>Output</span>

@@ -732,7 +732,7 @@ export async function processImageTool(slug, files, options = {}, report) {
     results.push(retainResult(resultBudget, result));
   }
   report?.({ phase: "Finishing", progress: 0.96 });
-  const finalResults = options.keepSeparate ? results : await zipResults(results, `${safeFileName(slug)}-results.zip`);
+  const finalResults = options.keepSeparate ? results : await zipResults(results, `${safeFileName(slug)}-results.zip`, { outputName: options.outputName });
   if (slug === "compress-image" && results.length > 1 && finalResults.length === 1) {
     const inputBytes = files.reduce((sum, file) => sum + file.size, 0);
     const outputBytes = finalResults[0].size;

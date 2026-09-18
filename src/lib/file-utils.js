@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import JSZip from "jszip";
+import { nameOutputResults } from "./output-names.js";
 import {
   ARCHIVE_INPUT_LIMIT_BYTES,
   ARCHIVE_ITEM_LIMIT_BYTES,
@@ -336,8 +337,8 @@ export function retainResult(budget, result) {
   return result;
 }
 
-export async function zipResults(results, archiveName = "local-file-studio-results.zip") {
-  if (results.length === 1) return results;
+export async function zipResults(results, archiveName = "local-file-studio-results.zip", naming = {}) {
+  if (results.length === 1) return nameOutputResults(results, { ...naming, archiveEntries: true });
   if (results.length > MAX_GENERATED_RESULTS) {
     throw new FileLimitError(
       "result-count-limit",
@@ -359,19 +360,11 @@ export async function zipResults(results, archiveName = "local-file-studio-resul
       `The generated files total ${formatLimitBytes(sourceBytes)}, above the ${formatLimitBytes(ARCHIVE_INPUT_LIMIT_BYTES)} in-memory ZIP limit. Process a smaller batch.`,
     );
   }
+  results = nameOutputResults(results, { ...naming, archiveEntries: true });
   const zip = new JSZip();
-  const usedNames = new Map();
   for (const result of results) {
-    const count = (usedNames.get(result.name) || 0) + 1;
-    usedNames.set(result.name, count);
-    const extensionIndex = result.name.lastIndexOf(".");
-    const uniqueName = count === 1
-      ? result.name
-      : extensionIndex > 0
-        ? `${result.name.slice(0, extensionIndex)}-${count}${result.name.slice(extensionIndex)}`
-        : `${result.name}-${count}`;
     const alreadyCompressed = /^(application\/(pdf|zip)|image\/(jpeg|png|webp|gif))$/i.test(result.blob.type);
-    zip.file(uniqueName, new Uint8Array(await result.blob.arrayBuffer()), { compression: alreadyCompressed ? "STORE" : "DEFLATE" });
+    zip.file(result.name, new Uint8Array(await result.blob.arrayBuffer()), { compression: alreadyCompressed ? "STORE" : "DEFLATE" });
   }
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
   return [resultFromBlob(archiveName, blob, `${results.length} files in one archive`)];

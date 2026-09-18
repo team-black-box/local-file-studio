@@ -16,6 +16,7 @@ import {
   safeFileName,
   zipResults,
 } from "./file-utils.js";
+import { createPdfMergePlan } from "./pdf-merge.js";
 import { createPdfImageDrawOperation } from "./pdf-image-placement.js";
 import { protectPdf, repairPdf, unlockPdf } from "./libpdf.js";
 import { assertPdfProtectionPasswordPlan } from "./pdf-protection-password.js";
@@ -318,28 +319,66 @@ async function copyPagesToNewDocument(source, indices) {
   return output;
 }
 
+function checkPdfJobCancellation(options) {
+  if (options.signal?.aborted) throw new DOMException("PDF processing was cancelled.", "AbortError");
+}
+
 async function mergePdfs(files, options, report) {
+  checkPdfJobCancellation(options);
   const { PDFDocument } = await import("pdf-lib");
   const limits = getToolLimits("merge-pdf");
   const output = await PDFDocument.create();
   const pageCounts = [];
-  let plan = createMergePdfPlan(pageCounts, files.map((file) => file.name), limits);
-  for (let index = 0; index < files.length; index += 1) {
-    report?.({ phase: `Adding PDF ${index + 1} of ${files.length}`, progress: index / files.length });
-    const source = await loadPdfLib(files[index]);
-    const sourcePages = source.getPageCount();
-    pageCounts.push(sourcePages);
-    plan = createMergePdfPlan(pageCounts, files.map((file) => file.name), limits);
-    const pages = await output.copyPages(source, source.getPageIndices());
-    pages.forEach((page) => output.addPage(page));
+  const names = files.map((file) => file.name);
+  let plan;
+  if (options.mode === "interleave") {
+    if (files.length !== 2) throw new FileLimitError("interleave-file-count", "Front/back scans needs exactly two PDFs. Put the front scan first and the back scan second.");
+    const sources = [];
+    try {
+      for (const file of files) {
+        checkPdfJobCancellation(options);
+        sources.push(await loadPdfLib(file));
+        pageCounts.push(sources.at(-1).getPageCount());
+        createMergePdfPlan(pageCounts, names, limits);
+      }
+      plan = createPdfMergePlan(pageCounts, names, limits, options);
+      const copied = [];
+      for (let index = 0; index < sources.length; index += 1) {
+        report?.({ phase: `Reading ${index === 0 ? "front" : "back"} scan`, progress: index / sources.length });
+        checkPdfJobCancellation(options);
+        // Copy each source in one batch so shared images/resources stay shared.
+        copied.push(await output.copyPages(sources[index], sources[index].getPageIndices()));
+        sources[index] = null;
+      }
+      for (const entry of plan.pageOrder) {
+        checkPdfJobCancellation(options);
+        output.addPage(copied[entry.fileIndex][entry.pageIndex]);
+      }
+    } finally {
+      sources.length = 0;
+    }
+  } else {
+    for (let index = 0; index < files.length; index += 1) {
+      report?.({ phase: `Adding PDF ${index + 1} of ${files.length}`, progress: index / files.length });
+      checkPdfJobCancellation(options);
+      const source = await loadPdfLib(files[index]);
+      pageCounts.push(source.getPageCount());
+      plan = createPdfMergePlan(pageCounts, names, limits, options);
+      checkPdfJobCancellation(options);
+      const pages = await output.copyPages(source, source.getPageIndices());
+      pages.forEach((page) => output.addPage(page));
+    }
   }
-  if (!plan.valid) throw new FileLimitError("not-enough-files", `Merge PDF needs at least ${limits.minFiles.toLocaleString()} PDFs.`);
+  if (!plan?.valid) throw new FileLimitError("not-enough-files", `Merge PDF needs at least ${limits.minFiles.toLocaleString()} PDFs.`);
+  checkPdfJobCancellation(options);
   const bytes = await output.save({ useObjectStreams: true });
-  const result = pdfResult("merged-local.pdf", bytes, `${plan.totalPages.toLocaleString()} ${plan.totalPages === 1 ? "page" : "pages"} merged`);
-  return [{ ...result, mergeOutcome: { fileCount: plan.fileCount, totalPages: plan.totalPages } }];
+  checkPdfJobCancellation(options);
+  const result = pdfResult("merged-local.pdf", bytes, `${plan.totalPages.toLocaleString()} ${plan.totalPages === 1 ? "page" : "pages"} ${plan.mode === "interleave" ? "interleaved" : "merged"}`);
+  return [{ ...result, mergeOutcome: { fileCount: plan.fileCount, totalPages: plan.totalPages, mode: plan.mode, ...(plan.mode === "interleave" ? { reverseBacks: plan.reverseBacks } : {}) } }];
 }
 
 async function splitPdf(file, options, report) {
+  checkPdfJobCancellation(options);
   const source = await loadPdfLib(file);
   const pageCount = source.getPageCount();
   const splitMode = options.mode || (options.pages && options.pages !== "all" ? "selected" : "all");
@@ -348,6 +387,7 @@ async function splitPdf(file, options, report) {
   const results = [];
   const resultBudget = createResultBudget();
   for (let index = 0; index < groups.length; index += 1) {
+    checkPdfJobCancellation(options);
     const group = groups[index];
     const firstPage = group[0] + 1;
     const lastPage = group[group.length - 1] + 1;
@@ -361,6 +401,7 @@ async function splitPdf(file, options, report) {
           ? `pages-${firstPage}-${lastPage}`
           : `pages-${index + 1}`;
     report?.({ phase: `Creating PDF ${index + 1} of ${groups.length}`, progress: index / groups.length });
+    checkPdfJobCancellation(options);
     const output = await copyPagesToNewDocument(source, group);
     results.push(retainResult(
       resultBudget,
@@ -371,8 +412,11 @@ async function splitPdf(file, options, report) {
       ),
     ));
   }
+  checkPdfJobCancellation(options);
   const protectedResults = await protectGeneratedPdfResults(results, options.outputPassword);
-  const output = await zipResults(protectedResults, `${safeFileName(baseName(file.name))}-split.zip`);
+  checkPdfJobCancellation(options);
+  const output = await zipResults(protectedResults, `${safeFileName(baseName(file.name))}-split.zip`, { outputName: options.outputName });
+  checkPdfJobCancellation(options);
   if (output.length === 1 && output[0].type === "application/zip") {
     output[0].details = `${groups.length} PDFs in one ZIP${options.outputPassword ? " · contained PDFs are password-protected" : ""}`;
   }
@@ -408,7 +452,7 @@ async function selectPdfPages(slug, file, options) {
       ));
     }
     const protectedResults = await protectGeneratedPdfResults(results, options.outputPassword);
-    const output = await zipResults(protectedResults, `${safeFileName(baseName(file.name))}-extracted-pages.zip`);
+    const output = await zipResults(protectedResults, `${safeFileName(baseName(file.name))}-extracted-pages.zip`, { outputName: options.outputName });
     if (options.outputPassword && output[0]?.type === "application/zip") {
       output[0].details = `${output[0].details} · contained PDFs are password-protected`;
     }
@@ -777,7 +821,7 @@ async function pdfToImages(file, options, report) {
         page.canvas.height = 1;
       }
     }
-    return await zipResults(results, `${safeFileName(baseName(file.name))}-pages.zip`);
+    return await zipResults(results, `${safeFileName(baseName(file.name))}-pages.zip`, { outputName: options.outputName });
   } finally {
     await destroyPdfJsDocument(rendered);
   }

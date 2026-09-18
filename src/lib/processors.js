@@ -4,6 +4,7 @@
 import { FileLimitError, assertMinimumFileCount, assertTextSettingLengths, summarizeRejections, validateFileSelection } from "./file-limits.js";
 import { preflightToolFiles, toFriendlyResourceError } from "./file-preflight.js";
 import { getPdfCompressionPreset } from "./file-utils.js";
+import { nameOutputResults, validateOutputName } from "./output-names.js";
 
 const ALIASES = {
   "remove-pdf-pages": "remove-pages",
@@ -30,9 +31,14 @@ function validateNumericOptions(tool, options) {
 }
 
 export async function runTool(tool, files, options = {}, report) {
+  const checkCancellation = () => {
+    if (options.signal?.aborted) throw new DOMException("Processing was cancelled.", "AbortError");
+  };
+  checkCancellation();
   const slug = ALIASES[tool.slug] || tool.slug;
   const startedAt = performance.now();
   const normalizedOptions = { ...options };
+  validateOutputName(normalizedOptions.outputName);
   if (Array.isArray(options.inputPasswords)) {
     normalizedOptions.inputPassword = options.inputPasswords[0];
     normalizedOptions.inputPassword2 = options.inputPasswords[1];
@@ -71,19 +77,23 @@ export async function runTool(tool, files, options = {}, report) {
   }
 
   report?.({ phase: "Loading local engine", progress: 0.2 });
+  checkCancellation();
   let results;
   try {
     results = tool.kind === "image"
       ? await import("./image-processors.js").then(({ processImageTool }) => processImageTool(slug, files, normalizedOptions, report))
       : await import("./pdf-processors.js").then(({ processPdfTool }) => processPdfTool(slug, files, normalizedOptions, report));
+    checkCancellation();
     if (normalizedOptions.outputPassword) {
       results = await import("./pdf-output-protection.js")
         .then(({ protectGeneratedPdfResults }) => protectGeneratedPdfResults(results, normalizedOptions.outputPassword));
     }
+    checkCancellation();
   } catch (error) {
     throw toFriendlyResourceError(error, tool.name);
   }
 
+  results = nameOutputResults(results, { tool, files, outputName: normalizedOptions.outputName, options: normalizedOptions });
   report?.({ phase: "Complete", progress: 1 });
   return {
     results,

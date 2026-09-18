@@ -87,11 +87,23 @@ export const tools = withPhosphorExports([
     accepts: [".pdf"],
     output: [".pdf"],
     batch: true,
-    tags: ["combine", "join", "pages", "documents"],
+    tags: ["combine", "join", "pages", "documents", "front", "back", "scans", "interleave"],
     icon: "Files",
     featured: true,
     maturity: "ready",
-    settings: [],
+    settings: [
+      {
+        key: "mode",
+        type: "choice",
+        label: "Merge method",
+        default: "sequential",
+        options: [
+          { value: "sequential", label: "PDFs in order", hint: "Append each PDF after the previous one." },
+          { value: "interleave", label: "Front/back scans", hint: "Alternate pages from two scans with equal page counts." },
+        ],
+      },
+      { key: "reverseBacks", type: "toggle", label: "Reverse back scan order", default: false },
+    ],
   },
   {
     slug: "split-pdf",
@@ -114,6 +126,7 @@ export const tools = withPhosphorExports([
         default: "half",
         options: [
           { value: "half", label: "Split in half", hint: "Create two balanced PDFs." },
+          { value: "every-page", label: "Every page", hint: "Create a separate PDF for each page." },
           { value: "every2", label: "Every 2 pages", hint: "Create consecutive two-page PDFs." },
           { value: "odd", label: "Odd pages", hint: "Group all odd pages in one PDF." },
           { value: "even", label: "Even pages", hint: "Group all even pages in one PDF." },

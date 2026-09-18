@@ -25,6 +25,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { categoryById } from "./tools.js";
+import { OutputNameControl } from "./OutputNameControl.jsx";
 import { PdfOutputProtectionControl, PdfPasswordGate } from "./PdfPasswordGate.jsx";
 import {
   describePdfOverlayImageLimits,
@@ -193,6 +194,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
   const [error, setError] = useState("");
   const [fileIssue, setFileIssue] = useState(null);
   const [results, setResults] = useState([]);
+  const [outputName, setOutputName] = useState("");
   const [previewResult, setPreviewResult] = useState(null);
   const gateFiles = useMemo(() => pendingPdf ? [pendingPdf] : [], [pendingPdf]);
   const setGateFiles = useCallback((update) => {
@@ -335,6 +337,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
     setError("");
     setFileIssue(null);
     setResults([]);
+    setOutputName("");
     passwordGate.resetForFileChange();
     await destroyPdfJsDocument(documentRef.current).catch(() => {});
     documentRef.current = null;
@@ -656,6 +659,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
       const response = await runTool(tool, [pdfFile], {
         overlayAssets: assets.map(({ id, sourceFile, preparedBlob }) => ({ id, sourceFile, preparedBlob })),
         placements,
+        outputName,
         outputPassword: passwordGate.outputPassword,
       }, (next) => {
         if (!dismissedRef.current) setProgress(next);
@@ -826,6 +830,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
               <div className="pdf-export-panel">
                 {!results.length && <PdfOutputProtectionControl control={passwordGate.outputProtection} compact />}
                 <div><span>Ready to export</span><strong>{placements.length} placement{placements.length === 1 ? "" : "s"}</strong></div>
+                <OutputNameControl tool={tool} files={pdfFile ? [pdfFile] : []} value={outputName} onChange={(value) => { setOutputName(value); setResults([]); setPreviewResult(null); setStatus("idle"); setError(""); }} disabled={status === "processing"} />
                 {status === "processing" && <div className="pdf-export-progress"><span><SpinnerGapIcon size={15} className="spin" />{progress.phase}</span><div><span style={{ width: `${Math.max(3, (progress.progress || 0) * 100)}%` }} /></div></div>}
                 {error && <div className="error-card" role="alert"><WarningCircleIcon size={18} weight="fill" /><span><strong>Couldn’t finish</strong>{error}</span></div>}
                 <button className="process-button" onClick={exportPdf} aria-disabled={!placements.length || status === "processing"}>{status === "processing" ? <><SpinnerGapIcon size={18} className="spin" />Exporting locally</> : <><CheckCircleIcon size={18} weight="fill" />Export edited PDF</>}</button>
