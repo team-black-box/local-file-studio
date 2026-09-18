@@ -3,12 +3,15 @@
 
 const MIB = 1024 * 1024;
 const MEGAPIXEL = 1_000_000;
+const STANDARD_PDF_INPUT_LIMIT_BYTES = 100 * MIB;
 const PDF_OVERLAY_IMAGE_ACCEPTS = Object.freeze([".png", ".jpg", ".jpeg"]);
 
 export const GLOBAL_OUTPUT_LIMIT_BYTES = 128 * MIB;
 export const ARCHIVE_INPUT_LIMIT_BYTES = 128 * MIB;
 export const ARCHIVE_ITEM_LIMIT_BYTES = 48 * MIB;
 export const MAX_GENERATED_RESULTS = 100;
+export const MAX_OUTPUT_NAME_CHARACTERS = 100;
+export const MAX_OUTPUT_NAME_BYTES = 180;
 export const MAX_PAGE_SELECTION_CHARACTERS = 4_096;
 export const MAX_PAGE_SELECTION_ENTRIES = 2_000;
 export const MAX_PDF_PASSWORD_CHARACTERS = 1_024;
@@ -43,7 +46,7 @@ const DEFAULTS = Object.freeze({
 });
 
 const PDF_RASTER_PROFILES = {
-  "compress-pdf": { maxFileBytes: 50 * MIB, maxTotalBytes: 50 * MIB, maxPdfPagesPerFile: 150, maxRasterPixelsTotal: 150 * MEGAPIXEL },
+  "compress-pdf": { maxFileBytes: STANDARD_PDF_INPUT_LIMIT_BYTES, maxTotalBytes: STANDARD_PDF_INPUT_LIMIT_BYTES, maxPdfPagesPerFile: 150, maxRasterPixelsTotal: 150 * MEGAPIXEL },
   "redact-pdf": { maxFileBytes: 50 * MIB, maxTotalBytes: 50 * MIB, maxPdfPagesPerFile: 100, maxRasterPixelsTotal: 150 * MEGAPIXEL },
   "pdf-to-jpg": { maxFileBytes: 50 * MIB, maxTotalBytes: 50 * MIB, maxPdfPagesPerFile: 100, maxRasterPixelsTotal: 150 * MEGAPIXEL, maxGeneratedItems: 100 },
   "ocr-pdf": { maxFileBytes: 30 * MIB, maxTotalBytes: 30 * MIB, maxPdfPagesPerFile: 25, maxRasterPixels: 12 * MEGAPIXEL, maxRasterPixelsTotal: 40 * MEGAPIXEL, maxRasterEdge: 6000, maxOcrCharactersPerPage: 16_800 },
@@ -112,6 +115,14 @@ function withDefaults(overrides = {}) {
   return Object.freeze({ ...DEFAULTS, ...overrides });
 }
 
+function structuralPdfProfile(overrides = {}) {
+  return withDefaults({
+    maxFileBytes: STANDARD_PDF_INPUT_LIMIT_BYTES,
+    maxTotalBytes: STANDARD_PDF_INPUT_LIMIT_BYTES,
+    ...overrides,
+  });
+}
+
 function imageProfile(overrides = {}) {
   return withDefaults({
     maxFiles: 20,
@@ -141,10 +152,11 @@ export function getToolLimits(toolOrSlug) {
   const tool = typeof toolOrSlug === "string" ? null : toolOrSlug;
 
   if (slug === "merge-pdf") {
-    return withDefaults({
+    return structuralPdfProfile({
       minFiles: 2,
       maxFiles: 20,
-      maxFileBytes: 50 * MIB,
+      // Keep combined sources below the result cap: copying scanned pages
+      // usually retains their compressed image bytes rather than shrinking them.
       maxTotalBytes: 120 * MIB,
       maxPdfPagesPerFile: 300,
       maxPdfPagesTotal: 500,
@@ -201,9 +213,7 @@ export function getToolLimits(toolOrSlug) {
   }
 
   if (["split-pdf", "extract-pdf-pages"].includes(slug)) {
-    return withDefaults({
-      maxFileBytes: 75 * MIB,
-      maxTotalBytes: 75 * MIB,
+    return structuralPdfProfile({
       maxPdfPagesPerFile: 500,
       maxPageSelectionEntries: MAX_PAGE_SELECTION_ENTRIES,
       maxGeneratedItems: 100,
@@ -232,9 +242,7 @@ export function getToolLimits(toolOrSlug) {
   }
 
   if (PDF_UNBOUNDED_PAGE_TOOLS.has(slug)) {
-    return withDefaults({
-      maxFileBytes: slug === "repair-pdf" ? 50 * MIB : 75 * MIB,
-      maxTotalBytes: slug === "repair-pdf" ? 50 * MIB : 75 * MIB,
+    return structuralPdfProfile({
       maxPdfPagesPerFile: slug === "repair-pdf" ? 300 : 500,
     });
   }
@@ -344,7 +352,7 @@ export function getToolLimits(toolOrSlug) {
   }
 
   if (PAGE_SELECTION_TOOLS.has(slug)) {
-    return withDefaults({
+    return structuralPdfProfile({
       maxPdfPagesPerFile: 500,
       maxPageSelectionEntries: MAX_PAGE_SELECTION_ENTRIES,
       ...(slug === "organize-pdf" ? { maxOrganizedPageMultiplier: 2 } : {}),
@@ -352,7 +360,7 @@ export function getToolLimits(toolOrSlug) {
   }
 
   if (slug === "pdf-forms") {
-    return withDefaults({
+    return structuralPdfProfile({
       maxPdfPagesPerFile: 500,
       maxPdfFormFields: 1_000,
       maxPdfFormOptionsPerField: 500,
@@ -364,7 +372,7 @@ export function getToolLimits(toolOrSlug) {
   }
 
   if (tool?.kind === "pdf" || slug?.includes("pdf")) {
-    return withDefaults({ maxPdfPagesPerFile: 500 });
+    return structuralPdfProfile({ maxPdfPagesPerFile: 500 });
   }
 
   return withDefaults();

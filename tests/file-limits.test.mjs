@@ -109,7 +109,7 @@ function file(name, size) {
 test("tool policies expose the intended exact count and byte budgets", () => {
   assert.deepEqual(
     Object.fromEntries(Object.entries(getToolLimits("merge-pdf")).filter(([key]) => ["minFiles", "maxFiles", "maxFileBytes", "maxTotalBytes", "maxPdfPagesTotal"].includes(key))),
-    { minFiles: 2, maxFiles: 20, maxFileBytes: 50 * MiB, maxTotalBytes: 120 * MiB, maxPdfPagesTotal: 500 },
+    { minFiles: 2, maxFiles: 20, maxFileBytes: 100 * MiB, maxTotalBytes: 120 * MiB, maxPdfPagesTotal: 500 },
   );
   assert.deepEqual(PDF_PREVIEW_LIMITS, { maxOutputBytes: 128 * MiB, maxPages: 500, maxRasterPixels: 8_000_000, maxRasterEdge: 4096 });
   assert.equal(getToolLimits("compare-pdf").maxFiles, 2);
@@ -138,14 +138,14 @@ test("visible limit copy is generated from the same policy as validation", () =>
   const merge = tool("merge-pdf", { name: "Merge PDF" });
   const copy = describeToolLimits(merge);
   assert.match(copy.primary, /2–20 PDF files/);
-  assert.match(copy.primary, /50 MB each/);
+  assert.match(copy.primary, /100 MB each/);
   assert.match(copy.primary, /120 MB combined/);
   assert.match(copy.secondary, /500 pages combined/);
   assert.match(copy.secondary, /128 MB max result/);
 
   const split = tool("split-pdf", { name: "Split PDF" });
   const splitCopy = describeToolLimits(split);
-  assert.equal(splitCopy.primary, "1 PDF file · 75 MB");
+  assert.equal(splitCopy.primary, "1 PDF file · 100 MB");
   assert.doesNotMatch(splitCopy.primary, /each|combined/);
 
   const redact = tool("redact-pdf", { name: "Redact PDF" });
@@ -260,11 +260,99 @@ test("selection accepts exact boundaries without mutating inputs", () => {
   assert.deepEqual(result.nextFiles.map((item) => item.name), ["a.pdf", "b.pdf", "c.pdf"]);
 });
 
+test("larger structural PDFs accept exact byte boundaries and retain independent output and page guards", () => {
+  const structuralSlugs = [
+    "split-pdf", "extract-pdf-pages", "remove-pdf-pages", "organize-pdf",
+    "pdf-forms", "rotate-pdf", "add-pdf-page-numbers", "watermark-pdf",
+    "crop-pdf", "edit-pdf", "sign-pdf", "pdf-to-pdfa",
+  ];
+  for (const slug of structuralSlugs) {
+    const subject = tool(slug);
+    const limits = getToolLimits(subject);
+    assert.equal(limits.maxFileBytes, 100 * MiB, slug);
+    assert.equal(limits.maxTotalBytes, 100 * MiB, slug);
+    assert.equal(limits.maxPdfPagesPerFile, 500, slug);
+    assert.equal(limits.maxOutputBytes, 128 * MiB, slug);
+    assert.match(describeToolLimits(subject).primary, /100 MB/);
+    assert.equal(validateFileSelection(subject, [], [file("exact.pdf", 100 * MiB)]).accepted.length, 1, slug);
+    assert.equal(validateFileSelection(subject, [], [file("overflow.pdf", 100 * MiB + 1)]).rejected[0].code, "file-too-large", slug);
+  }
+
+  const merge = tool("merge-pdf");
+  const exact = validateFileSelection(merge, [], [file("front.pdf", 100 * MiB), file("back.pdf", 20 * MiB)]);
+  assert.equal(exact.accepted.length, 2);
+  assert.equal(exact.totalBytes, 120 * MiB);
+  assert.equal(validateFileSelection(merge, [], [file("front.pdf", 100 * MiB), file("back.pdf", 20 * MiB + 1)]).rejected[0].code, "total-too-large");
+  assert.equal(validateFileSelection(merge, [], [file("front.pdf", 60 * MiB), file("back.pdf", 60 * MiB)]).accepted.length, 2);
+  assert.ok(getToolLimits(merge).maxTotalBytes < getToolLimits(merge).maxOutputBytes);
+});
+
+test("Compress PDF accepts larger sources while retaining exact render and result guards", () => {
+  const compress = tool("compress-pdf");
+  const limits = getToolLimits(compress);
+  assert.equal(limits.maxFileBytes, 100 * MiB);
+  assert.equal(limits.maxTotalBytes, 100 * MiB);
+  assert.equal(limits.maxPdfPagesPerFile, 150);
+  assert.equal(limits.maxRasterPixels, 16_000_000);
+  assert.equal(limits.maxRasterPixelsTotal, 150_000_000);
+  assert.equal(limits.maxRasterEdge, 8192);
+  assert.equal(limits.maxOutputBytes, 128 * MiB);
+  for (const size of [50 * MiB + 1, 60 * MiB, 100 * MiB]) {
+    const selected = validateFileSelection(compress, [], [file("scan.pdf", size)]);
+    assert.equal(selected.accepted.length, 1);
+    assert.equal(selected.rejected.length, 0);
+  }
+  assert.equal(validateFileSelection(compress, [], [file("overflow.pdf", 100 * MiB + 1)]).rejected[0].code, "file-too-large");
+  const copy = describeToolLimits(compress);
+  assert.equal(copy.primary, "1 PDF file · 100 MB");
+  assert.match(copy.secondary, /150 pages\/file.*16 MP \/ 8,192 px per rendered page.*150 MP rendered per job.*128 MB max result/);
+  assert.doesNotThrow(() => validatePreflightMetadata(compress, [{ name: "scan.pdf", pdfPages: 150 }]));
+  assert.throws(() => validatePreflightMetadata(compress, [{ name: "scan.pdf", pdfPages: 151 }]), { code: "too-many-pages" });
+  assert.doesNotThrow(() => assertRasterDimensions(4000, 4000, limits));
+  assert.throws(() => assertRasterDimensions(4001, 4000, limits), { code: "pdf-page-too-large" });
+  assert.throws(() => assertRasterDimensions(8193, 1, limits), { code: "pdf-page-too-large" });
+});
+
+test("larger PDF inputs do not relax other raster, OCR, overlay, comparison, or text budgets", () => {
+  for (const slug of ["redact-pdf", "pdf-to-jpg", "add-image-to-pdf", "compare-pdf", "pdf-to-word", "pdf-to-powerpoint", "pdf-to-excel", "pdf-to-markdown", "summarize-pdf"]) {
+    assert.equal(getToolLimits(slug).maxFileBytes, 50 * MiB, slug);
+  }
+  for (const slug of ["ocr-pdf", "translate-pdf"]) {
+    assert.equal(getToolLimits(slug).maxFileBytes, 30 * MiB, slug);
+  }
+  assert.equal(getToolLimits("split-pdf").maxGeneratedItems, 100);
+  assert.equal(getToolLimits("split-pdf").maxArchiveItemBytes, 48 * MiB);
+  assert.equal(getToolLimits("split-pdf").maxArchiveInputBytes, 128 * MiB);
+});
+
+test("oversized structural jobs fail in the dispatcher before reading any PDF bytes", async () => {
+  let reads = 0;
+  const unreadFile = (name, size) => ({
+    name,
+    size,
+    arrayBuffer() { reads += 1; throw new Error("PDF bytes must not be read"); },
+    slice() { reads += 1; throw new Error("PDF header must not be read"); },
+  });
+  await assert.rejects(
+    runTool(tool("split-pdf"), [unreadFile("oversized.pdf", 100 * MiB + 1)]),
+    (error) => error.code === "input-limit" && /100 MB/.test(error.message),
+  );
+  await assert.rejects(
+    runTool(tool("compress-pdf"), [unreadFile("oversized.pdf", 100 * MiB + 1)]),
+    (error) => error.code === "input-limit" && /100 MB/.test(error.message),
+  );
+  await assert.rejects(
+    runTool(tool("merge-pdf"), [unreadFile("front.pdf", 60 * MiB), unreadFile("back.pdf", 60 * MiB + 1)]),
+    (error) => error.code === "input-limit" && /120 MB/.test(error.message),
+  );
+  assert.equal(reads, 0);
+});
+
 test("selection rejects empty, wrong-type, oversized, count, and combined-size inputs with filenames", () => {
   const merge = tool("merge-pdf", { name: "Merge PDF" });
   assert.equal(validateFileSelection(merge, [], [file("empty.pdf", 0)]).rejected[0].code, "empty-file");
   assert.match(validateFileSelection(merge, [], [file("notes.docx", MiB)]).rejected[0].message, /notes\.docx.*accepts PDF/s);
-  assert.match(validateFileSelection(merge, [], [file("huge.pdf", 50 * MiB + 1)]).rejected[0].message, /huge\.pdf.*50 MB/s);
+  assert.match(validateFileSelection(merge, [], [file("huge.pdf", 100 * MiB + 1)]).rejected[0].message, /huge\.pdf.*100 MB/s);
 
   const twentyOne = Array.from({ length: 21 }, (_, index) => file(`${index + 1}.pdf`, MiB));
   const countResult = validateFileSelection(merge, [], twentyOne);
@@ -553,9 +641,9 @@ test("the libpdf adapter rejects oversized passwords before parsing PDF bytes", 
 
 test("Repair, Unlock, and Protect enforce their exact byte and page boundaries", () => {
   const policies = [
-    ["repair-pdf", "Repair PDF", 50 * MiB, 300],
-    ["unlock-pdf", "Unlock PDF", 75 * MiB, 500],
-    ["protect-pdf", "Protect PDF", 75 * MiB, 500],
+    ["repair-pdf", "Repair PDF", 100 * MiB, 300],
+    ["unlock-pdf", "Unlock PDF", 100 * MiB, 500],
+    ["protect-pdf", "Protect PDF", 100 * MiB, 500],
   ];
 
   for (const [slug, name, maxBytes, maxPages] of policies) {
