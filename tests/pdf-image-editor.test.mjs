@@ -60,8 +60,8 @@ test("compression size summaries report reductions without hiding larger outputs
   assert.equal(getCompressionSizeChange(1000, 1000).status, "unchanged");
   assert.equal(getCompressionSizeChange(1000, 1200).status, "increased");
   assert.equal(getCompressionSizeChange(0, 0), null);
-  assert.deepEqual(getPdfCompressionPreset("strong"), { quality: 48, scale: 0.95 });
-  assert.deepEqual(getPdfCompressionPreset("unknown"), { quality: 68, scale: 1.2 });
+  assert.deepEqual(getPdfCompressionPreset("strong"), { quality: 75, scale: 150 / 72 });
+  assert.throws(() => getPdfCompressionPreset("unknown"), { code: "invalid-compression-setting" });
   const estimate = projectPdfCompressionSize(1_000_000, 10, [40_000, 50_000, 60_000]);
   assert.equal(estimate.projectedBytes, 516_096);
   assert.equal(estimate.status, "reduced");

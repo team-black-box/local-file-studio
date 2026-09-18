@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 TeamBlackBox Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
-import { GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS, IMAGE_UPSCALE_SCALES, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS } from "./lib/file-limits.js";
+import { PDF_COMPRESSION_PRESETS, PDF_COMPRESSION_SETTINGS, GIF_FRAME_DELAY_DEFAULT_MS, GIF_FRAME_DELAY_MAX_MS, GIF_FRAME_DELAY_MIN_MS, IMAGE_UPSCALE_SCALES, PHOTO_EDITOR_ADJUSTMENTS, PHOTO_EDITOR_TEXT_COLORS } from "./lib/file-limits.js";
 import { BACKGROUND_REMOVAL_BACKGROUNDS, BACKGROUND_REMOVAL_PROFILES } from "./lib/background-removal.js";
 import { IMAGE_WATERMARK_ANGLES, IMAGE_WATERMARK_COLORS, IMAGE_WATERMARK_OPACITY_MAX, IMAGE_WATERMARK_OPACITY_MIN, IMAGE_WATERMARK_POSITIONS } from "./lib/image-watermark.js";
 import { IMAGE_MEME_CASES } from "./lib/image-meme.js";
@@ -239,13 +239,16 @@ export const tools = withPhosphorExports([
         key: "quality",
         type: "select",
         label: "Compression",
-        default: "balanced",
+        default: "gentle",
         options: [
-          { value: "gentle", label: "Gentle", badge: "Best clarity", hint: "Light reduction", description: "Keeps page images sharper and produces a larger result." },
-          { value: "balanced", label: "Balanced", badge: "Recommended", hint: "Medium reduction", description: "A practical clarity and file-size trade-off for sharing." },
-          { value: "strong", label: "Strong", badge: "Smallest target", hint: "Most reduction", description: "Uses lower image resolution; fine text may look softer." },
+          { value: "gentle", label: "Gentle", badge: "Recommended", hint: "Light reduction", description: `${PDF_COMPRESSION_PRESETS.gentle.scale * 72} DPI · ${PDF_COMPRESSION_PRESETS.gentle.quality}% JPEG quality. Best for fine scanned text.` },
+          { value: "balanced", label: "Balanced", badge: "Smaller", hint: "Medium reduction", description: `${PDF_COMPRESSION_PRESETS.balanced.scale * 72} DPI · ${PDF_COMPRESSION_PRESETS.balanced.quality}% JPEG quality. Check small text before sharing.` },
+          { value: "strong", label: "Strong", badge: "Smallest target", hint: "Most reduction", description: `${PDF_COMPRESSION_PRESETS.strong.scale * 72} DPI · ${PDF_COMPRESSION_PRESETS.strong.quality}% JPEG quality. Fine text may lose detail.` },
+          { value: "custom", label: "Custom", badge: "Your choice", hint: "Set resolution and quality", description: "Tune page detail and JPEG quality independently." },
         ],
       },
+      { key: "dpi", type: "range", label: "Page resolution", ...PDF_COMPRESSION_SETTINGS.dpi, step: 1, suffix: " DPI" },
+      { key: "jpegQuality", type: "range", label: "JPEG quality", ...PDF_COMPRESSION_SETTINGS.jpegQuality, step: 1, suffix: "%" },
     ],
   },
   {

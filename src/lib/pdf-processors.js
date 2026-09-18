@@ -8,6 +8,7 @@ import {
   createSplitPdfGroups,
   createResultBudget,
   formatPageSelection,
+  getPdfCompressionPreset,
   parsePageSelection,
   parseRemovalPageSelection,
   resultFromBlob,
@@ -41,6 +42,9 @@ import {
   assertOrganizedPageCount,
   assertPdfOverlayImageDimensions,
   assertRasterDimensions,
+  assertPdfRasterWork,
+  assertOutputSize,
+  validatePreflightMetadata,
   countLogicalLines,
   formatLimitBytes,
   getPdfOverlayImagePolicy,
@@ -110,9 +114,12 @@ function canvasToBlob(canvas, type = "image/jpeg", quality = 0.86) {
   });
 }
 
-async function renderPdfPage(pdf, index, { scale = 1.45, type = "image/jpeg", quality = 0.86, limits, label } = {}) {
+async function renderPdfPage(pdf, index, { scale = 1.45, type = "image/jpeg", quality = 0.86, limits, label, signal } = {}) {
+  if (signal?.aborted) throw new DOMException("Processing was cancelled.", "AbortError");
   const page = await pdf.getPage(index + 1);
   let canvas;
+  let renderTask;
+  const cancelRender = () => renderTask?.cancel();
   try {
     const viewport = page.getViewport({ scale });
     const renderLimits = limits || { maxFileBytes: 1, maxRasterPixels: 16_000_000, maxRasterEdge: 8192 };
@@ -129,7 +136,10 @@ async function renderPdfPage(pdf, index, { scale = 1.45, type = "image/jpeg", qu
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, canvas.width, canvas.height);
     }
-    await page.render({ canvasContext: context, viewport }).promise;
+    if (signal?.aborted) throw new DOMException("Processing was cancelled.", "AbortError");
+    renderTask = page.render({ canvasContext: context, viewport });
+    signal?.addEventListener("abort", cancelRender, { once: true });
+    await renderTask.promise;
     const blob = await canvasToBlob(canvas, type, quality);
     return { canvas, blob, width: canvas.width, height: canvas.height };
   } catch (error) {
@@ -139,6 +149,7 @@ async function renderPdfPage(pdf, index, { scale = 1.45, type = "image/jpeg", qu
     }
     throw error;
   } finally {
+    signal?.removeEventListener("abort", cancelRender);
     page.cleanup();
   }
 }
@@ -747,37 +758,62 @@ async function imageFilesToPdf(slug, files, options, report) {
 async function rasterizePdf(file, options, report, mode = "compress") {
   const { PDFDocument } = await import("pdf-lib");
   const limits = getToolLimits(mode === "redact" ? "redact-pdf" : "compress-pdf");
+  const preset = mode === "compress" ? getPdfCompressionPreset(options.quality, options) : { quality: Math.max(25, Math.min(95, Number(options.quality || 90))), scale: 1.6 };
+  const quality = preset.quality / 100;
+  const scale = preset.scale;
   const rendered = await openRenderedPdf(file, options.inputPassword);
-  const output = await PDFDocument.create();
-  const quality = Math.max(0.25, Math.min(0.95, Number(options.quality || (mode === "redact" ? 90 : 68)) / 100));
-  const scale = mode === "compress" ? Number(options.scale || 1.2) : 1.6;
-  const redactionPlan = mode === "redact" ? createRedactionPlan(options.regions, rendered.numPages, limits) : null;
-
   try {
+    validatePreflightMetadata({ slug: mode === "redact" ? "redact-pdf" : "compress-pdf", kind: "pdf" }, [{ name: file.name, pdfPages: rendered.numPages }]);
+    let totalPixels = 0;
     for (let index = 0; index < rendered.numPages; index += 1) {
-      report?.({ phase: `${mode === "redact" ? "Flattening" : "Compressing"} page ${index + 1} of ${rendered.numPages}`, progress: index / rendered.numPages });
-      const pageImage = await renderPdfPage(rendered, index, { scale, quality, limits, label: `${file.name}, page ${index + 1}` });
-      if (mode === "redact") {
-        const context = pageImage.canvas.getContext("2d");
-        context.fillStyle = options.overlay === "white" ? "#ffffff" : "#111111";
-        for (const region of redactionPlan.byPage[index + 1] || []) {
-          const x = (region.x / 100) * pageImage.canvas.width;
-          const y = (region.y / 100) * pageImage.canvas.height;
-          const width = (region.width / 100) * pageImage.canvas.width;
-          const height = (region.height / 100) * pageImage.canvas.height;
-          context.fillRect(x, y, width, height);
-        }
-        pageImage.blob = await canvasToBlob(pageImage.canvas, "image/jpeg", quality);
+      if (options.signal?.aborted) throw new DOMException("Processing was cancelled.", "AbortError");
+      const page = await rendered.getPage(index + 1);
+      try {
+        const viewport = page.getViewport({ scale });
+        const width = Math.ceil(viewport.width);
+        const height = Math.ceil(viewport.height);
+        assertRasterDimensions(width, height, limits, `${file.name}, page ${index + 1}`);
+        totalPixels += width * height;
+        assertPdfRasterWork(totalPixels, limits, file.name);
+      } finally {
+        page.cleanup();
       }
-      const image = await output.embedJpg(await pageImage.blob.arrayBuffer());
-      pageImage.canvas.width = 1;
-      pageImage.canvas.height = 1;
-      const sourcePage = await rendered.getPage(index + 1);
-      const viewport = sourcePage.getViewport({ scale: 1 });
-      sourcePage.cleanup();
-      const page = output.addPage([viewport.width, viewport.height]);
-      page.drawImage(image, { x: 0, y: 0, width: viewport.width, height: viewport.height });
     }
+    let encodedBytes = 0;
+    const output = await PDFDocument.create();
+    const redactionPlan = mode === "redact" ? createRedactionPlan(options.regions, rendered.numPages, limits) : null;
+    for (let index = 0; index < rendered.numPages; index += 1) {
+      if (options.signal?.aborted) throw new DOMException("Processing was cancelled.", "AbortError");
+      report?.({ phase: `${mode === "redact" ? "Flattening" : "Compressing"} page ${index + 1} of ${rendered.numPages}`, progress: index / rendered.numPages });
+      const pageImage = await renderPdfPage(rendered, index, { scale, quality, limits, signal: options.signal, label: `${file.name}, page ${index + 1}` });
+      try {
+        if (mode === "redact") {
+          const context = pageImage.canvas.getContext("2d");
+          context.fillStyle = options.overlay === "white" ? "#ffffff" : "#111111";
+          for (const region of redactionPlan.byPage[index + 1] || []) {
+            const x = (region.x / 100) * pageImage.canvas.width;
+            const y = (region.y / 100) * pageImage.canvas.height;
+            const width = (region.width / 100) * pageImage.canvas.width;
+            const height = (region.height / 100) * pageImage.canvas.height;
+            context.fillRect(x, y, width, height);
+          }
+          pageImage.blob = await canvasToBlob(pageImage.canvas, "image/jpeg", quality);
+        }
+        encodedBytes += pageImage.blob.size;
+        assertOutputSize(encodedBytes, "Compressed page images", limits.maxOutputBytes);
+        if (options.signal?.aborted) throw new DOMException("Processing was cancelled.", "AbortError");
+        const image = await output.embedJpg(await pageImage.blob.arrayBuffer());
+        const sourcePage = await rendered.getPage(index + 1);
+        const viewport = sourcePage.getViewport({ scale: 1 });
+        sourcePage.cleanup();
+        const page = output.addPage([viewport.width, viewport.height]);
+        page.drawImage(image, { x: 0, y: 0, width: viewport.width, height: viewport.height });
+      } finally {
+        pageImage.canvas.width = 1;
+        pageImage.canvas.height = 1;
+      }
+    }
+    if (options.signal?.aborted) throw new DOMException("Processing was cancelled.", "AbortError");
     const outputBytes = await output.save({ useObjectStreams: true });
     if (mode === "compress" && outputBytes.byteLength >= file.size) {
       return [{
@@ -794,7 +830,7 @@ async function rasterizePdf(file, options, report, mode = "compress") {
       outputBytes,
       mode === "redact"
         ? `${redactionPlan.regionCount.toLocaleString()} ${redactionPlan.regionCount === 1 ? "area" : "areas"} redacted across ${redactionPlan.affectedPageCount.toLocaleString()} ${redactionPlan.affectedPageCount === 1 ? "page" : "pages"}; all pages flattened`
-        : "Pages re-encoded locally",
+        : `Pages re-encoded at ${Math.round(scale * 72)} DPI · ${preset.quality}% JPEG quality`,
     )];
   } finally {
     await destroyPdfJsDocument(rendered);

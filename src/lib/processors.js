@@ -55,8 +55,8 @@ export async function runTool(tool, files, options = {}, report) {
     throw new FileLimitError("missing-html-input", `${tool.name} needs an HTML file or pasted markup. Add one in Files or Settings, then try again.`);
   }
 
-  if (slug === "compress-pdf" && typeof normalizedOptions.quality === "string") {
-    const preset = getPdfCompressionPreset(normalizedOptions.quality);
+  if (slug === "compress-pdf") {
+    const preset = getPdfCompressionPreset(normalizedOptions.quality, normalizedOptions);
     normalizedOptions.quality = preset.quality;
     normalizedOptions.scale = preset.scale;
   }
