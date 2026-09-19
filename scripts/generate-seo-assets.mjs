@@ -8,11 +8,15 @@ import { fileURLToPath } from "node:url";
 import { categoryById, tools } from "../src/tools.js";
 import { describeToolLimits } from "../src/lib/file-limits.js";
 import {
+  CONTRIBUTING_URL,
   HOME_METADATA,
+  LICENSE_PATH,
   SEO_CONTENT_UPDATED,
   SITE_NAME,
   SITE_ORIGIN,
   SOCIAL_IMAGE_PATH,
+  SOURCE_REPOSITORY_URL,
+  THIRD_PARTY_NOTICES_PATH,
   createHomeStructuredData,
   createToolStructuredData,
   getToolMetadata,
@@ -69,6 +73,10 @@ function renderPage(metadata, structuredData, content) {
   return replaceRoot(html, content);
 }
 
+function openSourceContent() {
+  return `<section id="open-source"><h2>Free and open source</h2><p>Inspect how Local File Studio processes your files, run your own copy, or help improve the tools. Application code is available under Apache License 2.0; bundled libraries and assets retain their own licenses.</p><p><a href="${SOURCE_REPOSITORY_URL}" target="_blank" rel="noopener noreferrer">View source on GitHub</a> · <a href="${CONTRIBUTING_URL}" target="_blank" rel="noopener noreferrer">Contribute</a> · <a href="${LICENSE_PATH}" target="_blank" rel="noopener noreferrer">Apache 2.0 license</a> · <a href="${THIRD_PARTY_NOTICES_PATH}" target="_blank" rel="noopener noreferrer">Third-party notices</a></p><p>Links open in a new tab. GitHub requires a connection; the license and notices are included in the offline app.</p></section>`;
+}
+
 function homeContent() {
   const categorySections = Object.values(categoryById).map((category) => {
     const links = tools
@@ -77,7 +85,7 @@ function homeContent() {
       .join("");
     return `<section><h2>${escapeHtml(category.label)} tools</h2><p>${escapeHtml(category.description)}</p><ul>${links}</ul></section>`;
   }).join("");
-  return `<main class="seo-prerender"><header><a href="/">${SITE_NAME}</a><span>Private · Local · Open source</span></header><article><p class="seo-kicker">No uploads. No account. On-device processing.</p><h1>Private PDF and image tools that run in your browser</h1><p>${escapeHtml(HOME_METADATA.description)}</p></article><nav aria-label="All Local File Studio tools">${categorySections}</nav><footer><p>Files stay in browser memory and are cleared when the tab closes. After one successful load, the production app can work offline.</p></footer></main>`;
+  return `<main class="seo-prerender"><header><a href="/">${SITE_NAME}</a><span>Private · Local · Open source</span></header><article><p class="seo-kicker">No uploads. No account. On-device processing.</p><h1>Private PDF and image tools that run in your browser</h1><p>${escapeHtml(HOME_METADATA.description)}</p></article><nav aria-label="All Local File Studio tools">${categorySections}</nav>${openSourceContent()}<footer><p>Files stay in browser memory and are cleared when the tab closes. After one successful load, the production app can work offline.</p></footer></main>`;
 }
 
 function toolContent(tool) {
@@ -88,7 +96,7 @@ function toolContent(tool) {
     .slice(0, 6)
     .map((candidate) => `<li><a href="${toolPath(candidate)}">${escapeHtml(candidate.name)}</a></li>`)
     .join("");
-  return `<main class="seo-prerender seo-tool-prerender"><header><a href="/">${SITE_NAME}</a><span>${escapeHtml(category.label)} · ${tool.kind === "pdf" ? "PDF" : "Image"}</span></header><article><p class="seo-kicker">Private browser tool</p><h1>${escapeHtml(tool.name)}</h1><p>${escapeHtml(tool.description)}</p><a class="seo-start" href="${toolPath(tool)}">Open ${escapeHtml(tool.name)}</a></article><section><h2>What this tool accepts</h2><p>${escapeHtml(tool.accepts.join(", ").toUpperCase())} input · ${escapeHtml(tool.output.join(", ").toUpperCase())} output</p><h2>Local safeguards</h2><p>${escapeHtml(limits.primary)}. ${escapeHtml(limits.secondary)}</p><h2>Private and offline-capable</h2><p>Processing happens in this browser. Files are not uploaded, and generated results remain in memory until downloaded or the tab is closed. After the first successful production load, the app shell and local processing engines can work offline.</p><h2>Related tools</h2><ul>${related}</ul></section><footer><a href="/#tool-library">Browse all ${tools.length} tools</a></footer></main>`;
+  return `<main class="seo-prerender seo-tool-prerender"><header><a href="/">${SITE_NAME}</a><span>${escapeHtml(category.label)} · ${tool.kind === "pdf" ? "PDF" : "Image"}</span></header><article><p class="seo-kicker">Private browser tool</p><h1>${escapeHtml(tool.name)}</h1><p>${escapeHtml(tool.description)}</p><a class="seo-start" href="${toolPath(tool)}">Open ${escapeHtml(tool.name)}</a></article><section><h2>What this tool accepts</h2><p>${escapeHtml(tool.accepts.join(", ").toUpperCase())} input · ${escapeHtml(tool.output.join(", ").toUpperCase())} output</p><h2>Local safeguards</h2><p>${escapeHtml(limits.primary)}. ${escapeHtml(limits.secondary)}</p><h2>Private and offline-capable</h2><p>Processing happens in this browser. Files are not uploaded, and generated results remain in memory until downloaded or the tab is closed. After the first successful production load, the app shell and local processing engines can work offline.</p><h2>Related tools</h2><ul>${related}</ul></section>${openSourceContent()}<footer><a href="/#tool-library">Browse all ${tools.length} tools</a></footer></main>`;
 }
 
 const homepage = renderPage(HOME_METADATA, createHomeStructuredData(tools.length), homeContent());
@@ -121,7 +129,7 @@ const toolMarkdown = Object.values(categoryById).map((category) => {
   return `## ${category.label}\n\n${category.description}\n\n${links}`;
 }).join("\n\n");
 
-const llms = `# ${SITE_NAME}\n\n> Free, open-source PDF and image tools that process files locally in the browser. Selected files and generated results are not uploaded.\n\nCanonical site: ${SITE_ORIGIN}/\nSource: https://github.com/team-black-box/local-file-studio\nLicense: Apache-2.0\nLast reviewed: ${SEO_CONTENT_UPDATED}\n\n## Product guarantees\n\n- File processing is local-only; there is no upload or server-processing path.\n- Production works offline after one successful online load, subject to normal browser storage limitations.\n- Limits are tool-specific, visible, and enforced before expensive work where possible.\n- Tool pages describe verified behavior; Beta labels identify best-effort or browser-sensitive capabilities.\n\n${toolMarkdown}\n\n## Important resources\n\n- [All tools](${SITE_ORIGIN}/#tool-library)\n- [Source repository](https://github.com/team-black-box/local-file-studio)\n- [Apache-2.0 license](${SITE_ORIGIN}/legal/LICENSE)\n- [Third-party notices](${SITE_ORIGIN}/legal/THIRD_PARTY_NOTICES.md)\n`;
+const llms = `# ${SITE_NAME}\n\n> Free, open-source PDF and image tools that process files locally in the browser. Selected files and generated results are not uploaded.\n\nCanonical site: ${SITE_ORIGIN}/\nSource: ${SOURCE_REPOSITORY_URL}\nLicense: Apache-2.0\nLast reviewed: ${SEO_CONTENT_UPDATED}\n\n## Product guarantees\n\n- File processing is local-only; there is no upload or server-processing path.\n- Production works offline after one successful online load, subject to normal browser storage limitations.\n- Limits are tool-specific, visible, and enforced before expensive work where possible.\n- Tool pages describe verified behavior; Beta labels identify best-effort or browser-sensitive capabilities.\n\n${toolMarkdown}\n\n## Important resources\n\n- [All tools](${SITE_ORIGIN}/#tool-library)\n- [Source repository](${SOURCE_REPOSITORY_URL})\n- [Contributing](${CONTRIBUTING_URL})\n- [Apache-2.0 license](${SITE_ORIGIN}${LICENSE_PATH})\n- [Third-party notices](${SITE_ORIGIN}${THIRD_PARTY_NOTICES_PATH})\n`;
 writeFileSync(path.join(client, "llms.txt"), llms, "utf8");
 
 const sitemapMarkdown = `# ${SITE_NAME} site map\n\nCanonical site: ${SITE_ORIGIN}/  \nLast reviewed: ${SEO_CONTENT_UPDATED}\n\n${toolMarkdown}\n`;

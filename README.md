@@ -9,6 +9,8 @@ Private PDF and image tools that run on your device. The production build is a s
 
 **Status:** Public beta at [localfilestudio.app](https://localfilestudio.app/), with [public source on GitHub](https://github.com/team-black-box/local-file-studio). Interfaces, supported formats, and safety limits may change. Repository visibility does not alter the live app's local-only architecture.
 
+The website's **Open source** section and footer link to the source repository, contribution guide, Apache-2.0 license, and third-party notices. GitHub links open in a separate tab and require a connection; the license and notices ship with the offline app. These are ordinary links, with no GitHub widgets or background requests.
+
 ## Catalog coverage
 
 The catalog provides 47 common PDF and image workflows in one independent, offline-first browser workbench.
