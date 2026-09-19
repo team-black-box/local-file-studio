@@ -8793,7 +8793,7 @@ body {
 }
 
 .header-inner {
-  gap: 68px;
+  gap: 32px;
 }
 
 .brand {
@@ -8817,7 +8817,7 @@ body {
 
 .primary-nav {
   align-self: stretch;
-  gap: 43px;
+  gap: 20px;
 }
 
 .primary-nav button,
@@ -9468,6 +9468,130 @@ body {
 }
 
 /* Carry the source's square terminal language through the extended app. */
+.privacy-section {
+  margin-bottom: 32px;
+}
+
+.open-source-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 48px;
+  margin-block: 32px 80px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 40px 46px;
+  background: var(--surface);
+}
+
+.open-source-section h2 {
+  margin: 14px 0;
+  color: var(--primary-dark);
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+}
+
+.open-source-section p {
+  max-width: 560px;
+  color: var(--muted-strong);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.open-source-actions,
+.footer-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+}
+
+.open-source-actions {
+  margin-top: 24px;
+}
+
+.open-source-section a,
+.footer-links a {
+  color: var(--primary-dark);
+  text-underline-offset: 4px;
+}
+
+.open-source-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.open-source-actions .source-repository-link {
+  border: 1px solid var(--primary-dark);
+  border-radius: 5px;
+  padding: 10px 16px;
+  background: var(--primary-dark);
+  color: white;
+  text-decoration: none;
+}
+
+.source-repository-link:hover {
+  background: var(--primary);
+}
+
+.open-source-details {
+  align-self: center;
+  border-left: 1px solid var(--border);
+  padding-left: 40px;
+}
+
+.open-source-license {
+  color: var(--primary-dark);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.open-source-details h3 {
+  margin: 12px 0;
+  font-size: 21px;
+  letter-spacing: -0.03em;
+}
+
+.open-source-details .open-source-note {
+  margin-top: 20px;
+  font-size: 12px;
+}
+
+.footer-inner {
+  flex-wrap: wrap;
+  padding-block: 28px;
+}
+
+.footer-links {
+  font-size: 12px;
+}
+
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+@media (max-width: 680px) {
+  .open-source-section {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 28px 22px;
+    margin-bottom: 48px;
+  }
+
+  .open-source-details {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+    padding: 24px 0 0;
+  }
+}
+
 .library-section,
 .app-footer {
   background: var(--canvas);

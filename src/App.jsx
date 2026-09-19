@@ -45,6 +45,7 @@ import {
   FileZipIcon,
   FlowArrowIcon,
   GaugeIcon,
+  GithubLogoIcon,
   ImageSquareIcon,
   ImagesIcon,
   KeyboardIcon,
@@ -113,7 +114,7 @@ import { MIN_REDACTION_REGION_PERCENT, clampRedactionRegion, createRedactionPlan
 import { PDF_SIGNATURE_DEFAULTS, createPdfSignaturePlan, createSigningDateIso } from "./lib/pdf-signature.js";
 import { createPdfProtectionPasswordPlan } from "./lib/pdf-protection-password.js";
 import { PDF_TEXT_ANNOTATION_DEFAULTS, PDF_TEXT_ANNOTATION_SCOPES, createPdfTextAnnotationPlan } from "./lib/pdf-text-annotation.js";
-import { HOME_METADATA, SOCIAL_IMAGE_PATH, SITE_ORIGIN, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
+import { CONTRIBUTING_URL, HOME_METADATA, LICENSE_PATH, SOCIAL_IMAGE_PATH, SITE_ORIGIN, SOURCE_REPOSITORY_URL, THIRD_PARTY_NOTICES_PATH, createHomeStructuredData, createToolStructuredData, getPageMetadata, toolPath } from "./lib/site-metadata.js";
 import { runTool } from "./lib/processors.js";
 import { clearSensitiveToolSettings } from "./lib/tool-settings.js";
 import { createBrowserTranslator, createTranslationSessionLease, getPdfTranslationLanguage, getPdfTranslationMode, inspectBrowserTranslator } from "./lib/pdf-translation.js";
@@ -327,6 +328,7 @@ function Header({ kind, onKind, onHome, onSearchFocus }) {
           <button className={kind === "pdf" ? "active" : ""} aria-pressed={kind === "pdf"} onClick={() => onKind("pdf")}>PDF</button>
           <button className={kind === "image" ? "active" : ""} aria-pressed={kind === "image"} onClick={() => onKind("image")}>Images</button>
           <a href="#workflows">Workflows</a>
+          <a href="#open-source">Open source</a>
         </nav>
         <div className="header-actions">
           <details ref={mobileNavRef} className="mobile-nav" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); closeMobileNav(); } }}>
@@ -336,6 +338,7 @@ function Header({ kind, onKind, onHome, onSearchFocus }) {
               <button aria-pressed={kind === "pdf"} onClick={() => chooseKind("pdf")}>PDF tools</button>
               <button aria-pressed={kind === "image"} onClick={() => chooseKind("image")}>Image tools</button>
               <a href="#workflows" onClick={closeMobileNav}>Workflows</a>
+              <a href="#open-source" onClick={closeMobileNav}>Open source</a>
             </nav>
           </details>
           <button className="command-button" onClick={onSearchFocus} aria-label="Focus tool search">
@@ -402,7 +405,7 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
     <section className="hero shell" aria-labelledby="hero-title">
       <div className="hero-copy">
         {searchActive && <div className="search-focus-backdrop" aria-hidden="true" onPointerDown={(event) => { event.preventDefault(); closeSearch(); }} />}
-        <div className="eyebrow"><LockIcon size={15} weight="bold" /> Private by default</div>
+        <div className="eyebrow"><LockIcon size={15} weight="bold" aria-hidden="true" /> Private by default · Open source</div>
         <h1 id="hero-title"><span className="hero-line hero-line-first">Every file tool</span><span className="hero-line">you need.</span><span className="hero-line hero-line-accent">Nothing uploaded<b aria-hidden="true">.</b></span></h1>
         <p><span>Work with PDFs and images right in your browser.</span><span>Your files never leave this device—there is no account,</span><span>queue, or server copy.</span></p>
         <div
@@ -8236,12 +8239,39 @@ export function App() {
         <section id="privacy-details" className="privacy-section shell" aria-labelledby="privacy-title">
           <div className="privacy-seal"><LockIcon size={36} weight="duotone" /></div>
           <div><div className="section-kicker"><ShieldCheckIcon size={18} /><span>Your files are yours</span></div><h2 id="privacy-title">Privacy you can verify by going offline.</h2><p>Once this app is saved, switch off your connection and keep working. PDF, image, OCR, and conversion engines run in the browser; file contents are never sent to our servers.</p></div>
-          <div className="privacy-checks"><span><CheckCircleIcon size={18} weight="fill" />No sign-up or cloud history</span><span><CheckCircleIcon size={18} weight="fill" />No document analytics</span><span><CheckCircleIcon size={18} weight="fill" />Visible local safety limits</span><span><CheckCircleIcon size={18} weight="fill" />Open-source browser engines</span></div>
+          <div className="privacy-checks"><span><CheckCircleIcon size={18} weight="fill" />No sign-up or cloud history</span><span><CheckCircleIcon size={18} weight="fill" />No document analytics</span><span><CheckCircleIcon size={18} weight="fill" />Visible local safety limits</span><span><CheckCircleIcon size={18} weight="fill" />Open-source application code</span></div>
+        </section>
+
+        <section id="open-source" className="open-source-section shell" aria-labelledby="open-source-title">
+          <div className="open-source-copy">
+            <div className="section-kicker"><GithubLogoIcon size={19} aria-hidden="true" /><span>Built in the open</span></div>
+            <h2 id="open-source-title">Your files stay local.<br />The code is open.</h2>
+            <p>Local File Studio is free and open source. Inspect how your files are processed, run your own copy, or help improve the tools you use.</p>
+            <div className="open-source-actions">
+              <a className="source-repository-link" href={SOURCE_REPOSITORY_URL} target="_blank" rel="noopener noreferrer"><GithubLogoIcon size={20} aria-hidden="true" />View source on GitHub<span className="visually-hidden"> (opens in a new tab)</span><ArrowUpRightIcon size={17} aria-hidden="true" /></a>
+              <a href={CONTRIBUTING_URL} target="_blank" rel="noopener noreferrer">Contribute<span className="visually-hidden"> (opens in a new tab)</span><ArrowUpRightIcon size={16} aria-hidden="true" /></a>
+            </div>
+          </div>
+          <div className="open-source-details">
+            <span className="open-source-license">Apache License 2.0</span>
+            <h3>Explore it. Make it yours.</h3>
+            <p>Use, modify, and share the application code under the <a href={LICENSE_PATH} target="_blank" rel="noopener noreferrer">Apache 2.0 license<span className="visually-hidden"> (opens in a new tab)</span></a>. Bundled libraries and assets have their own <a href={THIRD_PARTY_NOTICES_PATH} target="_blank" rel="noopener noreferrer">licenses and notices<span className="visually-hidden"> (opens in a new tab)</span></a>.</p>
+            <p className="open-source-note">GitHub links need a connection and open in a new tab, so your work stays here.</p>
+          </div>
         </section>
       </main>
 
       <footer className="app-footer">
-        <div className="shell footer-inner"><div className="brand footer-brand"><BrandMark /><span>Local File <strong>Studio</strong></span></div><p>Private PDF and image tools, built to stay on your device.</p></div>
+        <div className="shell footer-inner">
+          <div className="brand footer-brand"><BrandMark /><span>Local File <strong>Studio</strong></span></div>
+          <p>Private by default. Open source by design.</p>
+          <nav className="footer-links" aria-label="Project resources">
+            <a href={SOURCE_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">GitHub<span className="visually-hidden"> (opens in a new tab)</span></a>
+            <a href={CONTRIBUTING_URL} target="_blank" rel="noopener noreferrer">Contribute<span className="visually-hidden"> (opens in a new tab)</span></a>
+            <a href={LICENSE_PATH} target="_blank" rel="noopener noreferrer">License<span className="visually-hidden"> (opens in a new tab)</span></a>
+            <a href={THIRD_PARTY_NOTICES_PATH} target="_blank" rel="noopener noreferrer">Third-party notices<span className="visually-hidden"> (opens in a new tab)</span></a>
+          </nav>
+        </div>
       </footer>
 
       {selectedTool && <ToolWorkbench key={selectedTool.slug} tool={selectedTool} onClose={closeTool} onComplete={recordComplete} />}
