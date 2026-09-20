@@ -3,8 +3,12 @@
 
 export const SITE_NAME = "Local File Studio";
 export const SITE_ORIGIN = "https://localfilestudio.app";
-export const SEO_CONTENT_UPDATED = "2026-08-12";
+export const SEO_CONTENT_UPDATED = "2026-09-19";
 export const SOCIAL_IMAGE_PATH = "/assets/local-file-studio-social.png";
+export const SOURCE_REPOSITORY_URL = "https://github.com/team-black-box/local-file-studio";
+export const CONTRIBUTING_URL = `${SOURCE_REPOSITORY_URL}/blob/main/CONTRIBUTING.md`;
+export const LICENSE_PATH = "/legal/LICENSE";
+export const THIRD_PARTY_NOTICES_PATH = "/third-party/THIRD_PARTY_NOTICES.md";
 
 export const HOME_METADATA = Object.freeze({
   title: "Local File Studio — Private PDF & Image Tools",
@@ -49,6 +53,7 @@ export function createToolStructuredData(tool, category) {
         operatingSystem: "Any operating system with a modern web browser",
         browserRequirements: "Requires JavaScript; processing runs locally in the browser",
         isAccessibleForFree: true,
+        license: `${SITE_ORIGIN}${LICENSE_PATH}`,
         offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
         featureList: [
           "Files remain on the user's device",
@@ -91,6 +96,8 @@ export function createHomeStructuredData(toolCount) {
         operatingSystem: "Any operating system with a modern web browser",
         browserRequirements: "Requires JavaScript; processing runs locally in the browser",
         isAccessibleForFree: true,
+        license: `${SITE_ORIGIN}${LICENSE_PATH}`,
+        sameAs: SOURCE_REPOSITORY_URL,
         offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
         featureList: [`${toolCount} local PDF and image tools`, "No file uploads", "Offline-capable after first load"],
       },
