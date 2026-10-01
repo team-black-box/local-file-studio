@@ -18902,3 +18902,57 @@ body {
 .compression-sample summary { cursor: pointer; font-weight: 700; }
 .compression-sample-scroll { width: 100%; max-height: 420px; overflow: auto; border: 1px solid #ccd4cf; border-radius: 10px; }
 .compression-sample-scroll img { display: block; max-width: none; }
+
+/* Keep focused search above the header and the neighboring session preview. */
+.hero:has(.search-active) .hero-copy { z-index: 61; }
+.mobile-search-close { display: none; }
+
+@media (max-width: 620px) {
+  /* A 16px input prevents Safari from zooming the page when typing. */
+  .hero-search input { font-size: 16px; min-width: 0; }
+
+  .hero-search-shell.search-active {
+    position: fixed;
+    top: calc(var(--search-viewport-top, 0px) + 12px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: max(0px, calc(var(--search-viewport-height, 100dvh) - 24px));
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .search-active .hero-search {
+    flex: 0 0 58px;
+    width: calc(100% - 68px);
+    padding-left: 12px;
+    gap: 8px;
+  }
+
+  .search-active .hero-search button { min-width: 36px; }
+  .search-active .hero-shortcut { display: none; }
+
+  .mobile-search-close {
+    display: block;
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 58px;
+    width: 60px;
+    border: 1px solid #303638;
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 16px;
+  }
+
+  .search-active .hero-search-results {
+    position: relative;
+    top: auto;
+    margin-top: 8px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
