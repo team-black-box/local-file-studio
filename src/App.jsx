@@ -364,6 +364,27 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
   const hasQuery = Boolean(query.trim());
 
   useEffect(() => {
+    if (!searchActive) return;
+    const viewport = window.visualViewport;
+    const shell = searchShellRef.current;
+    const updateViewport = () => {
+      shell?.style.setProperty("--search-viewport-top", `${viewport?.offsetTop ?? 0}px`);
+      shell?.style.setProperty("--search-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
+    };
+    updateViewport();
+    viewport?.addEventListener("resize", updateViewport);
+    viewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      viewport?.removeEventListener("resize", updateViewport);
+      viewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+      shell?.style.removeProperty("--search-viewport-top");
+      shell?.style.removeProperty("--search-viewport-height");
+    };
+  }, [searchActive]);
+
+  useEffect(() => {
     setActiveIndex(0);
     if (!hasQuery) setSearchOpen(false);
   }, [hasQuery, query]);
@@ -371,6 +392,7 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
   const openResult = (tool) => {
     setSearchOpen(false);
     setSearchActive(false);
+    searchRef.current?.blur();
     onQuickTool(tool);
   };
 
@@ -433,6 +455,7 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
               ? <button type="button" onClick={() => { setQuery(""); searchRef.current?.focus(); }} aria-label="Clear search"><XIcon size={17} /></button>
               : <kbd className="hero-shortcut" aria-hidden="true">⌘ K</kbd>}
           </label>
+          {searchActive && <button type="button" className="mobile-search-close" onClick={closeSearch}>Done</button>}
           {searchOpen && hasQuery && (
             <div id="hero-search-results" className="hero-search-results" role="listbox" aria-label="Matching tools">
               {searchResults.length ? searchResults.map((tool, index) => (
@@ -451,7 +474,7 @@ function Hero({ query, setQuery, searchRef, onQuickTool, searchResults, resultCo
                   <b>{tool.kind === "pdf" ? "PDF" : "IMAGE"}</b>
                 </button>
               )) : <div className="hero-search-empty" role="status"><MagnifyingGlassIcon size={18} aria-hidden="true" /><span><strong>No matching tools</strong><small>Try a format or simpler action.</small></span></div>}
-              <button type="button" className="hero-search-view-all" onClick={() => { setSearchOpen(false); setSearchActive(false); onViewAll(); }} disabled={!resultCount}>
+              <button type="button" className="hero-search-view-all" onClick={() => { closeSearch(); onViewAll(); }} disabled={!resultCount}>
                 <span>{resultCount ? `${resultCount} matching ${resultCount === 1 ? "tool" : "tools"}` : "No tools to show"}</span>
                 <strong>View full list <ArrowRightIcon size={14} aria-hidden="true" /></strong>
               </button>

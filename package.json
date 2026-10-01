@@ -15,7 +15,7 @@
     "url": "https://github.com/team-black-box/local-file-studio/issues"
   },
   "overrides": {
-    "dompurify": "3.4.13"
+    "dompurify": "3.4.16"
   },
   "type": "module",
   "scripts": {
