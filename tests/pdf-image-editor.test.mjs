@@ -7,6 +7,7 @@ import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 import {
   FileLimitError,
+  assertExtractedTextLength,
   assertPdfOverlayImageDimensions,
   describePdfOverlayImageLimits,
   describeToolLimits,
@@ -537,8 +538,8 @@ test("HTML to Image plans exact JPG density and native-size SVG output", () => {
     outputHeight: 702,
     outputPixels: 539_136,
   });
-  assert.throws(() => createHtmlImagePlan({ format: "jpg", viewportWidth: 1440 }, 4097), (error) => error instanceof FileLimitError && error.code === "html-height-limit");
-  assert.throws(() => createHtmlImagePlan({ format: "jpg", viewportWidth: 3840 }, 4096), (error) => error instanceof FileLimitError && error.code === "output-dimensions-too-large");
+  assert.equal(createHtmlImagePlan({ format: "jpg", viewportWidth: 1440 }, 4097).outputHeight, 6145);
+  assert.equal(createHtmlImagePlan({ format: "jpg", viewportWidth: 3840 }, 4096).outputPixels, 35_389_440);
 });
 
 test("HTML to Image sanitization contracts keep only bounded data images and local fragments", () => {
@@ -628,10 +629,7 @@ test("PDF to Word previews exact page text and reuses the checked extraction", a
   assert.match(documentXml, /Page 2/);
   assert.equal((documentXml.match(/<w:sectPr>/g) || []).length, 2, "one DOCX section is created for every checked PDF page");
 
-  await assert.rejects(
-    () => processPdfTool("pdf-to-word", [file], { pdfOfficeTextPages: ["x".repeat(5_000_001)] }),
-    (error) => error instanceof FileLimitError && error.code === "extracted-text-limit",
-  );
+  assert.doesNotThrow(() => assertExtractedTextLength(5_000_001, "pdf-to-word"));
 });
 
 test("PDF to PowerPoint previews exact slide text and reuses the checked extraction", async () => {
@@ -656,10 +654,7 @@ test("PDF to PowerPoint previews exact slide text and reuses the checked extract
   assert.match(await archive.file("ppt/slides/slide1.xml").async("string"), /Alpha beta/);
   assert.match(await archive.file("ppt/slides/slide2.xml").async("string"), /No selectable text found on this page\./);
 
-  await assert.rejects(
-    () => processPdfTool("pdf-to-powerpoint", [file], { pdfOfficeTextPages: ["x".repeat(1_000_001)] }),
-    (error) => error instanceof FileLimitError && error.code === "extracted-text-limit",
-  );
+  assert.doesNotThrow(() => assertExtractedTextLength(1_000_001, "pdf-to-powerpoint"));
 });
 
 test("PDF to Excel previews exact sheets, rows, and values before export", async () => {
@@ -699,10 +694,7 @@ test("PDF to Excel previews exact sheets, rows, and values before export", async
   assert.equal(workbook.Sheets["Page 1"].B2.v, "9");
   assert.equal(workbook.Sheets["Page 2"].B2.v, "India");
 
-  await assert.rejects(
-    () => processPdfTool("pdf-to-excel", [file], { pdfOfficeTextPages: ["x".repeat(2_000_001)] }),
-    (error) => error instanceof FileLimitError && error.code === "extracted-text-limit",
-  );
+  assert.doesNotThrow(() => assertExtractedTextLength(2_000_001, "pdf-to-excel"));
 });
 
 test("Archive PDF Rewrite reports its exact non-certified output contract", async () => {
@@ -1102,40 +1094,17 @@ test("PDF.js cleanup supports the current loading-task API and older document AP
   assert.equal(legacyCalls, 1);
 });
 
-test("image placement exposes exact PDF, image, pixel, and placement limits in UI copy", () => {
+test("image placement accepts device-managed workloads and shows its static-image contract", () => {
   const tool = editorTool();
-  const limits = getPdfOverlayImagePolicy(tool);
-  assert.deepEqual({
-    maxFiles: limits.maxFiles,
-    maxFileBytes: limits.maxFileBytes,
-    maxTotalBytes: limits.maxTotalBytes,
-    maxImagePixelsPerFile: limits.maxImagePixelsPerFile,
-    maxImagePixelsTotal: limits.maxImagePixelsTotal,
-    maxImageEdge: limits.maxImageEdge,
-    maxPlacements: limits.maxPlacements,
-  }, {
-    maxFiles: 10,
-    maxFileBytes: 10 * MiB,
-    maxTotalBytes: 30 * MiB,
-    maxImagePixelsPerFile: 12_000_000,
-    maxImagePixelsTotal: 40_000_000,
-    maxImageEdge: 6000,
-    maxPlacements: 100,
-  });
-  assert.match(describeToolLimits(tool).secondary, /200 pages\/file.*10 PNG\/JPG images.*100 placements max/s);
-  assert.match(describePdfOverlayImageLimits(tool).primary, /10 PNG\/JPG images.*10 MB each.*30 MB combined/s);
-  assert.match(describePdfOverlayImageLimits(tool).secondary, /12 MP.*6,000 px.*40 MP combined.*static images only.*100 placements/s);
-});
-
-test("placed-image selection accepts exact boundaries and rejects type, size, count, and combined overflow", () => {
-  const tool = editorTool();
-  const exact = Array.from({ length: 3 }, (_, index) => ({ name: `signature-${index}.png`, size: 10 * MiB }));
-  assert.equal(validatePdfOverlayImageSelection(tool, [], exact).accepted.length, 3);
+  for (const [key, value] of Object.entries(getPdfOverlayImagePolicy(tool))) {
+    if (key.startsWith("max")) assert.equal(value, Infinity, key);
+  }
+  assert.match(describePdfOverlayImageLimits(tool).primary, /No file-size cap or batch cap/);
+  assert.match(describePdfOverlayImageLimits(tool).secondary, /Static images only/);
+  const many = Array.from({ length: 101 }, (_, index) => ({ name: `${index}.png`, size: 60 * MiB }));
+  assert.equal(validatePdfOverlayImageSelection(tool, [], many).accepted.length, 101);
   assert.equal(validatePdfOverlayImageSelection(tool, [], [{ name: "signature.svg", size: 100 }]).rejected[0].code, "unsupported-type");
-  assert.equal(validatePdfOverlayImageSelection(tool, [], [{ name: "large.jpg", size: 10 * MiB + 1 }]).rejected[0].code, "file-too-large");
-  const eleven = Array.from({ length: 11 }, (_, index) => ({ name: `${index}.jpg`, size: MiB }));
-  assert.equal(validatePdfOverlayImageSelection(tool, [], eleven).rejected[0].code, "too-many-files");
-  assert.equal(validatePdfOverlayImageSelection(tool, [{ name: "used.png", size: 29 * MiB }], [{ name: "overflow.jpg", size: 2 * MiB }]).rejected[0].code, "total-too-large");
+  assert.equal(validatePdfOverlayImageSelection(tool, [], [{ name: "empty.jpg", size: 0 }]).rejected[0].code, "empty-file");
 });
 
 test("placed-image metadata and placement geometry fail closed at exact safeguards", async () => {
@@ -1145,14 +1114,14 @@ test("placed-image metadata and placement geometry fail closed at exact safeguar
   assert.equal(inspected.metadata[0].format, "png");
   assert.equal(inspected.metadata[0].width, 1);
   assert.doesNotThrow(() => assertPdfOverlayImageDimensions(4000, 3000, tool, "signature.png"));
-  assert.throws(() => assertPdfOverlayImageDimensions(4001, 3000, tool, "signature.png"), /12\.003 MP.*12 MP/s);
+  assert.doesNotThrow(() => assertPdfOverlayImageDimensions(8000, 6000, tool, "signature.png"));
 
   const asset = { id: "signature" };
   const placement = { assetId: "signature", pageIndex: 0, x: 0.1, y: 0.2, width: 0.3, rotation: 30, opacity: 0.8 };
   assert.deepEqual(validatePdfOverlayPlacements([placement], [asset], 1, tool).placementCount, 1);
   assert.throws(() => validatePdfOverlayPlacements([{ ...placement, width: 0.95 }], [asset], 1, tool), /outside the supported page/s);
   assert.throws(() => validatePdfOverlayPlacements([{ ...placement, pageIndex: 1 }], [asset], 1, tool), /unavailable PDF page/s);
-  assert.throws(() => validatePdfOverlayPlacements(Array.from({ length: 101 }, () => placement), [asset], 1, tool), /101 image placements.*100/s);
+  assert.equal(validatePdfOverlayPlacements(Array.from({ length: 101 }, () => placement), [asset], 1, tool).placementCount, 101);
 
   const iend = onePixelPng.lastIndexOf(Buffer.from("IEND")) - 4;
   const animationChunk = Buffer.alloc(20);

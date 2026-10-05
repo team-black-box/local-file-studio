@@ -10,7 +10,7 @@ import {
 function complexityError(limits) {
   return new FileLimitError(
     "comparison-complexity-limit",
-    `The PDFs differ too extensively to compare safely within ${limits.maxDiffEditLength.toLocaleString()} line edits and ${(limits.maxDiffMilliseconds / 1000).toLocaleString()} seconds. Compare smaller page ranges or more similar versions.`,
+    `The PDFs differ too extensively to compare safely within ${(limits.maxDiffMilliseconds / 1000).toLocaleString()} seconds. Compare smaller page ranges or more similar versions.`,
   );
 }
 

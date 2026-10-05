@@ -1483,7 +1483,7 @@ function PageSelectionPicker({ value, pageCount, selection, onChange, intent, ma
           <input
             id={`${intent}-page-ranges`}
             type="text"
-            maxLength={4096}
+            maxLength={getTextSettingLimit(intent === "remove" ? "remove-pdf-pages" : "extract-pdf-pages", "pages")}
             value={value}
             aria-describedby={`${intent}-page-ranges-description ${intent}-plan-message`}
             aria-invalid={!valid}
@@ -2221,7 +2221,7 @@ function RedactPdfControls({ settings, onChange, info, plan, limits }) {
     <section className="redaction-planner" aria-labelledby="redaction-planner-title">
       <div className="redaction-planner-heading">
         <span><strong id="redaction-planner-title">Mark what should disappear</strong><small>Drag across the page to draw an area. Choose another page below to add different areas.</small></span>
-        <b aria-live="polite">{regions.length.toLocaleString()} / {limits.maxRedactionRegions.toLocaleString()}</b>
+        <b aria-live="polite">{regions.length.toLocaleString()} areas</b>
       </div>
 
       <fieldset className="redaction-style-picker">
@@ -3147,7 +3147,7 @@ function SplitPdfControls({ settings, onChange, info, plan, limits }) {
               <div className="setting-field">
                 <label htmlFor="split-custom-breaks"><strong>Split after pages</strong></label>
                 <small id="split-custom-breaks-description" className="field-description">Example: 3, 6 creates pages 1–3, 4–6, and 7 onward.</small>
-                <input id="split-custom-breaks" type="text" maxLength={4096} value={settings.customBreaks} aria-describedby="split-custom-breaks-description" aria-invalid={!plan.valid} onChange={(event) => onChange("customBreaks", event.target.value)} />
+                <input id="split-custom-breaks" type="text" maxLength={getTextSettingLimit("split-pdf", "customBreaks")} value={settings.customBreaks} aria-describedby="split-custom-breaks-description" aria-invalid={!plan.valid} onChange={(event) => onChange("customBreaks", event.target.value)} />
               </div>
             </details>
           )}
@@ -3376,7 +3376,7 @@ function OrganizePdfControls({ settings, onChange, info, plan, limits }) {
             <div className="setting-field">
               <label htmlFor="organize-page-order"><strong>Output page order</strong></label>
               <small id="organize-page-order-description" className="field-description">Example: 3, 1, 2, 2 copies page 2. Ranges such as 6-4 work too.</small>
-              <input id="organize-page-order" type="text" maxLength={4096} value={settings.order} aria-describedby="organize-page-order-description organize-plan-message" aria-invalid={!plan.valid} onChange={(event) => onChange("order", event.target.value)} />
+              <input id="organize-page-order" type="text" maxLength={getTextSettingLimit("organize-pdf", "order")} value={settings.order} aria-describedby="organize-page-order-description organize-plan-message" aria-invalid={!plan.valid} onChange={(event) => onChange("order", event.target.value)} />
             </div>
           </details>
         </section>
@@ -4936,7 +4936,7 @@ function ComparisonResult({ result, headingRef, onReset }) {
 }
 
 function accessibleProgressMessage(phase = "") {
-  if (/checking/i.test(phase)) return "Checking files against local safety limits.";
+  if (/checking/i.test(phase)) return "Checking local file formats and settings.";
   if (/loading/i.test(phase)) return "Loading the local processing engine.";
   if (/reading|extracting/i.test(phase)) return "Reading the document locally.";
   if (/rendering|compressing|flattening/i.test(phase)) return "Rendering document pages locally.";
@@ -5261,6 +5261,11 @@ function useImageCompressionPreview(file, quality, enabled, tool) {
     };
   }, [enabled, encodingQuality, file, tool]);
 
+  // Effects clear stale results after rendering. Hide them immediately when
+  // reset, file replacement, or a quality change invalidates the sample.
+  if (!enabled || !file || preview.file !== file || preview.quality !== encodingQuality) {
+    return { state: enabled && file ? "loading" : "idle", file: file || null, quality: encodingQuality, sourceUrl: "", outputUrl: "", result: null, message: "" };
+  }
   return preview;
 }
 
@@ -5735,11 +5740,11 @@ function ImageResizeControls({ files, setting, value, onChange, inspection, plan
       </fieldset>
 
       <div className="image-resize-exact-setting">
-        <label htmlFor="image-resize-width"><strong>Exact width</strong><small>1–{limits.maxOutputEdge.toLocaleString()} px, subject to the {Math.round(limits.maxOutputPixels / 1_000_000)} MP output safeguard</small></label>
+        <label htmlFor="image-resize-width"><strong>Exact width</strong><small>Enter a width in pixels · Capacity depends on your device</small></label>
         <div className="number-stepper">
           <button type="button" onClick={() => changeBy(-1)} disabled={current <= 1} aria-label="Decrease resize width">−</button>
           <div className="input-with-suffix">
-            <input id="image-resize-width" type="number" inputMode="numeric" min="1" max={limits.maxOutputEdge} step={step} value={value} aria-describedby="image-resize-width-note" onChange={(event) => onChange(event.target.value)} />
+            <input id="image-resize-width" type="number" inputMode="numeric" min="1" max={Number.isFinite(limits.maxOutputEdge) ? limits.maxOutputEdge : undefined} step={step} value={value} aria-describedby="image-resize-width-note" onChange={(event) => onChange(event.target.value)} />
             <span>px</span>
           </div>
           <button type="button" onClick={() => changeBy(1)} disabled={current >= limits.maxOutputEdge} aria-label="Increase resize width">+</button>
@@ -5826,7 +5831,7 @@ function ImageUpscaleControls({ files, setting, value, onChange, inspection, pla
               <button type="button" key={option.value} className={selected ? "selected" : ""} aria-pressed={selected} disabled={choice?.available === false} title={choice?.available === false ? choice.message : undefined} onClick={() => onChange(Number(option.value))}>
                 <span><ArrowsOutIcon size={20} weight="duotone" aria-hidden="true" /></span>
                 <strong>{option.label}<b>{Number(option.value) ** 2}× pixels</b></strong>
-                <small>{choice?.available === false ? `Above ${Math.round(limits.maxOutputPixels / 1_000_000)} MP limit` : choice?.first ? `${choice.first.width.toLocaleString()} × ${choice.first.height.toLocaleString()} px` : option.hint}</small>
+                <small>{choice?.available === false ? "Unavailable" : choice?.first ? `${choice.first.width.toLocaleString()} × ${choice.first.height.toLocaleString()} px` : option.hint}</small>
               </button>
             );
           })}
@@ -6723,8 +6728,8 @@ function PdfFormFieldControl({ field, value, modified, disabled, limits, onChang
 
   const fieldControl = field.type === "text"
     ? field.multiline
-      ? <textarea id={id} rows={3} maxLength={inputMaxLength} aria-labelledby={`${id}-label`} aria-required={field.required} value={String(value ?? "")} disabled={controlsDisabled} onChange={(event) => onChange(event.target.value)} />
-      : <input id={id} type="text" maxLength={inputMaxLength} aria-labelledby={`${id}-label`} aria-required={field.required} value={String(value ?? "")} disabled={controlsDisabled} onChange={(event) => onChange(event.target.value)} />
+      ? <textarea id={id} rows={3} maxLength={Number.isFinite(inputMaxLength) ? inputMaxLength : undefined} aria-labelledby={`${id}-label`} aria-required={field.required} value={String(value ?? "")} disabled={controlsDisabled} onChange={(event) => onChange(event.target.value)} />
+      : <input id={id} type="text" maxLength={Number.isFinite(inputMaxLength) ? inputMaxLength : undefined} aria-labelledby={`${id}-label`} aria-required={field.required} value={String(value ?? "")} disabled={controlsDisabled} onChange={(event) => onChange(event.target.value)} />
     : field.type === "checkbox"
       ? (
         <label className="pdf-form-checkbox" htmlFor={id}>
@@ -7647,10 +7652,10 @@ function GenericToolWorkbench({ tool, onClose, onComplete }) {
             <details id={limitsId} className="limits-note">
               <summary>
                 <GaugeIcon size={17} aria-hidden="true" />
-                <span><strong>Local safeguards</strong><span id={limitsPrimaryId}>{limitCopy.primary}</span></span>
+                <span><strong>File support</strong><span id={limitsPrimaryId}>{limitCopy.primary}</span></span>
                 <span className="limits-disclosure" aria-hidden="true">Details <CaretRightIcon size={13} /></span>
               </summary>
-              <div className="limits-details"><strong>Additional safeguards</strong><span>{limitCopy.secondary}</span></div>
+              <div className="limits-details"><strong>Processing details</strong><span>{limitCopy.secondary}</span></div>
             </details>
             {fileIssue && <div key={fileIssue.id} className="error-card file-error"><WarningCircleIcon size={20} weight="fill" aria-hidden="true" /><span><span role="alert" aria-atomic="true"><strong>{fileIssue.title}</strong>{fileIssue.summary}</span><details><summary>Review rejected files</summary><ul>{fileIssue.details.map((detail, index) => <li key={`${fileIssue.id}-${index}`}>{detail}</li>)}</ul></details></span></div>}
             {queueAnnouncement && <p key={queueAnnouncement.id} className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{queueAnnouncement.message}</p>}
@@ -8262,7 +8267,7 @@ export function App() {
         <section id="privacy-details" className="privacy-section shell" aria-labelledby="privacy-title">
           <div className="privacy-seal"><LockIcon size={36} weight="duotone" /></div>
           <div><div className="section-kicker"><ShieldCheckIcon size={18} /><span>Your files are yours</span></div><h2 id="privacy-title">Privacy you can verify by going offline.</h2><p>Once this app is saved, switch off your connection and keep working. PDF, image, OCR, and conversion engines run in the browser; file contents are never sent to our servers.</p></div>
-          <div className="privacy-checks"><span><CheckCircleIcon size={18} weight="fill" />No sign-up or cloud history</span><span><CheckCircleIcon size={18} weight="fill" />No document analytics</span><span><CheckCircleIcon size={18} weight="fill" />Visible local safety limits</span><span><CheckCircleIcon size={18} weight="fill" />Open-source application code</span></div>
+          <div className="privacy-checks"><span><CheckCircleIcon size={18} weight="fill" />No sign-up or cloud history</span><span><CheckCircleIcon size={18} weight="fill" />No document analytics</span><span><CheckCircleIcon size={18} weight="fill" />No file-size quotas</span><span><CheckCircleIcon size={18} weight="fill" />Open-source application code</span></div>
         </section>
 
         <section id="open-source" className="open-source-section shell" aria-labelledby="open-source-title">

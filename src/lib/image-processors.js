@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { baseName, createResultBudget, getCompressionSizeChange, resultFromBlob, retainResult, safeFileName, zipResults } from "./file-utils.js";
-import { FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getInteractiveImagePreviewDimensions, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
+import { FACE_DETECTOR_MAX_RESULTS, FileLimitError, assertImageDimensions, assertOutputDimensions, assertOutputSize, getAnimatedGifPlan, getImageCropPlan, getImageUpscalePlan, getInteractiveImagePreviewDimensions, getPhotoEditorPlan, getProportionalResizeDimensions, getToolLimits } from "./file-limits.js";
 import { applyBackgroundRemovalPixels, createBackgroundRemovalOutcome, getBackgroundRemovalBackground, getBackgroundRemovalProfile } from "./background-removal.js";
 import { createImageWatermarkOutcome, drawImageWatermark, getImageWatermarkPlan } from "./image-watermark.js";
 import { createImageMemeOutcome, drawImageMeme, getImageMemePlan } from "./image-meme.js";
@@ -229,8 +229,9 @@ async function detectFaceBlurPlan(source, width, height, options, limits) {
   }
 
   try {
-    const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: limits.maxDetectedFaces + 1 });
+    const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: FACE_DETECTOR_MAX_RESULTS });
     const faces = await detector.detect(source);
+    if (faces.length >= FACE_DETECTOR_MAX_RESULTS) throw new FileLimitError("face-detector-capacity", "The browser’s face detector reached its result capacity. Crop the image into smaller groups and review each one.");
     if (faces.length > limits.maxDetectedFaces) {
       throw new FileLimitError(
         "face-count-limit",

@@ -646,7 +646,7 @@ export const tools = withPhosphorExports([
         default: PDF_TEXT_ANNOTATION_DEFAULTS.scope,
         options: Object.values(PDF_TEXT_ANNOTATION_SCOPES).map(({ value, label }) => ({ value, label })),
       },
-      { key: "targetPage", type: "number", label: "Selected page", default: PDF_TEXT_ANNOTATION_DEFAULTS.targetPage, min: 1, max: 500, step: 1 },
+      { key: "targetPage", type: "number", label: "Selected page", default: PDF_TEXT_ANNOTATION_DEFAULTS.targetPage, min: 1, step: 1 },
       { key: "x", type: "number", label: "Horizontal position", default: PDF_TEXT_ANNOTATION_DEFAULTS.x, min: PDF_TEXT_ANNOTATION_LIMITS.minPosition, max: PDF_TEXT_ANNOTATION_LIMITS.maxPosition, step: 0.5, suffix: "%" },
       { key: "y", type: "number", label: "Vertical position", default: PDF_TEXT_ANNOTATION_DEFAULTS.y, min: PDF_TEXT_ANNOTATION_LIMITS.minPosition, max: PDF_TEXT_ANNOTATION_LIMITS.maxPosition, step: 0.5, suffix: "%" },
       {
