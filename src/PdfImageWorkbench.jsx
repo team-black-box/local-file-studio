@@ -653,7 +653,7 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
     setStatus("processing");
     setError("");
     setResults([]);
-    setProgress({ phase: "Checking local safety limits", progress: 0.04 });
+    setProgress({ phase: "Checking local files", progress: 0.04 });
     try {
       validatePdfOverlayPlacements(placements, assets, pageCount, tool);
       const response = await runTool(tool, [pdfFile], {
@@ -717,10 +717,10 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
             <details className="limits-note">
               <summary>
                 <GaugeIcon size={17} aria-hidden="true" />
-                <span><strong>PDF limits</strong><span>{pdfLimitCopy.primary}</span></span>
+                <span><strong>PDF support</strong><span>{pdfLimitCopy.primary}</span></span>
                 <span className="limits-disclosure" aria-hidden="true">Details <CaretRightIcon size={13} /></span>
               </summary>
-              <div className="limits-details"><strong>Additional safeguards</strong><span>{pdfLimitCopy.secondary}</span></div>
+              <div className="limits-details"><strong>Processing details</strong><span>{pdfLimitCopy.secondary}</span></div>
             </details>
             <PdfPasswordGate entry={passwordGate.active} password={passwordGate.password} onPasswordChange={passwordGate.setPassword} onVerify={passwordGate.verify} verifying={passwordGate.verifying} outputProtection={passwordGate.outputProtection} />
             {fileIssue && <div className="error-card file-error"><WarningCircleIcon size={20} weight="fill" /><span><strong>{fileIssue.title}</strong>{fileIssue.summary && <span>{fileIssue.summary}</span>}<ul>{fileIssue.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></span></div>}
@@ -788,13 +788,13 @@ export function PdfImageWorkbench({ tool, onClose, onComplete, PreviewDialog, pr
             </main>
 
             <aside className="pdf-assets-panel" aria-label="Images and export controls">
-              <div className="pdf-editor-panel-heading"><span>Images</span><strong>{assets.length}/{imagePolicy.maxFiles}</strong></div>
+              <div className="pdf-editor-panel-heading"><span>Images</span><strong>{assets.length}</strong></div>
               <button className="pdf-add-image-button" onClick={() => imageInputRef.current?.click()} disabled={addingImages || assets.length >= imagePolicy.maxFiles}>
                 {addingImages ? <SpinnerGapIcon size={18} className="spin" /> : <PlusIcon size={18} />} {addingImages ? "Checking images" : "Add PNG or JPG"}
               </button>
               <input ref={imageInputRef} hidden type="file" accept={imagePolicy.accepts.join(",")} multiple onChange={(event) => { addImages(event.target.files); event.target.value = ""; }} />
               <p className="pdf-signature-note">Signature images are visual marks only. Export does not create a certificate-backed digital signature.</p>
-              <div className="pdf-image-limit-copy" role="note"><GaugeIcon size={15} /><span><strong>Image limits</strong>{imageLimitCopy.primary}<small>{imageLimitCopy.secondary}</small></span></div>
+              <div className="pdf-image-limit-copy" role="note"><GaugeIcon size={15} /><span><strong>Image support</strong>{imageLimitCopy.primary}<small>{imageLimitCopy.secondary}</small></span></div>
               {fileIssue && <div className="error-card file-error"><WarningCircleIcon size={18} weight="fill" /><span><strong>{fileIssue.title}</strong>{fileIssue.summary && <span>{fileIssue.summary}</span>}<details><summary>Review</summary><ul>{fileIssue.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></details></span></div>}
 
               <div className="pdf-asset-list">

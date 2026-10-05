@@ -283,13 +283,17 @@ test("PowerPoint to PDF uses the inspected slide order and reports an honest out
   assert.match(result.details, /1 page · 2 slides · 28 readable characters/);
 });
 
-test("PowerPoint to PDF rejects excessive archive expansion through shared preflight", async () => {
+test("PowerPoint to PDF accepts ordinary highly compressed documents and rejects expansion bombs", async () => {
   const file = await createPptxFile({ name: "compressed.pptx", paddingBytes: 1024 * 1024 });
   const tool = tools.find(({ slug }) => slug === "powerpoint-to-pdf");
-  await assert.rejects(
-    () => runTool(tool, [file]),
-    (error) => error instanceof FileLimitError
-      && error.code === "archive-ratio-limit"
-      && /compressed\.pptx.*20× expansion/s.test(error.message),
-  );
+  const { results: [result] } = await runTool(tool, [file]);
+  assert.equal(result.blob.type, "application/pdf");
+  // Claim excessive expansion in the first central-directory entry. Rejection
+  // happens before decompression rather than allocating a giant test fixture.
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const directory = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  assert.ok(directory >= 0);
+  bytes.writeUInt32LE(64 * 1024 * 1024 + 1, directory + 24);
+  const bomb = new File([bytes], "bomb.pptx", { type: file.type });
+  await assert.rejects(runTool(tool, [bomb]), { code: "archive-ratio-limit" });
 });

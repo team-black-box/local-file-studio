@@ -38,7 +38,7 @@ test("front/back validation rejects missing, surplus, unequal, malformed, and ov
   assert.throws(() => createPdfMergePlan([3, 2], [], "merge-pdf", { mode: "interleave" }), { code: "interleave-page-count" });
   assert.throws(() => createPdfMergePlan([0, 0], [], "merge-pdf", { mode: "interleave" }), { code: "invalid-page-count" });
   assert.throws(() => createPdfMergePlan([1, 1], [], "merge-pdf", { mode: "other" }), { code: "invalid-merge-mode" });
-  const limits = getToolLimits("merge-pdf");
+  const limits = { ...getToolLimits("merge-pdf"), maxPdfPagesPerFile: 300, maxPdfPagesTotal: 500 };
   assert.throws(() => createPdfMergePlan([limits.maxPdfPagesPerFile + 1, 1], [], limits, { mode: "interleave" }), { code: "too-many-pages" });
   const half = limits.maxPdfPagesTotal / 2;
   assert.equal(createPdfMergePlan([half, half], [], limits, { mode: "interleave" }).pageOrder.length, limits.maxPdfPagesTotal);
@@ -88,16 +88,18 @@ test("every-page split emits one correctly ordered named PDF for every source pa
   assert.deepEqual(await outputWidths(single[0]), [201]);
 });
 
-test("every-page split accepts its output-count boundary and rejects overflow before copies", async () => {
-  const limit = getToolLimits("split-pdf").maxGeneratedItems;
+test("every-page split exports every page above the old 100-result ceiling and supports cancellation", async () => {
+  const limit = 101;
   const exact = await fixture(Array.from({ length: limit }, (_, index) => 100 + index));
   const results = await processPdfTool("split-pdf", [exact], { mode: "every-page" });
   const zip = await JSZip.loadAsync(await results[0].blob.arrayBuffer());
   assert.equal(Object.keys(zip.files).length, limit);
   const overflow = await fixture(Array.from({ length: limit + 1 }, () => 100));
   let reported = false;
-  await assert.rejects(processPdfTool("split-pdf", [overflow], { mode: "every-page" }, () => { reported = true; }), /files|outputs|results/i);
-  assert.equal(reported, false);
+  const [larger] = await processPdfTool("split-pdf", [overflow], { mode: "every-page" }, () => { reported = true; });
+  const largerZip = await JSZip.loadAsync(await larger.blob.arrayBuffer());
+  assert.equal(Object.keys(largerZip.files).length, limit + 1);
+  assert.equal(reported, true);
   const controller = new AbortController();
   await assert.rejects(processPdfTool("split-pdf", [exact], { mode: "every-page", signal: controller.signal }, () => controller.abort()), { name: "AbortError" });
 });

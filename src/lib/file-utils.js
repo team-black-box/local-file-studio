@@ -6,6 +6,9 @@ import { nameOutputResults } from "./output-names.js";
 import {
   ARCHIVE_INPUT_LIMIT_BYTES,
   ARCHIVE_ITEM_LIMIT_BYTES,
+  DEVICE_MANAGED_LIMIT,
+  ZIP_MAX_ENTRIES,
+  ZIP_MAX_BYTES,
   MAX_GENERATED_RESULTS,
   PDF_COMPRESSION_PRESETS,
   PDF_COMPRESSION_SETTINGS,
@@ -24,7 +27,7 @@ export function createMergePdfPlan(pageCounts, fileNames = [], limitsOrTool = "m
   if (!Array.isArray(pageCounts)) {
     throw new FileLimitError("invalid-merge-plan", "The merge page plan is unavailable. Choose the PDFs again.");
   }
-  const limits = typeof limitsOrTool === "object" && Number.isInteger(limitsOrTool.maxPdfPagesTotal)
+  const limits = typeof limitsOrTool === "object" && (Number.isInteger(limitsOrTool.maxPdfPagesTotal) || limitsOrTool.maxPdfPagesTotal === DEVICE_MANAGED_LIMIT)
     ? limitsOrTool
     : getToolLimits(limitsOrTool);
   if (pageCounts.length > limits.maxFiles) {
@@ -150,7 +153,7 @@ export function compressionEstimateAllowsProcessing(estimate) {
 export function createPdfJpgOutputPlan(pageCount, maxGeneratedItems = MAX_GENERATED_RESULTS) {
   const count = Number(pageCount);
   const maxItems = Number(maxGeneratedItems);
-  if (!Number.isInteger(count) || count < 1 || !Number.isInteger(maxItems) || maxItems < 1) {
+  if (!Number.isInteger(count) || count < 1 || !isValidUpperBound(maxItems) || maxItems < 1) {
     throw new FileLimitError("invalid-pdf-page-count", "The PDF page count could not be used to plan JPG output. Choose the PDF again.");
   }
   if (count > maxItems) {
@@ -297,14 +300,18 @@ export function assertPdfPreviewResult(result, maxBytes) {
   return blob;
 }
 
+function isValidUpperBound(value) {
+  return value === DEVICE_MANAGED_LIMIT || (Number.isSafeInteger(value) && value > 0);
+}
+
 export function createResultBudget({
   maxItems = MAX_GENERATED_RESULTS,
   maxItemBytes = ARCHIVE_ITEM_LIMIT_BYTES,
   maxTotalBytes = ARCHIVE_INPUT_LIMIT_BYTES,
 } = {}) {
-  if (!Number.isInteger(maxItems) || maxItems < 1
-    || !Number.isFinite(maxItemBytes) || maxItemBytes <= 0
-    || !Number.isFinite(maxTotalBytes) || maxTotalBytes <= 0) {
+  if (!isValidUpperBound(maxItems) || maxItems < 1
+    || !isValidUpperBound(maxItemBytes) || maxItemBytes <= 0
+    || !isValidUpperBound(maxTotalBytes) || maxTotalBytes <= 0) {
     throw new FileLimitError("invalid-result-budget", "The local result safety budget could not be initialized. Reload the app and try again.");
   }
   return { count: 0, totalBytes: 0, maxItems, maxItemBytes, maxTotalBytes };
@@ -317,11 +324,14 @@ export function retainResult(budget, result) {
   const validBudget = budget
     && Number.isInteger(budget.count) && budget.count >= 0
     && Number.isFinite(budget.totalBytes) && budget.totalBytes >= 0
-    && Number.isInteger(budget.maxItems) && budget.maxItems >= 1
-    && Number.isFinite(budget.maxItemBytes) && budget.maxItemBytes > 0
-    && Number.isFinite(budget.maxTotalBytes) && budget.maxTotalBytes > 0;
-  if (!validBudget || !Number.isInteger(nextCount) || !Number.isFinite(size) || size < 0) {
+    && isValidUpperBound(budget.maxItems) && budget.maxItems >= 1
+    && isValidUpperBound(budget.maxItemBytes) && budget.maxItemBytes > 0
+    && isValidUpperBound(budget.maxTotalBytes) && budget.maxTotalBytes > 0;
+  if (!validBudget || !Number.isSafeInteger(nextCount) || !Number.isSafeInteger(size) || size < 0) {
     throw new FileLimitError("invalid-result-size", `${name} reported an invalid size. Process a smaller job after reloading the app.`);
+  }
+  if (!Number.isSafeInteger(budget.totalBytes + size)) {
+    throw new FileLimitError("invalid-result-size", `${name} reported an unrepresentable combined size. Download results in smaller groups.`);
   }
   if (nextCount > budget.maxItems) {
     throw new FileLimitError(
@@ -346,30 +356,31 @@ export function retainResult(budget, result) {
   return result;
 }
 
-export async function zipResults(results, archiveName = "local-file-studio-results.zip", naming = {}) {
-  if (results.length === 1) return nameOutputResults(results, { ...naming, archiveEntries: true });
-  if (results.length > MAX_GENERATED_RESULTS) {
-    throw new FileLimitError(
-      "result-count-limit",
-      `This job would create ${results.length.toLocaleString()} files; the safe local limit is ${MAX_GENERATED_RESULTS}. Process fewer pages or files at a time.`,
-    );
+export function assertZipRepresentable(results) {
+  if (results.length > ZIP_MAX_ENTRIES) {
+    throw new FileLimitError("zip-entry-limit", `The ZIP format supports up to ${ZIP_MAX_ENTRIES.toLocaleString()} entries. Download files separately or in smaller groups.`);
   }
-  const sourceBytes = results.reduce((sum, result) => sum + result.blob.size, 0);
+  let archiveBytes = 22;
+  const encoder = new TextEncoder();
   for (const result of results) {
-    if (result.blob.size > ARCHIVE_ITEM_LIMIT_BYTES) {
-      throw new FileLimitError(
-        "archive-item-too-large",
-        `${result.name} is ${formatLimitBytes(result.blob.size)}, above the ${formatLimitBytes(ARCHIVE_ITEM_LIMIT_BYTES)} per-file ZIP limit. Reduce dimensions, pages, or quality.`,
-      );
+    const size = result?.blob?.size;
+    if (!Number.isSafeInteger(size) || size < 0) throw new FileLimitError("invalid-result-size", "A ZIP entry reported an invalid size. Generate the files again.");
+    // Deflate's worst-case expansion is five bytes per 16 KB block plus a
+    // framing allowance. Overestimate header/name extras to prevent wraparound.
+    archiveBytes += size + Math.ceil(size / 16_383) * 5 + 128 + encoder.encode(String(result.name || "")).length * 6;
+    if (!Number.isSafeInteger(archiveBytes) || archiveBytes > ZIP_MAX_BYTES) {
+      throw new FileLimitError("zip-format-limit", "These results exceed the classic ZIP format’s 4 GB capacity including archive headers. Download files separately or in smaller groups.");
     }
   }
-  if (sourceBytes > ARCHIVE_INPUT_LIMIT_BYTES) {
-    throw new FileLimitError(
-      "archive-input-too-large",
-      `The generated files total ${formatLimitBytes(sourceBytes)}, above the ${formatLimitBytes(ARCHIVE_INPUT_LIMIT_BYTES)} in-memory ZIP limit. Process a smaller batch.`,
-    );
-  }
+  return archiveBytes;
+}
+
+export async function zipResults(results, archiveName = "local-file-studio-results.zip", naming = {}) {
+  if (results.length === 1) return nameOutputResults(results, { ...naming, archiveEntries: true });
+  assertZipRepresentable(results);
   results = nameOutputResults(results, { ...naming, archiveEntries: true });
+  // Check final entry names as well, before loading any output bytes.
+  assertZipRepresentable(results);
   const zip = new JSZip();
   for (const result of results) {
     const alreadyCompressed = /^(application\/(pdf|zip)|image\/(jpeg|png|webp|gif))$/i.test(result.blob.type);
@@ -495,7 +506,7 @@ export function createExtractPagePlan(value, pageCount, combine, maxGeneratedIte
     throw error;
   }
   const outputCount = combine === false ? selection.length : 1;
-  if (combine === false && (!Number.isInteger(maxGeneratedItems) || maxGeneratedItems < 1)) {
+  if (combine === false && (!isValidUpperBound(maxGeneratedItems) || maxGeneratedItems < 1)) {
     throw new FileLimitError("invalid-generated-item-limit", "The generated-file safeguard is unavailable. Reload the tool and try again.");
   }
   if (combine === false && outputCount > maxGeneratedItems) {

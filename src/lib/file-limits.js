@@ -3,17 +3,24 @@
 
 const MIB = 1024 * 1024;
 const MEGAPIXEL = 1_000_000;
-const STANDARD_PDF_INPUT_LIMIT_BYTES = 100 * MIB;
+// Infinity explicitly means device-managed: validate metadata and let the local
+// engine/browser decide whether it can complete the job. It is never a size.
+export const DEVICE_MANAGED_LIMIT = Number.POSITIVE_INFINITY;
 const PDF_OVERLAY_IMAGE_ACCEPTS = Object.freeze([".png", ".jpg", ".jpeg"]);
 
-export const GLOBAL_OUTPUT_LIMIT_BYTES = 128 * MIB;
-export const ARCHIVE_INPUT_LIMIT_BYTES = 128 * MIB;
-export const ARCHIVE_ITEM_LIMIT_BYTES = 48 * MIB;
-export const MAX_GENERATED_RESULTS = 100;
+export const GLOBAL_OUTPUT_LIMIT_BYTES = DEVICE_MANAGED_LIMIT;
+export const ARCHIVE_INPUT_LIMIT_BYTES = DEVICE_MANAGED_LIMIT;
+export const ARCHIVE_ITEM_LIMIT_BYTES = DEVICE_MANAGED_LIMIT;
+export const MAX_GENERATED_RESULTS = DEVICE_MANAGED_LIMIT;
+// The bundled ZIP writer emits classic ZIP (16-bit entry count, 32-bit offsets).
+export const ZIP_MAX_ENTRIES = 65_535;
+// Native FaceDetector uses an unsigned-short result hint.
+export const FACE_DETECTOR_MAX_RESULTS = 65_535;
+export const ZIP_MAX_BYTES = 0xffff_ffff;
 export const MAX_OUTPUT_NAME_CHARACTERS = 100;
 export const MAX_OUTPUT_NAME_BYTES = 180;
-export const MAX_PAGE_SELECTION_CHARACTERS = 4_096;
-export const MAX_PAGE_SELECTION_ENTRIES = 2_000;
+export const MAX_PAGE_SELECTION_CHARACTERS = DEVICE_MANAGED_LIMIT;
+export const MAX_PAGE_SELECTION_ENTRIES = DEVICE_MANAGED_LIMIT;
 export const MAX_PDF_PASSWORD_CHARACTERS = 1_024;
 export const IMAGE_CROP_SCALE_MIN_PERCENT = 40;
 export const IMAGE_CROP_SCALE_MAX_PERCENT = 100;
@@ -39,6 +46,7 @@ export const PDF_COMPRESSION_PRESETS = Object.freeze({
 });
 
 export function assertPdfRasterWork(totalPixels, limits, label = "This PDF") {
+  assertNonNegativeInteger(totalPixels, "invalid-raster-work", `${label} reported an invalid render-pixel total. Re-save the PDF and try again.`);
   if (limits.maxRasterPixelsTotal && totalPixels > limits.maxRasterPixelsTotal) {
     throw new FileLimitError("pdf-render-work-too-large", `${label} would render ${(totalPixels / MEGAPIXEL).toFixed(1)} MP across its pages; the limit is ${limits.maxRasterPixelsTotal / MEGAPIXEL} MP per job. Split the PDF into smaller parts to keep this resolution.`);
   }
@@ -46,7 +54,7 @@ export function assertPdfRasterWork(totalPixels, limits, label = "This PDF") {
 
 export const PDF_PREVIEW_LIMITS = Object.freeze({
   maxOutputBytes: GLOBAL_OUTPUT_LIMIT_BYTES,
-  maxPages: 500,
+  maxPages: DEVICE_MANAGED_LIMIT,
   maxRasterPixels: 8 * MEGAPIXEL,
   maxRasterEdge: 4096,
 });
@@ -54,19 +62,14 @@ export const PDF_PREVIEW_LIMITS = Object.freeze({
 const DEFAULTS = Object.freeze({
   minFiles: 1,
   maxFiles: 1,
-  maxFileBytes: 75 * MIB,
-  maxTotalBytes: 75 * MIB,
+  maxFileBytes: DEVICE_MANAGED_LIMIT,
+  maxTotalBytes: DEVICE_MANAGED_LIMIT,
   maxOutputBytes: GLOBAL_OUTPUT_LIMIT_BYTES,
   maxArchiveItemBytes: ARCHIVE_ITEM_LIMIT_BYTES,
   maxArchiveInputBytes: ARCHIVE_INPUT_LIMIT_BYTES,
 });
 
-const PDF_RASTER_PROFILES = {
-  "compress-pdf": { maxFileBytes: STANDARD_PDF_INPUT_LIMIT_BYTES, maxTotalBytes: STANDARD_PDF_INPUT_LIMIT_BYTES, maxPdfPagesPerFile: 150, maxRasterPixelsTotal: 150 * MEGAPIXEL },
-  "redact-pdf": { maxFileBytes: 50 * MIB, maxTotalBytes: 50 * MIB, maxPdfPagesPerFile: 100, maxRasterPixelsTotal: 150 * MEGAPIXEL },
-  "pdf-to-jpg": { maxFileBytes: 50 * MIB, maxTotalBytes: 50 * MIB, maxPdfPagesPerFile: 100, maxRasterPixelsTotal: 150 * MEGAPIXEL, maxGeneratedItems: 100 },
-  "ocr-pdf": { maxFileBytes: 30 * MIB, maxTotalBytes: 30 * MIB, maxPdfPagesPerFile: 25, maxRasterPixels: 12 * MEGAPIXEL, maxRasterPixelsTotal: 40 * MEGAPIXEL, maxRasterEdge: 6000, maxOcrCharactersPerPage: 16_800 },
-};
+const PDF_RASTER_TOOLS = new Set(["compress-pdf", "redact-pdf", "pdf-to-jpg", "ocr-pdf"]);
 
 const PDF_TEXT_TOOLS = new Set([
   "pdf-to-word",
@@ -77,7 +80,6 @@ const PDF_TEXT_TOOLS = new Set([
   "pdf-to-markdown",
 ]);
 
-const PDF_UNBOUNDED_PAGE_TOOLS = new Set(["repair-pdf", "unlock-pdf", "protect-pdf"]);
 const OFFICE_TOOLS = new Set(["word-to-pdf", "powerpoint-to-pdf", "excel-to-pdf"]);
 const HTML_TOOLS = new Set(["html-to-pdf", "html-to-image"]);
 const IMAGE_TO_PDF_TOOLS = new Set(["jpg-to-pdf", "scan-to-pdf"]);
@@ -101,8 +103,8 @@ const TEXT_SETTING_LIMITS = {
   "watermark-pdf": { text: 200 },
   "edit-pdf": { text: 500 },
   "sign-pdf": { name: 200 },
-  "pdf-forms": { values: 256 * 1024 },
-  "redact-pdf": { regions: 64 * 1024 },
+  "pdf-forms": { values: DEVICE_MANAGED_LIMIT },
+  "redact-pdf": { regions: DEVICE_MANAGED_LIMIT },
   "unlock-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS },
   "protect-pdf": { password: MAX_PDF_PASSWORD_CHARACTERS, passwordConfirm: MAX_PDF_PASSWORD_CHARACTERS },
   "watermark-image": { text: 500 },
@@ -133,22 +135,21 @@ function withDefaults(overrides = {}) {
 
 function structuralPdfProfile(overrides = {}) {
   return withDefaults({
-    maxFileBytes: STANDARD_PDF_INPUT_LIMIT_BYTES,
-    maxTotalBytes: STANDARD_PDF_INPUT_LIMIT_BYTES,
+    maxPdfPagesPerFile: DEVICE_MANAGED_LIMIT,
     ...overrides,
   });
 }
 
 function imageProfile(overrides = {}) {
   return withDefaults({
-    maxFiles: 20,
-    maxFileBytes: 25 * MIB,
-    maxTotalBytes: 100 * MIB,
-    maxImagePixelsPerFile: 16 * MEGAPIXEL,
-    maxImagePixelsTotal: 160 * MEGAPIXEL,
-    maxImageEdge: 8192,
-    maxOutputPixels: 16 * MEGAPIXEL,
-    maxOutputEdge: 8192,
+    maxFiles: DEVICE_MANAGED_LIMIT,
+    maxFileBytes: DEVICE_MANAGED_LIMIT,
+    maxTotalBytes: DEVICE_MANAGED_LIMIT,
+    maxImagePixelsPerFile: DEVICE_MANAGED_LIMIT,
+    maxImagePixelsTotal: DEVICE_MANAGED_LIMIT,
+    maxImageEdge: DEVICE_MANAGED_LIMIT,
+    maxOutputPixels: DEVICE_MANAGED_LIMIT,
+    maxOutputEdge: DEVICE_MANAGED_LIMIT,
     ...overrides,
   });
 }
@@ -167,230 +168,91 @@ export function getToolLimits(toolOrSlug) {
   const slug = SLUG_ALIASES[rawSlug] || rawSlug;
   const tool = typeof toolOrSlug === "string" ? null : toolOrSlug;
 
-  if (slug === "merge-pdf") {
-    return structuralPdfProfile({
-      minFiles: 2,
-      maxFiles: 20,
-      // Keep combined sources below the result cap: copying scanned pages
-      // usually retains their compressed image bytes rather than shrinking them.
-      maxTotalBytes: 120 * MIB,
-      maxPdfPagesPerFile: 300,
-      maxPdfPagesTotal: 500,
-    });
-  }
-
-  if (slug === "compare-pdf") {
-    return withDefaults({
-      minFiles: 2,
-      maxFiles: 2,
-      maxFileBytes: 50 * MIB,
-      maxTotalBytes: 100 * MIB,
-      maxPdfPagesPerFile: 250,
-      maxPdfPagesTotal: 400,
-      maxExtractedCharactersTotal: 2_000_000,
-      maxExtractedLinesPerFile: 25_000,
-      maxExtractedLinesTotal: 40_000,
-      maxDiffEditLength: 2_000,
-      maxDiffMilliseconds: 3_000,
-      maxDiffHardMilliseconds: 4_000,
-    });
-  }
-
-  if (slug === "add-image-to-pdf") {
-    return withDefaults({
-      maxFileBytes: 50 * MIB,
-      maxTotalBytes: 50 * MIB,
-      maxPdfPagesPerFile: 200,
-      maxRasterPixels: 12 * MEGAPIXEL,
-      maxRasterEdge: 6000,
-      maxOverlayImages: 10,
-      maxOverlayImageBytes: 10 * MIB,
-      maxOverlayImageBytesTotal: 30 * MIB,
-      maxPreparedOverlayBytes: 24 * MIB,
-      maxPreparedOverlayBytesTotal: 64 * MIB,
-      maxOverlayPixelsPerFile: 12 * MEGAPIXEL,
-      maxOverlayPixelsTotal: 40 * MEGAPIXEL,
-      maxOverlayImageEdge: 6000,
-      maxOverlayPlacements: 100,
-    });
-  }
-
-  if (PDF_RASTER_PROFILES[slug]) {
-    return withDefaults({
-      ...PDF_RASTER_PROFILES[slug],
-      maxRasterPixels: PDF_RASTER_PROFILES[slug].maxRasterPixels || 16 * MEGAPIXEL,
-      maxRasterEdge: PDF_RASTER_PROFILES[slug].maxRasterEdge || 8192,
-      ...(slug === "redact-pdf" ? {
-        maxRedactionRegions: 200,
-        maxRedactionRegionsPerPage: 50,
-        maxRedactionSettingsCharacters: 64 * 1024,
-      } : {}),
-    });
-  }
-
-  if (["split-pdf", "extract-pdf-pages"].includes(slug)) {
-    return structuralPdfProfile({
-      maxPdfPagesPerFile: 500,
-      maxPageSelectionEntries: MAX_PAGE_SELECTION_ENTRIES,
-      maxGeneratedItems: 100,
-    });
-  }
-
-  if (PDF_TEXT_TOOLS.has(slug)) {
-    const textLimits = {
-      "pdf-to-word": 5_000_000,
-      "pdf-to-powerpoint": 1_000_000,
-      "pdf-to-excel": 2_000_000,
-      "summarize-pdf": 1_000_000,
-      "translate-pdf": 120_000,
-      "pdf-to-markdown": 5_000_000,
-    };
-    return withDefaults({
-      maxFileBytes: slug === "translate-pdf" ? 30 * MIB : 50 * MIB,
-      maxTotalBytes: slug === "translate-pdf" ? 30 * MIB : 50 * MIB,
-      maxPdfPagesPerFile: slug === "translate-pdf" ? 150 : slug === "pdf-to-powerpoint" ? 100 : 300,
-      maxExtractedCharactersTotal: textLimits[slug],
-      ...(slug === "pdf-to-markdown" ? {
-        maxTextPreviewCharacters: 250_000,
-        maxTextPreviewBlocks: 1_000,
-      } : {}),
-    });
-  }
-
-  if (PDF_UNBOUNDED_PAGE_TOOLS.has(slug)) {
-    return structuralPdfProfile({
-      maxPdfPagesPerFile: slug === "repair-pdf" ? 300 : 500,
-    });
-  }
-
-  if (OFFICE_TOOLS.has(slug)) {
-    const extractedCharacters = {
-      "word-to-pdf": 2_000_000,
-      "powerpoint-to-pdf": 1_000_000,
-      "excel-to-pdf": 2_000_000,
-    };
-    return withDefaults({
-      maxFileBytes: 25 * MIB,
-      maxTotalBytes: 25 * MIB,
-      maxArchiveEntries: slug === "word-to-pdf" ? 2000 : 5000,
-      maxExpandedArchiveItemBytes: 25 * MIB,
-      maxExpandedArchiveBytes: slug === "word-to-pdf" ? 100 * MIB : slug === "excel-to-pdf" ? 120 * MIB : 160 * MIB,
-      maxArchiveExpansionRatio: 20,
-      maxExtractedCharactersTotal: extractedCharacters[slug],
-      maxGeneratedPdfPages: 500,
-      ...(slug === "powerpoint-to-pdf" ? { maxPresentationSlides: 250 } : {}),
-      ...(slug === "excel-to-pdf" ? { maxSpreadsheetSheets: 100, maxSpreadsheetCellSlots: 500_000 } : {}),
-    });
-  }
-
-  if (HTML_TOOLS.has(slug)) {
-    return withDefaults({
-      minFiles: 0,
-      maxFileBytes: 2 * MIB,
-      maxTotalBytes: 2 * MIB,
-      maxMarkupCharacters: 500_000,
-      ...(slug === "html-to-pdf" ? { maxExtractedCharactersTotal: 500_000, maxGeneratedPdfPages: 500 } : {}),
-      ...(slug === "html-to-image" ? {
-        maxHtmlOutputPixels: 12 * MEGAPIXEL,
-        maxHtmlHeight: 4096,
-        maxOutputEdge: 8192,
-      } : {}),
-    });
-  }
-
-  if (IMAGE_TO_PDF_TOOLS.has(slug)) {
-    return imageProfile({
-      maxFiles: 30,
-      maxTotalBytes: 120 * MIB,
-      maxImagePixelsTotal: 240 * MEGAPIXEL,
-      firstFrameImageFormats: slug === "scan-to-pdf" ? "animated PNG/WebP" : "animated PNG",
-    });
-  }
-
-  if (HEAVY_IMAGE_TOOLS.has(slug)) {
-    const canEnlarge = slug === "upscale-image";
-    return imageProfile({
-      maxFiles: 10,
-      maxFileBytes: 20 * MIB,
-      maxTotalBytes: 60 * MIB,
-      maxImagePixelsPerFile: 12 * MEGAPIXEL,
-      maxImagePixelsTotal: 60 * MEGAPIXEL,
-      maxImageEdge: 6000,
-      maxOutputPixels: canEnlarge ? 16 * MEGAPIXEL : 12 * MEGAPIXEL,
-      maxOutputEdge: canEnlarge ? 8192 : 6000,
-      firstFrameImageFormats: canEnlarge ? "animated PNG" : "animated PNG/WebP",
-      ...(slug === "remove-image-background" ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
-      ...(slug === "blur-face" ? { maxDetectedFaces: 40, maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
-    });
-  }
-
-  if (slug === "convert-image") {
-    return imageProfile({
-      maxFiles: 10,
-      maxFileBytes: 20 * MIB,
-      maxTotalBytes: 80 * MIB,
-      maxImagePixelsPerFile: 12 * MEGAPIXEL,
-      maxImagePixelsTotal: 80 * MEGAPIXEL,
-      maxOutputPixels: 12 * MEGAPIXEL,
-      singleFrameImageFormats: "TIFF",
-      firstFrameImageFormats: "animated GIF/PNG/WebP",
-    });
-  }
-
-  if (slug === "convert-from-jpg") {
-    return imageProfile({
-      maxFiles: 20,
-      maxFileBytes: 20 * MIB,
-      maxTotalBytes: 80 * MIB,
-      maxGifFrames: 20,
-      maxGifWidth: 1400,
-      maxGifFramePixels: 4 * MEGAPIXEL,
-      maxGifFrameEdge: 4096,
-    });
-  }
-
-  if (SINGLE_IMAGE_TOOLS.has(slug)) {
-    return imageProfile({
-      maxFiles: 1,
-      maxFileBytes: 30 * MIB,
-      maxTotalBytes: 30 * MIB,
-      maxImagePixelsTotal: 16 * MEGAPIXEL,
-      firstFrameImageFormats: "animated PNG/WebP",
-      ...(slug === "meme-generator" ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
-    });
-  }
-
-  if (IMAGE_BATCH_TOOLS.has(slug) || tool?.kind === "image") {
-    return imageProfile({
-      firstFrameImageFormats: "animated PNG/WebP",
-      ...(["watermark-image", "rotate-image"].includes(slug) ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
-    });
-  }
-
-  if (PAGE_SELECTION_TOOLS.has(slug)) {
-    return structuralPdfProfile({
-      maxPdfPagesPerFile: 500,
-      maxPageSelectionEntries: MAX_PAGE_SELECTION_ENTRIES,
-      ...(slug === "organize-pdf" ? { maxOrganizedPageMultiplier: 2 } : {}),
-    });
-  }
-
-  if (slug === "pdf-forms") {
-    return structuralPdfProfile({
-      maxPdfPagesPerFile: 500,
-      maxPdfFormFields: 1_000,
-      maxPdfFormOptionsPerField: 500,
-      maxPdfFormOptionsTotal: 5_000,
-      maxPdfFormFieldNameCharacters: 2_048,
-      maxPdfFormValueCharacters: 10_000,
-      maxPdfFormMetadataCharacters: 512_000,
-    });
-  }
-
-  if (tool?.kind === "pdf" || slug?.includes("pdf")) {
-    return structuralPdfProfile({ maxPdfPagesPerFile: 500 });
-  }
-
+  if (slug === "merge-pdf") return structuralPdfProfile({
+    minFiles: 2, maxFiles: DEVICE_MANAGED_LIMIT, maxPdfPagesTotal: DEVICE_MANAGED_LIMIT,
+  });
+  if (slug === "compare-pdf") return structuralPdfProfile({
+    minFiles: 2, maxFiles: 2, maxPdfPagesTotal: DEVICE_MANAGED_LIMIT,
+    maxExtractedCharactersTotal: DEVICE_MANAGED_LIMIT,
+    maxExtractedLinesPerFile: DEVICE_MANAGED_LIMIT, maxExtractedLinesTotal: DEVICE_MANAGED_LIMIT,
+    maxDiffEditLength: DEVICE_MANAGED_LIMIT,
+    // Comparison has nonlinear worst-case work; terminate its worker on a stall.
+    maxDiffMilliseconds: 30_000, maxDiffHardMilliseconds: 31_000,
+  });
+  if (slug === "add-image-to-pdf") return structuralPdfProfile({
+    maxRasterPixels: DEVICE_MANAGED_LIMIT, maxRasterEdge: DEVICE_MANAGED_LIMIT,
+    maxOverlayImages: DEVICE_MANAGED_LIMIT,
+    maxOverlayImageBytes: DEVICE_MANAGED_LIMIT, maxOverlayImageBytesTotal: DEVICE_MANAGED_LIMIT,
+    maxPreparedOverlayBytes: DEVICE_MANAGED_LIMIT, maxPreparedOverlayBytesTotal: DEVICE_MANAGED_LIMIT,
+    maxOverlayPixelsPerFile: DEVICE_MANAGED_LIMIT, maxOverlayPixelsTotal: DEVICE_MANAGED_LIMIT,
+    maxOverlayImageEdge: DEVICE_MANAGED_LIMIT, maxOverlayPlacements: DEVICE_MANAGED_LIMIT,
+  });
+  if (PDF_RASTER_TOOLS.has(slug)) return structuralPdfProfile({
+    maxRasterPixels: DEVICE_MANAGED_LIMIT, maxRasterEdge: DEVICE_MANAGED_LIMIT,
+    maxRasterPixelsTotal: DEVICE_MANAGED_LIMIT,
+    ...(slug === "pdf-to-jpg" ? { maxGeneratedItems: DEVICE_MANAGED_LIMIT } : {}),
+    ...(slug === "ocr-pdf" ? { maxOcrCharactersPerPage: DEVICE_MANAGED_LIMIT } : {}),
+    ...(slug === "redact-pdf" ? {
+      maxRedactionRegions: DEVICE_MANAGED_LIMIT, maxRedactionRegionsPerPage: DEVICE_MANAGED_LIMIT,
+      maxRedactionSettingsCharacters: DEVICE_MANAGED_LIMIT,
+    } : {}),
+  });
+  if (PDF_TEXT_TOOLS.has(slug)) return structuralPdfProfile({
+    maxExtractedCharactersTotal: DEVICE_MANAGED_LIMIT,
+    ...(slug === "pdf-to-markdown" ? { maxTextPreviewCharacters: 250_000, maxTextPreviewBlocks: 1_000 } : {}),
+  });
+  if (OFFICE_TOOLS.has(slug)) return withDefaults({
+    // Expanded Office containers are untrusted. These generous checks prevent
+    // archive bombs and huge empty worksheet ranges before parser allocations.
+    maxArchiveEntries: 100_000,
+    maxExpandedArchiveItemBytes: 512 * MIB, maxExpandedArchiveBytes: 2048 * MIB,
+    maxArchiveExpansionRatio: 1000, archiveExpansionRatioFloorBytes: 64 * MIB,
+    maxExtractedCharactersTotal: DEVICE_MANAGED_LIMIT, maxGeneratedPdfPages: DEVICE_MANAGED_LIMIT,
+    ...(slug === "powerpoint-to-pdf" ? { maxPresentationSlides: DEVICE_MANAGED_LIMIT } : {}),
+    ...(slug === "excel-to-pdf" ? { maxSpreadsheetSheets: DEVICE_MANAGED_LIMIT, maxSpreadsheetCellSlots: 10_000_000 } : {}),
+  });
+  if (HTML_TOOLS.has(slug)) return withDefaults({
+    minFiles: 0, maxMarkupCharacters: DEVICE_MANAGED_LIMIT,
+    ...(slug === "html-to-pdf" ? { maxExtractedCharactersTotal: DEVICE_MANAGED_LIMIT, maxGeneratedPdfPages: DEVICE_MANAGED_LIMIT } : {}),
+    ...(slug === "html-to-image" ? {
+      maxHtmlOutputPixels: DEVICE_MANAGED_LIMIT, maxHtmlHeight: DEVICE_MANAGED_LIMIT, maxOutputEdge: DEVICE_MANAGED_LIMIT,
+    } : {}),
+  });
+  if (IMAGE_TO_PDF_TOOLS.has(slug)) return imageProfile({
+    firstFrameImageFormats: slug === "scan-to-pdf" ? "animated PNG/WebP" : "animated PNG",
+  });
+  if (HEAVY_IMAGE_TOOLS.has(slug)) return imageProfile({
+    firstFrameImageFormats: slug === "upscale-image" ? "animated PNG" : "animated PNG/WebP",
+    ...(slug !== "upscale-image" ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
+    ...(slug === "blur-face" ? { maxDetectedFaces: DEVICE_MANAGED_LIMIT } : {}),
+  });
+  if (slug === "convert-image") return imageProfile({
+    singleFrameImageFormats: "TIFF", firstFrameImageFormats: "animated GIF/PNG/WebP",
+  });
+  if (slug === "convert-from-jpg") return imageProfile({
+    maxGifFrames: DEVICE_MANAGED_LIMIT,
+    // Preserve the existing animation sizing contract; GIF stores 16-bit edges.
+    maxGifWidth: 1400, maxGifFramePixels: DEVICE_MANAGED_LIMIT, maxGifFrameEdge: 65_535,
+  });
+  if (SINGLE_IMAGE_TOOLS.has(slug)) return imageProfile({
+    maxFiles: 1, firstFrameImageFormats: "animated PNG/WebP",
+    ...(slug === "meme-generator" ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
+  });
+  if (IMAGE_BATCH_TOOLS.has(slug) || tool?.kind === "image") return imageProfile({
+    firstFrameImageFormats: "animated PNG/WebP",
+    ...(["watermark-image", "rotate-image"].includes(slug) ? { maxInteractivePreviewPixels: 1.5 * MEGAPIXEL, maxInteractivePreviewEdge: 1600 } : {}),
+  });
+  if (PAGE_SELECTION_TOOLS.has(slug)) return structuralPdfProfile({
+    maxPageSelectionEntries: MAX_PAGE_SELECTION_ENTRIES,
+    ...(["split-pdf", "extract-pdf-pages"].includes(slug) ? { maxGeneratedItems: DEVICE_MANAGED_LIMIT } : {}),
+    ...(slug === "organize-pdf" ? { maxOrganizedPageMultiplier: DEVICE_MANAGED_LIMIT } : {}),
+  });
+  if (slug === "pdf-forms") return structuralPdfProfile({
+    maxPdfFormFields: DEVICE_MANAGED_LIMIT, maxPdfFormOptionsPerField: DEVICE_MANAGED_LIMIT,
+    maxPdfFormOptionsTotal: DEVICE_MANAGED_LIMIT, maxPdfFormFieldNameCharacters: DEVICE_MANAGED_LIMIT,
+    maxPdfFormValueCharacters: DEVICE_MANAGED_LIMIT, maxPdfFormMetadataCharacters: DEVICE_MANAGED_LIMIT,
+  });
+  if (tool?.kind === "pdf" || slug?.includes("pdf")) return structuralPdfProfile();
   return withDefaults();
 }
 
@@ -403,8 +265,8 @@ export function formatLimitBytes(bytes) {
 export function getTextSettingLimit(toolOrSlug, key) {
   const rawSlug = typeof toolOrSlug === "string" ? toolOrSlug : toolOrSlug.slug;
   const slug = SLUG_ALIASES[rawSlug] || rawSlug;
-  if (key === "html") return getToolLimits(toolOrSlug).maxMarkupCharacters;
-  return TEXT_SETTING_LIMITS[slug]?.[key];
+  const limit = key === "html" ? getToolLimits(toolOrSlug).maxMarkupCharacters : TEXT_SETTING_LIMITS[slug]?.[key];
+  return Number.isFinite(limit) ? limit : undefined;
 }
 
 function formatPixels(pixels) {
@@ -419,20 +281,19 @@ function formatAcceptedTypes(tool) {
 }
 
 export function describeToolLimits(tool) {
-  const limits = getToolLimits(tool);
+  const policy = getToolLimits(tool);
+  const limits = Object.fromEntries(Object.entries(policy).filter(([, value]) => value !== DEVICE_MANAGED_LIMIT));
   const types = formatAcceptedTypes(tool);
-  const count = limits.maxFiles === 1
+  const count = policy.maxFiles === 1
     ? `1 ${types} file`
-    : limits.minFiles === limits.maxFiles
-      ? `Exactly ${limits.maxFiles} ${types} files`
-      : limits.minFiles > 1
-        ? `${limits.minFiles}–${limits.maxFiles} ${types} files`
-        : `Up to ${limits.maxFiles} ${types} files`;
-  const primary = limits.minFiles === 0
-    ? `1 ${types} file up to ${formatLimitBytes(limits.maxFileBytes)}, or pasted markup in Settings`
-    : limits.maxFiles === 1
-      ? `${count} · ${formatLimitBytes(limits.maxFileBytes)}`
-      : `${count} · ${formatLimitBytes(limits.maxFileBytes)} each · ${formatLimitBytes(limits.maxTotalBytes)} combined`;
+    : policy.minFiles === policy.maxFiles
+      ? `Exactly ${policy.maxFiles} ${types} files`
+      : policy.maxFiles === DEVICE_MANAGED_LIMIT
+        ? `${types} files${policy.minFiles > 1 ? ` · at least ${policy.minFiles}` : ""}`
+        : `Up to ${policy.maxFiles} ${types} files`;
+  const primary = policy.minFiles === 0
+    ? `1 ${types} file or pasted markup · No file-size cap`
+    : `${count} · No file-size cap${policy.maxFiles === DEVICE_MANAGED_LIMIT ? " or batch cap" : ""}`;
   const details = [];
 
   if (limits.maxPdfPagesPerFile) details.push(`${limits.maxPdfPagesPerFile.toLocaleString()} pages/file`);
@@ -469,18 +330,18 @@ export function describeToolLimits(tool) {
   if (limits.maxArchiveEntries) details.push(`${limits.maxArchiveEntries.toLocaleString()} internal items`);
   if (limits.maxExpandedArchiveItemBytes) details.push(`${formatLimitBytes(limits.maxExpandedArchiveItemBytes)} per expanded item`);
   if (limits.maxExpandedArchiveBytes) details.push(`${formatLimitBytes(limits.maxExpandedArchiveBytes)} expanded total`);
-  if (limits.maxArchiveExpansionRatio) details.push(`${limits.maxArchiveExpansionRatio}× max expansion`);
+  if (limits.maxArchiveExpansionRatio) details.push(`${limits.maxArchiveExpansionRatio}× max expansion above ${formatLimitBytes(limits.archiveExpansionRatioFloorBytes)}`);
   if (limits.maxMarkupCharacters) details.push(`${limits.maxMarkupCharacters.toLocaleString()} pasted characters`);
-  if (limits.maxHtmlOutputPixels) {
+  if (Number.isFinite(limits.maxHtmlOutputPixels)) {
     details.push(`${formatPixels(limits.maxHtmlOutputPixels)} · ${limits.maxOutputEdge.toLocaleString()} px wide · ${limits.maxHtmlHeight.toLocaleString()} px tall capture`);
   }
-  if (limits.maxGifFrames) details.push(`${limits.maxGifFrames} GIF frames · ${limits.maxGifWidth.toLocaleString()} px wide · ${formatPixels(limits.maxGifFramePixels)} / ${limits.maxGifFrameEdge.toLocaleString()} px frame buffer`);
+  if (limits.maxGifWidth) details.push(`GIF output: up to ${limits.maxGifWidth.toLocaleString()} px wide · ${limits.maxGifFrameEdge.toLocaleString()} px format edge`);
   if (limits.maxOverlayImages) {
     details.push(`${limits.maxOverlayImages} PNG/JPG images · ${formatLimitBytes(limits.maxOverlayImageBytes)} each · ${formatLimitBytes(limits.maxOverlayImageBytesTotal)} combined`);
     details.push(`${formatPixels(limits.maxOverlayPixelsPerFile)} / ${limits.maxOverlayImageEdge.toLocaleString()} px per placed image · ${formatPixels(limits.maxOverlayPixelsTotal)} combined`);
     details.push(`${limits.maxOverlayPlacements.toLocaleString()} placements max`);
   }
-  const settingEntries = Object.entries(TEXT_SETTING_LIMITS[tool.slug] || {});
+  const settingEntries = Object.entries(TEXT_SETTING_LIMITS[tool.slug] || {}).filter(([, value]) => Number.isFinite(value));
   if (settingEntries.length) {
     const uniqueLimits = new Set(settingEntries.map(([, maxLength]) => maxLength));
     if (uniqueLimits.size === 1) {
@@ -496,10 +357,10 @@ export function describeToolLimits(tool) {
     }
   }
   if (limits.maxGeneratedItems) details.push(`${limits.maxGeneratedItems.toLocaleString()} generated files max`);
-  if (limits.maxGeneratedItems || tool.output?.includes(".zip") || (tool.kind === "image" && limits.maxFiles > 1)) {
-    details.push(`${formatLimitBytes(limits.maxArchiveItemBytes)} per generated file · ${formatLimitBytes(limits.maxArchiveInputBytes)} generated files combined`);
+  if (policy.maxGeneratedItems || tool.output?.includes(".zip") || (tool.kind === "image" && policy.maxFiles > 1)) {
+    details.push(`ZIP format: ${ZIP_MAX_ENTRIES.toLocaleString()} entries · below 4 GB including archive headers`);
   }
-  details.push(`${formatLimitBytes(limits.maxOutputBytes)} max result`);
+  details.push("Capacity depends on your browser and device. Large jobs can take longer or exhaust available memory.");
 
   return { primary, secondary: details.join(" · ") };
 }
@@ -528,10 +389,10 @@ export function getPdfOverlayImagePolicy(toolOrSlug = "add-image-to-pdf") {
 }
 
 export function describePdfOverlayImageLimits(toolOrSlug = "add-image-to-pdf") {
-  const policy = getPdfOverlayImagePolicy(toolOrSlug);
+  getPdfOverlayImagePolicy(toolOrSlug);
   return {
-    primary: `Up to ${policy.maxFiles} PNG/JPG images · ${formatLimitBytes(policy.maxFileBytes)} each · ${formatLimitBytes(policy.maxTotalBytes)} combined`,
-    secondary: `${formatPixels(policy.maxImagePixelsPerFile)} / ${policy.maxImageEdge.toLocaleString()} px each · ${formatPixels(policy.maxImagePixelsTotal)} combined · static images only · ${policy.maxPlacements.toLocaleString()} placements max`,
+    primary: "PNG/JPG images · No file-size cap or batch cap",
+    secondary: "Static images only · Capacity depends on your browser and device",
   };
 }
 
@@ -868,6 +729,7 @@ export function assertOrganizedPageCount(outputPages, sourcePages, limitsOrTool 
   const limits = resolveLimits(limitsOrTool);
   assertNonNegativeInteger(outputPages, "invalid-organized-page-count", "The organized PDF reported an invalid output page count. Choose a simpler order and try again.");
   assertNonNegativeInteger(sourcePages, "invalid-source-page-count", "The source PDF reported an invalid page count. Save a fresh copy and try again.");
+  if (limits.maxOrganizedPageMultiplier === DEVICE_MANAGED_LIMIT) return;
   const maximum = sourcePages * (limits.maxOrganizedPageMultiplier || 1);
   if (!Number.isSafeInteger(maximum)) {
     throw new FileLimitError("invalid-organized-page-count", "The organized PDF page limit could not be calculated safely. Split the source PDF first.");
@@ -931,7 +793,7 @@ export function validatePreflightMetadata(tool, metadata) {
   let totalPixels = 0;
 
   for (const item of metadata) {
-    if ("pdfPages" in item && (!Number.isInteger(item.pdfPages) || item.pdfPages < 1)) {
+    if ("pdfPages" in item && (!Number.isSafeInteger(item.pdfPages) || item.pdfPages < 1)) {
       throw new FileLimitError("invalid-page-count", `${item.name} reported an invalid PDF page count. Re-save the PDF and try again.`);
     }
     if (Number.isFinite(item.pdfPages)) {
@@ -943,6 +805,7 @@ export function validatePreflightMetadata(tool, metadata) {
         );
       }
       totalPages += item.pdfPages;
+      if (!Number.isSafeInteger(totalPages)) throw new FileLimitError("invalid-page-count", "The combined PDF page count cannot be represented exactly. Process the documents in separate groups.");
       if (limits.maxPdfPagesTotal && totalPages > limits.maxPdfPagesTotal) {
         throw new FileLimitError(
           "too-many-total-pages",
@@ -990,7 +853,7 @@ export function validatePreflightMetadata(tool, metadata) {
 export function assertImageDimensions(width, height, limitsOrTool, fileName = "This image") {
   const limits = limitsOrTool?.maxFileBytes ? limitsOrTool : getToolLimits(limitsOrTool);
   const pixels = width * height;
-  if (!Number.isFinite(pixels) || width < 1 || height < 1) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isSafeInteger(Math.ceil(width) * Math.ceil(height)) || width < 1 || height < 1) {
     throw new FileLimitError("invalid-image-dimensions", `${fileName} has invalid image dimensions. Save a fresh copy and try again.`);
   }
   if (limits.maxImageEdge && Math.max(width, height) > limits.maxImageEdge) {
@@ -1010,7 +873,7 @@ export function assertImageDimensions(width, height, limitsOrTool, fileName = "T
 export function assertOutputDimensions(width, height, limitsOrTool, label = "The output") {
   const limits = limitsOrTool?.maxFileBytes ? limitsOrTool : getToolLimits(limitsOrTool);
   const pixels = width * height;
-  if (!Number.isFinite(pixels) || width < 1 || height < 1) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isSafeInteger(Math.ceil(width) * Math.ceil(height)) || width < 1 || height < 1) {
     throw new FileLimitError("invalid-output-dimensions", `${label} has invalid dimensions. Choose valid size settings and try again.`);
   }
   if ((limits.maxOutputEdge && Math.max(width, height) > limits.maxOutputEdge) || (limits.maxOutputPixels && pixels > limits.maxOutputPixels)) {
@@ -1095,9 +958,8 @@ export function getAnimatedGifPlan(frames, delayMs = GIF_FRAME_DELAY_DEFAULT_MS,
   if (!Array.isArray(frames) || !frames.length) {
     throw new FileLimitError("missing-gif-frames", "Add at least one JPG frame before creating the animation.");
   }
-  if (!Number.isInteger(count) || count < 1 || count > limits.maxGifFrames) {
-    throw new FileLimitError("gif-frame-limit", `Animated GIF supports 1–${limits.maxGifFrames.toLocaleString()} frames. Remove extra images or create another animation.`);
-  }
+  if (!Number.isSafeInteger(count) || count < 1) throw new FileLimitError("invalid-gif-frame-count", "The animation needs a valid number of JPG frames. Add the images again.");
+  if (count > limits.maxGifFrames) throw new FileLimitError("gif-frame-limit", `Animated GIF supports up to ${limits.maxGifFrames.toLocaleString()} frames. Create another animation for the remaining images.`);
   if (!Number.isInteger(delay) || delay < GIF_FRAME_DELAY_MIN_MS || delay > GIF_FRAME_DELAY_MAX_MS) {
     throw new FileLimitError("invalid-gif-delay", `Time per image must be from ${GIF_FRAME_DELAY_MIN_MS.toLocaleString()} to ${GIF_FRAME_DELAY_MAX_MS.toLocaleString()} milliseconds.`);
   }
@@ -1228,7 +1090,7 @@ export function getImageCropPlan(sourceWidth, sourceHeight, aspectRatio = "free"
 export function assertRasterDimensions(width, height, limitsOrTool, label = "This PDF page") {
   const limits = limitsOrTool?.maxFileBytes ? limitsOrTool : getToolLimits(limitsOrTool);
   const pixels = width * height;
-  if (!Number.isFinite(pixels) || width < 1 || height < 1) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isSafeInteger(Math.ceil(width) * Math.ceil(height)) || width < 1 || height < 1) {
     throw new FileLimitError("invalid-raster-dimensions", `${label} has invalid render dimensions. Re-save the PDF and try again.`);
   }
   if ((limits.maxRasterEdge && Math.max(width, height) > limits.maxRasterEdge) || (limits.maxRasterPixels && pixels > limits.maxRasterPixels)) {

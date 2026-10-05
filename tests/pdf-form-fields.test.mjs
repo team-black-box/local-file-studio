@@ -127,23 +127,13 @@ test("PDF form fill preserves untouched fields and optionally flattens every out
   assert.equal(flattenedPdf.getForm().getFields().length, 0);
 });
 
-test("PDF form values and choice metadata fail at their exact central bounds", async () => {
-  assert.equal(parsePdfFormValues(JSON.stringify({ Name: "x".repeat(10_000) })).Name.length, 10_000);
-  assert.throws(
-    () => parsePdfFormValues(JSON.stringify({ Name: "x".repeat(10_001) })),
-    (error) => error.code === "pdf-form-field-value-limit" && /10,001 characters.*10,000/.test(error.message),
-  );
-  assert.equal(parsePdfFormValues({ Interests: Array(500).fill("") }).Interests.length, 500);
-  assert.throws(
-    () => parsePdfFormValues({ Interests: Array(501).fill("") }),
-    (error) => error.code === "pdf-form-options-per-field-limit" && /501 choices.*500 choices per field/.test(error.message),
-  );
+test("PDF forms accept large values and choice lists while rejecting malformed JSON", async () => {
+  assert.equal(parsePdfFormValues(JSON.stringify({ Name: "x".repeat(10_001) })).Name.length, 10_001);
+  assert.equal(parsePdfFormValues({ Interests: Array(501).fill("") }).Interests.length, 501);
   assert.throws(() => parsePdfFormValues("{"), /Advanced field JSON is not valid/);
-  const tooManyChoices = await createFormPdf({ optionCount: 501 });
-  await assert.rejects(
-    () => inspectPdfForm(tooManyChoices),
-    (error) => error.code === "pdf-form-options-per-field-limit" && /501 choices.*500 choices per field/.test(error.message),
-  );
+  const manyChoices = await createFormPdf({ optionCount: 501 });
+  const inspection = await inspectPdfForm(manyChoices);
+  assert.ok(inspection.fields.some((field) => field.options?.length === 501));
 });
 
 test("PDF Forms processor returns a previewable PDF with only explicit changes", async () => {

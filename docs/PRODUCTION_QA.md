@@ -19,6 +19,20 @@ The owner authorized a Vercel preview, production-beta promotion, Git integratio
 
 As of 2026-08-23, exact merged private-`main` commit `e11e52d42cd70273f3568b53289f9e31b33fee26` is deployed as READY production deployment `dpl_AeULhE48NQyLpmxKJpSeKrctP1Gi`. The clean build and public apex expose byte-identical service-worker and precache-manifest artifacts. The owner deferred the file-driven Blur Face portrait check; row 47 remains unchecked, and the deferral is neither a pass nor a launch waiver.
 
+## Local capacity-policy verification — 2026-10-05
+
+The owner requested removal of restrictive application quotas. This local candidate removes fixed source/combined bytes, batch count, PDF pages, image/render pixels, extracted text, generated-file count, and individual-result/download caps across the catalog. Device capacity determines whether a job completes. The [README capacity policy](../README.md#device-managed-capacity) records the remaining format, decompression, sparse-range, comparison-timeout, and short text-control contracts. Older dated quota checks below describe previous candidates.
+
+Bun 1.2.20 frozen install and full `bun run verify` passed: 197 Node tests, repository/history/docs audits, OCR and third-party provenance, all 47 generated tool routes, and the 80-asset offline manifest at revision `df897d97220e8d88`. Browser evidence used isolated Chrome 154.0.8037.97 at 1440 × 1000 and 390 × 844 with synthetic files:
+
+- A 60,008,648-byte, 5,000 × 4,000 PNG compressed to 392,441 bytes. Independent decoding checked all 20,000,000 pixels against the fixture: dimensions and every RGBA value matched. This intentionally redundant image verifies acceptance and lossless output, not a compression-ratio promise for real photographs.
+- Reset/repeat and a production-service-worker offline reload produced byte-identical downloads. A stale preview render discovered during reset was fixed; the final browser run recorded zero page errors and zero external document-processing requests.
+- Malformed PNG content failed with an actionable error. Compress Image, Resize Image, Add Image to PDF, Word to PDF, and Compare PDF had no document-level horizontal overflow at 390 × 844; their picker copy contained no non-finite limits.
+- A 1,001-page source merged with a one-page fixture into a complete 1,002-page PDF. Independent parsing verified every source page's dimension and ordering. Closing an active PDF-to-JPG job produced no download or visible partial result.
+- Automated cases cover every catalog policy, input selection above former quotas, a 101-image batch, complete split/ZIP exports above 100 results, real ZIP-field bounds, invalid metadata, and Office documents that exceed the old expansion ratio. Malicious claimed expansion still fails before decompression.
+
+Changed files: `README.md`, `docs/PRODUCTION_QA.md`, `src/App.jsx`, `src/PdfImageWorkbench.jsx`, `src/tools.js`, `src/lib/file-limits.js`, `src/lib/file-preflight.js`, `src/lib/file-utils.js`, `src/lib/image-processors.js`, `src/lib/diff-worker-client.js`, `tests/file-limits.test.mjs`, `tests/pdf-image-editor.test.mjs`, `tests/pdf-form-fields.test.mjs`, `tests/pdf-redactions.test.mjs`, `tests/pdf-merge-split.test.mjs`, `tests/docx-text.test.mjs`, and `tests/pptx-text.test.mjs`. No files were removed. The changes remain local; deployed-candidate rows, other browsers, and physical mobile devices remain separate checks.
+
 ## Local PDF workflow verification — 2026-09-18
 
 This local production-build check covers the PDF workflow update; it does not mark deployed-candidate rows complete. Bun 1.2.20 frozen install and the full `bun run verify` passed. Browser checks used Chromium 148.0.7778.96 at 1440 × 1000 and 390 × 844, plus a mobile context with touch input. Only synthetic fixtures were used.

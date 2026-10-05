@@ -337,13 +337,17 @@ test("Word to PDF still produces a readable PDF through the shared processor", a
   assert.match(result.details, /1 page · 17 readable characters/);
 });
 
-test("Word to PDF rejects excessive archive expansion through shared preflight", async () => {
+test("Word to PDF accepts ordinary highly compressed documents and rejects expansion bombs", async () => {
   const file = await createDocxFile({ name: "compressed.docx", paddingBytes: 1024 * 1024 });
-  const wordTool = tools.find(({ slug }) => slug === "word-to-pdf");
-  await assert.rejects(
-    () => runTool(wordTool, [file]),
-    (error) => error instanceof FileLimitError
-      && error.code === "archive-ratio-limit"
-      && /compressed\.docx.*20× expansion/s.test(error.message),
-  );
+  const tool = tools.find(({ slug }) => slug === "word-to-pdf");
+  const { results: [result] } = await runTool(tool, [file]);
+  assert.equal(result.blob.type, "application/pdf");
+  // Claim excessive expansion in the first central-directory entry. Rejection
+  // happens before decompression rather than allocating a giant test fixture.
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const directory = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  assert.ok(directory >= 0);
+  bytes.writeUInt32LE(64 * 1024 * 1024 + 1, directory + 24);
+  const bomb = new File([bytes], "bomb.docx", { type: file.type });
+  await assert.rejects(runTool(tool, [bomb]), { code: "archive-ratio-limit" });
 });

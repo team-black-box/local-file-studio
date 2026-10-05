@@ -35,7 +35,7 @@ test("redaction geometry rejects invalid pages, undersized areas, and page overf
 });
 
 test("redaction settings enforce exact total, per-page, and serialized limits", () => {
-  const limits = getToolLimits("redact-pdf");
+  const limits = { ...getToolLimits("redact-pdf"), maxRedactionRegions: 200, maxRedactionRegionsPerPage: 50, maxRedactionSettingsCharacters: 64 * 1024 };
   const exact = Array.from({ length: limits.maxRedactionRegions }, (_, index) => ({
     page: Math.floor(index / limits.maxRedactionRegionsPerPage) + 1,
     x: index % 2 ? 50 : 0,
@@ -43,11 +43,11 @@ test("redaction settings enforce exact total, per-page, and serialized limits", 
     width: 10,
     height: 1,
   }));
-  assert.equal(parseRedactionRegions(exact, 100).length, limits.maxRedactionRegions);
-  assert.throws(() => parseRedactionRegions([...exact, exact[0]], 100), /at most 200/i);
+  assert.equal(parseRedactionRegions(exact, 100, limits).length, limits.maxRedactionRegions);
+  assert.throws(() => parseRedactionRegions([...exact, exact[0]], 100, limits), /at most 200/i);
   const onePageOverflow = Array.from({ length: limits.maxRedactionRegionsPerPage + 1 }, (_, index) => ({ page: 1, x: 0, y: index, width: 1, height: 0.5 }));
-  assert.throws(() => parseRedactionRegions(onePageOverflow, 100), /more than 50/i);
-  assert.throws(() => parseRedactionRegions(" ".repeat(limits.maxRedactionSettingsCharacters + 1), 1), /65,536-character/i);
+  assert.throws(() => parseRedactionRegions(onePageOverflow, 100, limits), /more than 50/i);
+  assert.throws(() => parseRedactionRegions(" ".repeat(limits.maxRedactionSettingsCharacters + 1), 1, limits), /65,536-character/i);
 });
 
 test("redaction serialization normalizes coordinates and rejects an empty execution plan", () => {

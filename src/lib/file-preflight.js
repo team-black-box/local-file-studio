@@ -60,7 +60,7 @@ async function inspectPdf(file, tool, options, limits, report, fileIndex, fileCo
     }
     // Repair must still reach the lenient libpdf parser when PDF.js cannot
     // build metadata from a damaged cross-reference table or page tree. The
-    // repair engine applies the same page cap again before rewriting.
+    // repair engine validates page metadata again before rewriting.
     if (tool.slug === "repair-pdf") return { name: file.name };
     throw new FileLimitError(
       "invalid-pdf",
@@ -322,7 +322,7 @@ async function measureExpandedArchiveEntry(entry, file, tool, limits, state) {
             ));
             return;
           }
-          if (file.size && limits.maxArchiveExpansionRatio && nextTotalBytes > file.size * limits.maxArchiveExpansionRatio) {
+          if (file.size && limits.maxArchiveExpansionRatio && nextTotalBytes > Math.max(limits.archiveExpansionRatioFloorBytes || 0, file.size * limits.maxArchiveExpansionRatio)) {
             fail(new FileLimitError(
               "archive-ratio-limit",
               `${file.name} expands beyond the safe ${limits.maxArchiveExpansionRatio}× archive ratio. Re-save it without highly compressed embedded content, then try again.`,
@@ -381,7 +381,7 @@ async function inspectOfficeArchive(file, tool, limits) {
       `${file.name} declares ${formatLimitBytes(claimedExpandedBytes)} of expanded content; ${tool.name} safely handles ${formatLimitBytes(limits.maxExpandedArchiveBytes)}. Remove embedded media or split the document.`,
     );
   }
-  if (file.size && limits.maxArchiveExpansionRatio && claimedExpandedBytes > file.size * limits.maxArchiveExpansionRatio) {
+  if (file.size && limits.maxArchiveExpansionRatio && claimedExpandedBytes > Math.max(limits.archiveExpansionRatioFloorBytes || 0, file.size * limits.maxArchiveExpansionRatio)) {
     throw new FileLimitError("archive-ratio-limit", `${file.name} declares more than ${limits.maxArchiveExpansionRatio}× expansion in memory. Re-save it without large compressed media, then try again.`);
   }
 
